@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Ciudad 2050 — Experiencia Solarpunk</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d1b18'/%3E%3Ccircle cx='16' cy='12' r='5' fill='%23f2c14e'/%3E%3Cpath d='M6 26c3-6 7-8 10-8s7 2 10 8z' fill='%234faa7a'/%3E%3C/svg%3E"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --ink: #0d1b18;
+        --leaf: #4faa7a;
+        --sun: #f2c14e;
+        --panel: rgba(13, 27, 24, 0.62);
+        --line: rgba(238, 246, 242, 0.16);
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1b18; }
+      body {
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        color: #eef6f2;
+      }
+      #app { position: fixed; inset: 0; }
+      #render { width: 100%; height: 100%; display: block; outline: none; touch-action: none; }
+
+      /* ---------- pantalla de carga ---------- */
+      #boot {
+        position: fixed; inset: 0; z-index: 30;
+        display: grid; place-content: center; gap: 1.5rem;
+        justify-items: center; text-align: center;
+        background: radial-gradient(120% 120% at 50% 20%, #17332b 0%, #0d1b18 60%);
+        transition: opacity 0.6s ease;
+      }
+      #boot.hidden { opacity: 0; pointer-events: none; }
+      #boot h1 {
+        margin: 0; font-size: clamp(1.8rem, 5vw, 3.2rem);
+        font-weight: 300; letter-spacing: 0.18em; text-transform: uppercase;
+      }
+      #boot h1 b { font-weight: 600; color: var(--sun); }
+      #boot p { margin: 0; opacity: 0.6; font-size: 0.9rem; letter-spacing: 0.08em; }
+      .bar { width: min(280px, 60vw); height: 2px; background: rgba(255,255,255,0.12); overflow: hidden; }
+      .bar i { display: block; height: 100%; width: 0%; background: var(--leaf); transition: width 0.3s ease; }
+
+      /* ---------- HUD ---------- */
+      #hud {
+        position: fixed; z-index: 20; inset: auto 0 0 0;
+        padding: 0 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+        display: flex; gap: 0.5rem; align-items: flex-end; justify-content: space-between;
+        pointer-events: none;
+      }
+      #hud .stack { display: flex; gap: 0.5rem; flex-wrap: wrap; pointer-events: auto; }
+      button.pill {
+        appearance: none; border: 1px solid var(--line);
+        background: var(--panel); backdrop-filter: blur(12px);
+        color: #eef6f2; font: inherit; font-size: 0.8rem; letter-spacing: 0.04em;
+        padding: 0.55rem 0.95rem; border-radius: 999px; cursor: pointer;
+        transition: background 0.2s, border-color 0.2s, transform 0.1s;
+      }
+      button.pill:hover { background: rgba(79,170,122,0.28); border-color: var(--leaf); }
+      button.pill:active { transform: translateY(1px); }
+      button.pill[aria-pressed="true"] { background: rgba(79,170,122,0.35); border-color: var(--leaf); }
+      button.pill.accent { border-color: var(--sun); color: var(--sun); }
+      button.pill.accent:hover { background: rgba(242,193,78,0.2); }
+      button.pill:disabled { opacity: 0.35; cursor: not-allowed; }
+
+      /* deslizador de hora */
+      label.pill.time {
+        display: flex; align-items: center; gap: 0.6rem;
+        cursor: default; padding: 0.4rem 0.9rem;
+      }
+      label.pill.time span {
+        font-variant-numeric: tabular-nums; min-width: 3.1rem;
+        color: var(--sun); font-weight: 600;
+      }
+      label.pill.time input[type='range'] {
+        appearance: none; width: 108px; height: 3px; border-radius: 2px;
+        background: linear-gradient(90deg, #4a6a86, var(--sun), #8a5a7a);
+        cursor: pointer; outline: none;
+      }
+      label.pill.time input[type='range']::-webkit-slider-thumb {
+        appearance: none; width: 13px; height: 13px; border-radius: 50%;
+        background: #eef6f2; border: 2px solid var(--ink); cursor: grab;
+      }
+      label.pill.time input[type='range']::-moz-range-thumb {
+        width: 13px; height: 13px; border-radius: 50%;
+        background: #eef6f2; border: 2px solid var(--ink); cursor: grab;
+      }
+
+      #stats {
+        font-variant-numeric: tabular-nums; font-size: 0.72rem;
+        letter-spacing: 0.06em; opacity: 0.5; text-align: right;
+        line-height: 1.5; pointer-events: none; white-space: nowrap;
+      }
+
+      /* ---------- ayuda de controles ---------- */
+      #help {
+        position: fixed; z-index: 20; left: 1rem;
+        top: calc(1rem + env(safe-area-inset-top, 0px));
+        max-width: min(340px, 72vw);
+        padding: 0.9rem 1.1rem; border-radius: 14px;
+        background: var(--panel); backdrop-filter: blur(12px);
+        border: 1px solid var(--line);
+        font-size: 0.78rem; line-height: 1.75; letter-spacing: 0.02em;
+        transition: opacity 0.4s ease;
+      }
+      #help.hidden { opacity: 0; pointer-events: none; }
+      #help b { color: var(--leaf); font-weight: 600; }
+      #help kbd {
+        font: inherit; font-size: 0.72rem; padding: 0.1rem 0.4rem;
+        border: 1px solid rgba(238,246,242,0.25); border-radius: 5px;
+        background: rgba(255,255,255,0.06);
+      }
+      [hidden] { display: none !important; }
+
+      /* ---------- panel de energía ---------- */
+      #energy {
+        position: fixed; z-index: 20; right: 1rem;
+        top: calc(1rem + env(safe-area-inset-top, 0px));
+        width: min(290px, 78vw);
+        padding: 1rem 1.1rem; border-radius: 14px;
+        background: var(--panel); backdrop-filter: blur(12px);
+        border: 1px solid var(--line);
+        font-size: 0.78rem;
+        opacity: 0; transform: translateY(-8px); pointer-events: none;
+        transition: opacity 0.3s ease, transform 0.3s ease;
+      }
+      #energy.open { opacity: 1; transform: none; pointer-events: auto; }
+      #energy .row {
+        display: flex; justify-content: space-between; align-items: baseline;
+        padding: 0.32rem 0; border-bottom: 1px solid rgba(238,246,242,0.07);
+      }
+      #energy .row span { opacity: 0.62; }
+      #energy .row b { font-variant-numeric: tabular-nums; font-weight: 600; }
+      #energy .bar {
+        width: 100%; height: 5px; margin: 0.8rem 0 0.5rem;
+        background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;
+      }
+      #energy .bar i {
+        display: block; height: 100%; border-radius: 3px;
+        background: linear-gradient(90deg, var(--leaf), var(--sun));
+        transition: width 0.5s ease;
+      }
+      #energy .cover { text-align: center; opacity: 0.75; font-size: 0.74rem; }
+      #energy .cover b { color: var(--sun); font-size: 1rem; }
+
+      /* ---------- panel de inspección ---------- */
+      #inspector {
+        position: fixed; z-index: 21; left: 50%; transform: translateX(-50%);
+        bottom: calc(4.6rem + env(safe-area-inset-bottom, 0px));
+        width: min(360px, 90vw);
+        padding: 1.05rem 1.2rem; border-radius: 16px;
+        background: var(--panel); backdrop-filter: blur(14px);
+        border: 1px solid var(--line);
+        font-size: 0.79rem;
+        transition: opacity 0.25s ease, transform 0.25s ease;
+      }
+      #inspector.hidden {
+        opacity: 0; pointer-events: none;
+        transform: translateX(-50%) translateY(8px);
+      }
+      #inspector h3 {
+        margin: 0 0 0.35rem; font-size: 1rem; font-weight: 600;
+        letter-spacing: 0.01em; color: var(--sun);
+      }
+      #inspector .detail { margin: 0 0 0.8rem; opacity: 0.72; line-height: 1.55; }
+      #inspector dl {
+        margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 0.32rem 1rem;
+      }
+      #inspector dt { opacity: 0.6; }
+      #inspector dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+      #inspector .note {
+        margin: 0.85rem 0 0; padding-top: 0.6rem; font-size: 0.68rem; opacity: 0.42;
+        border-top: 1px solid rgba(238,246,242,0.08); line-height: 1.5;
+      }
+      #inspector .close {
+        position: absolute; top: 0.55rem; right: 0.7rem;
+        appearance: none; background: none; border: none; cursor: pointer;
+        color: #eef6f2; opacity: 0.4; font-size: 1.25rem; line-height: 1;
+        padding: 0.2rem 0.35rem; border-radius: 6px;
+      }
+      #inspector .close:hover { opacity: 1; background: rgba(255,255,255,0.08); }
+
+      /* ---------- retícula ---------- */
+      #crosshair {
+        position: fixed; z-index: 15; left: 50%; top: 50%;
+        width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px;
+        border-radius: 50%; background: rgba(255,255,255,0.55);
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.35);
+        pointer-events: none;
+      }
+
+      @media (max-width: 560px) {
+        #help { display: none; }
+        /* deslizador de hora */
+      label.pill.time {
+        display: flex; align-items: center; gap: 0.6rem;
+        cursor: default; padding: 0.4rem 0.9rem;
+      }
+      label.pill.time span {
+        font-variant-numeric: tabular-nums; min-width: 3.1rem;
+        color: var(--sun); font-weight: 600;
+      }
+      label.pill.time input[type='range'] {
+        appearance: none; width: 108px; height: 3px; border-radius: 2px;
+        background: linear-gradient(90deg, #4a6a86, var(--sun), #8a5a7a);
+        cursor: pointer; outline: none;
+      }
+      label.pill.time input[type='range']::-webkit-slider-thumb {
+        appearance: none; width: 13px; height: 13px; border-radius: 50%;
+        background: #eef6f2; border: 2px solid var(--ink); cursor: grab;
+      }
+      label.pill.time input[type='range']::-moz-range-thumb {
+        width: 13px; height: 13px; border-radius: 50%;
+        background: #eef6f2; border: 2px solid var(--ink); cursor: grab;
+      }
+
+      #stats { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"><canvas id="render"></canvas></div>
+    <div id="crosshair"></div>
+
+    <div id="boot">
+      <h1>Ciudad <b>2050</b></h1>
+      <p id="boot-msg">Generando la ciudad…</p>
+      <div class="bar"><i id="boot-bar"></i></div>
+    </div>
+
+    <div id="help" class="hidden">
+      <div id="help-walk">
+        <div><b>Caminar</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · <b>Correr</b> <kbd>Shift</kbd></div>
+        <div><b>Saltar</b> <kbd>Espacio</kbd> · <b>Mirar</b> clic + arrastrar</div>
+      </div>
+      <div id="help-fly" hidden>
+        <div><b>Volar</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · <b>Rápido</b> <kbd>Shift</kbd></div>
+        <div><b>Subir/bajar</b> <kbd>E</kbd><kbd>Q</kbd> · <b>Mirar</b> clic + arrastrar</div>
+      </div>
+      <div><b>Inspeccionar</b> clic en un edificio · <b>Volar/caminar</b> <kbd>F</kbd></div>
+      <div><b>Ocultar ayuda</b> <kbd>H</kbd></div>
+    </div>
+
+    <div id="energy"></div>
+
+    <div id="hud">
+      <div class="stack">
+        <button class="pill accent" id="btn-vr" disabled>Entrar en VR</button>
+        <button class="pill" id="btn-mode">Modo: Caminar</button>
+        <button class="pill" id="btn-energy" aria-pressed="false">Energía</button>
+        <button class="pill" id="btn-sound" aria-pressed="false">Sonido</button>
+        <label class="pill time" for="time-slider">
+          <span id="time-label">13:00</span>
+          <input id="time-slider" type="range" min="8" max="20.5" step="0.1" value="13" />
+        </label>
+        <button class="pill" id="btn-quality">Calidad: Alta</button>
+        <button class="pill" id="btn-regen">Regenerar</button>
+      </div>
+      <div id="stats"></div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

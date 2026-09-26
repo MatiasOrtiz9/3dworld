@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.vite/
+
+# Capturas de desarrollo: se regeneran con tools/shoot.mjs
+shots/
+
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
