@@ -219,6 +219,7 @@ export class StreetLevel {
 
     const slab = this.mats.surface(PALETTE.concreteLight, 0.72, 0, 'concrete');
     const rail = this.mats.metal(PALETTE.solarFrame, 0.45);
+    const balustrade = this.mats.glass(PALETTE.glassGreen, 0.55);
 
     const count = Math.max(1, Math.floor(span / 5.5));
     // Antes el tope era 4 pisos, elegido por miedo al coste. La medición con
@@ -244,24 +245,25 @@ export class StreetLevel {
           new Vector3(bx, y + 0.1, bz),
           alongX ? new Vector3(bw, 0.2, proj) : new Vector3(proj, 0.2, bw),
         );
-        // Baranda: dos barras horizontales más una superior de pasamanos.
+        // Baranda: paño de vidrio apoyado en la losa y pasamanos encima.
         //
-        // Eran tres barras equiespaciadas, y a distancia de calle la del medio
-        // no aporta lectura: lo que define una baranda es el pasamanos y el
-        // ritmo. Con ~600 balcones, quitar una barra son 600 cajas menos.
-        for (let r = 0; r < 2; r++) {
-          const ry = y + 0.42 + r * 0.48;
-          this.farm.add(
-            'box',
-            rail,
-            new Vector3(
-              alongX ? bx : bx + (out * proj) / 2,
-              ry,
-              alongX ? bz + (out * proj) / 2 : bz,
-            ),
-            alongX ? new Vector3(bw, 0.06, 0.06) : new Vector3(0.06, 0.06, bw),
-          );
-        }
+        // Antes eran dos barras sueltas a 0,42 y 0,9 m, sin parantes: miradas
+        // de cerca flotaban en el aire delante de cada balcón. Un paño de
+        // vidrio cuesta la misma caja y se apoya de verdad en la losa.
+        const ex = alongX ? bx : bx + (out * (proj - 0.05)) / 2;
+        const ez = alongX ? bz + (out * (proj - 0.05)) / 2 : bz;
+        this.farm.add(
+          'box',
+          balustrade,
+          new Vector3(ex, y + 0.2 + 0.38, ez),
+          alongX ? new Vector3(bw, 0.76, 0.05) : new Vector3(0.05, 0.76, bw),
+        );
+        this.farm.add(
+          'box',
+          rail,
+          new Vector3(ex, y + 0.99, ez),
+          alongX ? new Vector3(bw + 0.04, 0.06, 0.08) : new Vector3(0.08, 0.06, bw + 0.04),
+        );
         // Una maceta en algunos.
         if (this.full && this.rng.chance(0.4)) {
           this.farm.add(
@@ -361,25 +363,41 @@ export class StreetLevel {
     const roof = this.mats.solar();
     const bench = this.mats.surface(PALETTE.timberLight, 0.85, 0, 'timber');
 
+    // Ejes locales de una caja girada `rotY` en Babylon: X → (cos, −sin),
+    // Z → (sin, cos). Los parantes van sobre la línea del respaldo de vidrio,
+    // así sostienen techo y vidrio; antes estaban en el eje y el vidrio y el
+    // banco quedaban flotando.
+    const lx = (a: number, b: number) => x + Math.cos(rotY) * a + Math.sin(rotY) * b;
+    const lz = (a: number, b: number) => z - Math.sin(rotY) * a + Math.cos(rotY) * b;
     for (const s of [-1, 1]) {
       this.farm.add(
         'cylinder',
         post,
-        new Vector3(x + Math.cos(rotY) * s * 2.1, 1.3, z + Math.sin(rotY) * s * 2.1),
-        new Vector3(0.12, 2.6, 0.12),
+        new Vector3(lx(s * 2.2, 0.78), 1.33, lz(s * 2.2, 0.78)),
+        new Vector3(0.12, 2.66, 0.12),
       );
     }
     // Cubierta: el techo de la parada también genera energía.
     this.farm.add('box', roof, new Vector3(x, 2.68, z), new Vector3(5, 0.12, 1.9), rotY, 0, -0.06);
-    // Respaldo de vidrio.
+    // Respaldo de vidrio, entre los parantes.
     this.farm.add(
       'box',
       this.mats.glass(PALETTE.glassGreen, 0.55),
-      new Vector3(x - Math.sin(rotY) * 0.85, 1.45, z + Math.cos(rotY) * 0.85),
-      new Vector3(4.6, 1.9, 0.08),
+      new Vector3(lx(0, 0.78), 1.4, lz(0, 0.78)),
+      new Vector3(4.3, 1.8, 0.06),
       rotY,
     );
-    this.farm.add('box', bench, new Vector3(x, 0.46, z), new Vector3(4, 0.1, 0.5), rotY);
+    // Banco con sus patas.
+    this.farm.add('box', bench, new Vector3(lx(0, 0.35), 0.46, lz(0, 0.35)), new Vector3(3.6, 0.1, 0.5), rotY);
+    for (const s of [-1, 1]) {
+      this.farm.add(
+        'box',
+        post,
+        new Vector3(lx(s * 1.5, 0.35), 0.21, lz(s * 1.5, 0.35)),
+        new Vector3(0.08, 0.42, 0.42),
+        rotY,
+      );
+    }
   }
 
   /**

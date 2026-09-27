@@ -68,6 +68,10 @@ src/
 │   ├── City.ts             # orquestador + precompilación de shaders
 │   ├── CityIndex.ts        # índice espacial: colisión, clic, estimaciones
 │   ├── Life.ts             # tranvías y pájaros (thin instances dinámicas)
+│   ├── Crowd.ts            # gente: comportamiento, animación, recorte
+│   ├── PeopleGeometry.ts   # piezas low-poly de las personas y la bici
+│   ├── SchoolLayout.ts     # trazado del campus CIMDIP (datos puros)
+│   ├── SchoolIdentity.ts   # cartel, reloj, tótem, bandera, cancha (1 atlas)
 │   ├── Environment.ts      # cielo, sol, sombras CSM, IBL, mapeo tonal
 │   ├── Textures.ts         # texturas procedurales en canvas 2D
 │   ├── Palette.ts          # lenguaje visual (colores)
@@ -76,7 +80,9 @@ src/
 │       ├── NatureBuilder.ts    # árboles, arbustos, jardineras, bosque
 │       ├── BuildingBuilder.ts  # volúmenes escalonados, torres, mercado, cívico
 │       ├── StreetLevel.ts      # planta baja, toldos, balcones, mobiliario
-│       └── InfraBuilder.ts     # calles, canal, puentes, plaza, energía
+│       ├── InfraBuilder.ts     # calles, canal, puentes, plaza, energía
+│       └── SchoolBuilder.ts    # campus CIMDIP & Miguel Cané
+├── game/ChallengeSystem.ts # estaciones de desafíos dentro del campus
 ├── player/
 │   ├── FlyCamera.ts        # cámara base
 │   └── PlayerController.ts # caminar/volar, gravedad, salto, colisión
@@ -229,6 +235,36 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     Sin el tope, un tirón de cuadro teletransporta al jugador a través de una
     pared.
 
+18. **Rotar θ sobre Y en Babylon lleva +X a (cos θ, −sin θ) y +Z a
+    (sin θ, cos θ).** Es la fuente de varios bugs corregidos: patas de banco
+    espejadas, bancos de la plaza no tangentes, ribera del canal plantada sobre
+    la diagonal equivocada. Ante la duda, verificarlo con
+    `Vector3.TransformCoordinates` en vez de razonarlo.
+
+19. **El norte está en −Z.** Los paneles solares se inclinan hacia −Z y el sol
+    culmina ahí (azimut de mediodía 4,45). Antes culminaba en +Z: los paneles
+    le daban la espalda y la fachada de la escuela quedaba en sombra.
+
+20. **`STANDARD_SUN_COMP` (0,45) en los `StandardMaterial`.** El sol vale ~2,4
+    porque la ciudad es PBR; follaje, césped y gente lo multiplicaban tal cual,
+    saturaban por canal y el verde se volvía menta blanquecino.
+
+21. **El agua del canal está 3 cm por encima de y = 0.** El suelo base de la
+    ciudad termina en 0: con el agua también en 0 había z-fighting en todo el
+    canal.
+
+22. **`SchoolLayout` es la única fuente de coordenadas del campus.** Lo usan
+    `SchoolBuilder`, `SchoolIdentity`, `CityIndex` (colisión), `Crowd`
+    (alumnos) y `ChallengeSystem` (estaciones). Todo está en coordenadas locales
+    (u, v) y rota para que la entrada mire siempre a la plaza.
+
+23. **Personas: un material, color = vértice × instancia.** Las piezas
+    articuladas tienen el origen en su pivote (hombro, cadera, rodilla) para
+    compartir matriz: antebrazo y mano usan la del brazo, zapato la de la
+    pierna. Cada cuadro se escriben sólo las personas visibles, compactadas, y
+    las mallas son `alwaysSelectAsActiveMesh`: su bounding no se puede
+    mantener barato. Ver `PeopleGeometry.ts` y `Crowd.ts`.
+
 ---
 
 ## 6. Estado actual
@@ -278,7 +314,13 @@ El VR está implementado pero **jamás se probó en un visor**.
 
 ## 7. Qué mejorar, por prioridad
 
-### P1 — Gente caminando
+### P1 — Gente caminando ✅ (hecho)
+
+Figuras low-poly articuladas (pelo, ropa, pollera, mochila, rodillas y codos),
+cuatro comportamientos (vereda, deambular con pausas, grupos charlando,
+bicicleta por la calzada con pedaleo por cinemática inversa), sombra de
+contacto y recorte por cámara. ~15 draw calls para toda la multitud. El texto
+de abajo queda como registro del plan original.
 
 Es el hueco más grande. La calle tiene locales, toldos, bancos y bicicleteros, y
 está **completamente vacía**. Sin gente, una ciudad se lee como una maqueta por

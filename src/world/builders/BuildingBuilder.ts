@@ -377,6 +377,17 @@ export class BuildingBuilder {
       }
     }
 
+    // Dos largueros de apoyo sobre los pilares. Sin ellos sólo las filas de
+    // los extremos tocaban una pata: las del medio flotaban en el aire.
+    for (const sx of [-1, 1]) {
+      this.farm.add(
+        'box',
+        legMat,
+        new Vector3(x + (sx * w) / 2.4, y + legH - 0.07, z),
+        new Vector3(0.16, 0.14, d * 0.96),
+      );
+    }
+
     // Filas de paneles con inclinación hacia el norte solar (hemisferio sur).
     const rows = Math.max(1, Math.floor(d / 2.6));
     const tilt = -0.42;
@@ -428,7 +439,11 @@ export class BuildingBuilder {
     let y = podiumH;
     let w = footprint;
     const skyGardenEvery = this.rng.int(4, 6);
+    // Ancho de cada piso: la torre se angosta, y lo que se cuelga de la
+    // fachada (aristas vegetales) tiene que seguir ese ancho, no el de la base.
+    const widths: number[] = [];
     for (let f = 0; f < floors; f++) {
+      widths.push(w);
       const isGarden = f > 0 && f % skyGardenEvery === 0;
 
       if (isGarden) {
@@ -476,13 +491,15 @@ export class BuildingBuilder {
     const vineCorners = this.rng.chance(0.7);
     if (vineCorners) {
       for (const sx of [-1, 1]) {
-        const vx = cx + (sx * footprint) / 2;
         const segments = Math.floor((y - podiumH) / 4);
         for (let i = 0; i < segments; i++) {
+          const segY = podiumH + i * 4 + 2;
+          const f = Math.min(widths.length - 1, Math.floor((segY - podiumH) / FLOOR_H));
+          const fw = widths[f];
           this.farm.add(
             'box',
             this.mats.foliage(this.rng.pick([PALETTE.leafMid, PALETTE.moss, PALETTE.leafDeep])),
-            new Vector3(vx, podiumH + i * 4 + 2, cz + this.rng.range(-footprint / 3, footprint / 3)),
+            new Vector3(cx + (sx * fw) / 2, segY, cz + this.rng.range(-fw / 3, fw / 3)),
             new Vector3(0.8, this.rng.range(2.4, 3.8), 0.8),
           );
         }
@@ -491,25 +508,45 @@ export class BuildingBuilder {
 
     // Corona: paneles solares y turbina de eje vertical.
     this.roofSolar(cx, cz, w * 0.9, w * 0.9, y);
-    if (this.rng.chance(0.4)) this.verticalTurbine(cx, cz, y + 3.4, this.rng.range(5, 8));
+    if (this.rng.chance(0.4)) this.verticalTurbine(cx, cz, y + 3.4, this.rng.range(5, 8), y);
   }
 
   /** Turbina de eje vertical (Darrieus): silenciosa, apta para techos. */
-  verticalTurbine(x: number, z: number, y: number, height: number): void {
+  /**
+   * @param baseY  de dónde arranca el mástil. En las torres el rotor va por
+   *               encima de la pérgola solar, pero el mástil tiene que llegar
+   *               hasta la losa: antes arrancaba en el aire, sobre los paneles.
+   */
+  verticalTurbine(x: number, z: number, y: number, height: number, baseY = y): void {
     const mat = this.mats.metal(PALETTE.turbineBody, 0.35);
     // Mástil.
-    this.farm.add('cylinder', mat, new Vector3(x, y + height / 2, z), new Vector3(0.26, height, 0.26));
-    // Tres palas curvas, aproximadas con cajas inclinadas.
+    const top = y + height;
+    this.farm.add('cylinder', mat, new Vector3(x, (baseY + top) / 2, z), new Vector3(0.26, top - baseY, 0.26));
+    // Tres palas, aproximadas con cajas, unidas al mástil por dos brazos cada
+    // una. Sin los brazos las palas quedaban suspendidas alrededor del eje.
     const r = height * 0.28;
     for (let i = 0; i < 3; i++) {
       const a = (i / 3) * Math.PI * 2;
+      // Babylon: girar θ sobre Y lleva +X a (cos θ, −sin θ). La pala se
+      // ubica sobre esa dirección para que su cara quede tangente al giro.
+      const dx = Math.cos(a);
+      const dz = -Math.sin(a);
       this.farm.add(
         'box',
         mat,
-        new Vector3(x + Math.cos(a) * r, y + height / 2, z + Math.sin(a) * r),
+        new Vector3(x + dx * r, y + height / 2, z + dz * r),
         new Vector3(0.14, height * 0.82, 0.62),
         a,
       );
+      for (const k of [0.2, 0.8]) {
+        this.farm.add(
+          'box',
+          mat,
+          new Vector3(x + (dx * r) / 2, y + height * k, z + (dz * r) / 2),
+          new Vector3(r, 0.08, 0.08),
+          a,
+        );
+      }
     }
   }
 
@@ -591,8 +628,14 @@ export class BuildingBuilder {
       0,
     );
 
-    // Pórticos transversales, cada uno con dos columnas y un dintel curvo
-    // aproximado por tres cajas inclinadas (un arco rebajado).
+    // Pórticos transversales: dos columnas, dos cabios inclinados que forman
+    // una cubierta a dos aguas, y la cumbrera corrida. Antes el "arco" eran
+    // cajas horizontales a distintas alturas y las lamas del techo flotaban
+    // entre ellas sin tocar nada.
+    const rise = height * 0.22;
+    const halfSpan = d / 2;
+    const slope = Math.atan2(rise, halfSpan);
+    const rafter = Math.hypot(rise, halfSpan);
     const bays = Math.max(4, Math.round(w / 6));
     for (let i = 0; i < bays; i++) {
       const t = (i + 0.5) / bays - 0.5;
@@ -601,50 +644,43 @@ export class BuildingBuilder {
         this.farm.add(
           'cylinder',
           timber,
-          new Vector3(px, height / 2, cz + (sz * d) / 2),
+          new Vector3(px, height / 2, cz + sz * halfSpan),
           new Vector3(0.46, height, 0.46),
         );
-      }
-      // Arco: dos tramos inclinados + una clave horizontal.
-      const rise = height * 0.22;
-      const halfSpan = d / 2;
-      for (const sz of [-1, 1]) {
+        // Cabio: de la cabeza de la columna a la cumbrera. Girar +α sobre X
+        // baja el extremo +Z, así que el faldón +Z usa +α y el −Z, −α.
         this.farm.add(
           'box',
           timberLight,
-          new Vector3(px, height + rise * 0.45, cz + (sz * halfSpan) / 2),
-          new Vector3(0.34, 0.34, halfSpan * 1.08),
+          new Vector3(px, height + rise / 2, cz + (sz * halfSpan) / 2),
+          new Vector3(0.34, 0.34, rafter + 0.3),
           0,
-          0,
-          0,
-        );
-        // inclinación sobre el eje X para simular la curva
-        this.farm.add(
-          'box',
-          timberLight,
-          new Vector3(px, height + rise * 0.78, cz + (sz * halfSpan) / 4),
-          new Vector3(0.3, 0.3, halfSpan * 0.6),
+          sz * slope,
         );
       }
-      this.farm.add(
-        'box',
-        timberLight,
-        new Vector3(px, height + rise, cz),
-        new Vector3(0.3, 0.3, d * 0.3),
-      );
+    }
+    // Cumbrera y vigas de borde: atan los pórticos entre sí.
+    this.farm.add('box', timberLight, new Vector3(cx, height + rise, cz), new Vector3(w + 0.6, 0.34, 0.34));
+    for (const sz of [-1, 1]) {
+      this.farm.add('box', timber, new Vector3(cx, height - 0.1, cz + sz * halfSpan), new Vector3(w + 0.6, 0.3, 0.36));
     }
 
-    // Cubierta: lamas traslúcidas alternadas con paneles solares.
+    // Cubierta: lamas traslúcidas alternadas con paneles solares, apoyadas
+    // sobre los cabios y con la misma pendiente.
     const slats = Math.max(6, Math.round(d / 2.2));
     for (let i = 0; i < slats; i++) {
       const t = (i + 0.5) / slats - 0.5;
-      const pz = cz + t * d;
+      const off = t * d;
+      const pz = cz + off;
       const solar = i % 3 === 0;
+      const yTop = height + rise * (1 - Math.abs(off) / halfSpan) + 0.17 / Math.cos(slope) + 0.06;
       this.farm.add(
         'box',
         solar ? this.mats.solar() : this.mats.glass(PALETTE.glassGreen, 0.42),
-        new Vector3(cx, height + 0.6, pz),
-        new Vector3(w * 1.04, 0.12, (d / slats) * 0.8),
+        new Vector3(cx, yTop, pz),
+        new Vector3(w * 1.04, 0.12, (d / slats) * 0.96 / Math.cos(slope)),
+        0,
+        Math.sign(off) * slope,
       );
     }
 

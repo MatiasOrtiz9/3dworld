@@ -74,6 +74,7 @@ export default tseslint.config(
         requestAnimationFrame: 'readonly',
         setTimeout: 'readonly',
         navigator: 'readonly',
+        location: 'readonly',
         Event: 'readonly',
         caches: 'readonly',
       },

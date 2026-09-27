@@ -13,10 +13,10 @@ const hex = (h: string) => Color3.FromHexString(h);
 
 export const PALETTE = {
   // --- estructura ---
-  concreteWarm: hex('#efe7d8'), // hormigón blanco cálido, fachadas principales
-  concreteLight: hex('#f7f2e8'), // remates, parapetos
-  concreteShade: hex('#d9cfbd'), // caras en sombra, zócalos
-  plaster: hex('#e8dcc6'),
+  concreteWarm: hex('#e6dcc9'), // hormigón blanco cálido, fachadas principales
+  concreteLight: hex('#eee7d8'), // remates, parapetos
+  concreteShade: hex('#cfc4b0'), // caras en sombra, zócalos
+  plaster: hex('#e0d1b6'),
 
   // --- madera (CLT / madera laminada, protagonista del solarpunk) ---
   timberLight: hex('#d8a86a'),
@@ -52,10 +52,21 @@ export const PALETTE = {
   waterDeep: hex('#1d4f5c'),
 
   // --- suelo urbano ---
-  pavement: hex('#cfc6b4'),
+  pavement: hex('#c3b9a5'),
   pavementDark: hex('#8e8879'),  // calzada: bien mas oscura que la vereda
   tramLane: hex('#7d7768'),
   soil: hex('#5b4836'),
+  // Corteza: gris pardo. Los troncos usaban la madera laminada de los
+  // edificios y se leían como postes de obra color naranja.
+  bark: hex('#5c4d40'),
+  barkLight: hex('#7a6b5b'),
+
+  // --- identidad de la escuela CIMDIP & Miguel Cané ---
+  schoolGreen: hex('#1f5147'), // verde institucional (paneles, marcos, reja)
+  schoolGold: hex('#e0b049'), // dorado de las letras y el logo
+  schoolCream: hex('#f3e9d4'), // muro claro de las aulas
+  brick: hex('#a9573c'), // zócalo de ladrillo
+  court: hex('#3d7f8f'), // solado deportivo
 
   // --- acentos ---
   sun: hex('#f2c14e'),

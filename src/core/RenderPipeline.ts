@@ -68,21 +68,14 @@ export class RenderPipeline {
     pipe.sharpen.edgeAmount = 0.22;
     pipe.sharpen.colorAmount = 1;
 
-    // Viñeta y aberración: muy sutiles. Son "lenguaje de cámara": el ojo los
-    // asocia a una foto, no a un render. Pasados de rosca quedan de videojuego
-    // barato, así que van al mínimo perceptible.
+    // Una viñeta apenas perceptible concentra la mirada sin convertir el
+    // recorrido en una cámara de acción. La aberración cromática y el grano se
+    // quitaron: en fachadas claras generaban bordes de color y ruido que hacían
+    // que el mundo se viera menos nítido, no más cinematográfico.
     pipe.imageProcessing.vignetteEnabled = true;
-    pipe.imageProcessing.vignetteWeight = 1.6;
+    pipe.imageProcessing.vignetteWeight = 0.75;
     pipe.imageProcessing.vignetteStretch = 0.4;
     pipe.imageProcessingEnabled = true;
-
-    if (high) {
-      pipe.chromaticAberrationEnabled = true;
-      pipe.chromaticAberration.aberrationAmount = 4;
-      pipe.grainEnabled = true;
-      pipe.grain.intensity = 4;
-      pipe.grain.animated = true;
-    }
 
     this.pipeline = pipe;
     if (lite) return;

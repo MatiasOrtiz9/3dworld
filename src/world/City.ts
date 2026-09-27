@@ -9,6 +9,10 @@ import { InfraBuilder } from './builders/InfraBuilder';
 import { StreetLevel } from './builders/StreetLevel';
 import { CityIndex } from './CityIndex';
 import { PALETTE } from './Palette';
+import { SchoolIdentity } from './SchoolIdentity';
+import { SchoolBuilder } from './builders/SchoolBuilder';
+import type { Block } from './CityLayout';
+import type { SchoolFrame } from './SchoolLayout';
 
 /**
  * Clave del material de ventana encendida.
@@ -49,14 +53,22 @@ export class City {
   readonly plan: CityPlan;
   readonly stats: CityStats;
   readonly index: CityIndex;
+  readonly school: Block;
+  /** Marco local del campus: orientación y coordenadas de la escuela. */
+  readonly schoolFrame: SchoolFrame;
   private readonly farm: InstanceFarm;
   private readonly mats: Materials;
+  private readonly schoolIdentity: SchoolIdentity;
 
   constructor(scene: Scene, seed: number, options: CityOptions = {}) {
     const t0 = performance.now();
 
     this.plan = generateCityPlan(seed, options);
     this.index = new CityIndex(this.plan);
+    const school = this.plan.blocks.find((block) => block.landmark === 'school');
+    if (!school || !this.index.school) throw new Error('El plano no contiene una escuela');
+    this.school = school;
+    this.schoolFrame = this.index.school;
     this.farm = new InstanceFarm(scene);
     this.mats = new Materials(scene);
 
@@ -74,6 +86,7 @@ export class City {
       options.highDetailStreet ?? true,
     );
     const buildings = new BuildingBuilder(this.farm, this.mats, rng, nature, street);
+    const schoolBuilder = new SchoolBuilder(this.farm, this.mats, rng, nature, street);
     const infra = new InfraBuilder(
       this.farm,
       this.mats,
@@ -102,7 +115,8 @@ export class City {
           // El canal se dibuja una vez, entero, no manzana por manzana.
           break;
         default:
-          buildings.build(block);
+          if (block.landmark === 'school') schoolBuilder.build(this.schoolFrame);
+          else buildings.build(block);
           break;
       }
       infra.streetscape(block, this.plan);
@@ -112,6 +126,7 @@ export class City {
     infra.canal(this.plan);
 
     this.farm.commit();
+    this.schoolIdentity = new SchoolIdentity(scene, this.schoolFrame);
 
     this.stats = {
       seed,
@@ -202,11 +217,12 @@ export class City {
 
   /** Mallas fuente, para registrarlas como proyectoras de sombra. */
   get shadowCasters() {
-    return this.farm.sourceMeshes;
+    return [...this.farm.sourceMeshes, ...this.schoolIdentity.shadowCasters];
   }
 
   dispose(): void {
     this.farm.dispose();
     this.mats.dispose();
+    this.schoolIdentity.dispose();
   }
 }

@@ -147,14 +147,19 @@ export class Materials {
     if (hit) return hit as StandardMaterial;
 
     const mat = new StandardMaterial(key, this.scene);
-    mat.diffuseColor = color;
-    mat.specularColor = new Color3(0.04, 0.05, 0.04);
-    // 0,26 es el punto medio que encontramos: con 0,3 los árboles brillaban por
-    // su cuenta y parecían plástico luminoso; con 0,18 quedaban NEGROS a
-    // contraluz, como agujeros en la imagen. Una hoja real es fina y translúcida:
+    // Compensación de intensidad: el sol está calibrado para PBR (≈2,4) y un
+    // StandardMaterial lo multiplica tal cual. Con el color pleno, la cara
+    // iluminada de cada copa saturaba por encima de 1, se recortaba canal por
+    // canal y el verde se volvía menta blanquecino: el "plástico pálido" de
+    // las fotos. Escalado, la cara al sol da el verde real y la sombreada
+    // conserva modelado.
+    mat.diffuseColor = color.scale(STANDARD_SUN_COMP);
+    mat.specularColor = new Color3(0.03, 0.035, 0.03);
+    // Con 0,3 sin compensar los árboles brillaban por su cuenta; con 0,18
+    // quedaban NEGROS a contraluz. Una hoja real es fina y translúcida:
     // iluminada por detrás transmite luz. Este emisivo es un sustituto barato de
     // ese efecto, que de otro modo exigiría dispersión subsuperficial.
-    mat.emissiveColor = color.scale(0.26);
+    mat.emissiveColor = color.scale(0.3);
     // El viento sólo se instala en follaje: mover un edificio con el viento
     // sería, además de raro, un coste por vértice que no aporta nada.
     this.winds.push(new WindPlugin(mat));
@@ -169,9 +174,9 @@ export class Materials {
     if (hit) return hit as StandardMaterial;
 
     const mat = new StandardMaterial(key, this.scene);
-    mat.diffuseColor = color;
+    mat.diffuseColor = color.scale(STANDARD_SUN_COMP * 1.05);
     mat.specularColor = Color3.Black();
-    mat.emissiveColor = color.scale(0.16);
+    mat.emissiveColor = color.scale(0.22);
     mat.diffuseTexture = this.textures.get('grass');
     this.cache.set(key, mat);
     return mat;
@@ -184,10 +189,13 @@ export class Materials {
     if (hit) return hit as PBRMetallicRoughnessMaterial;
 
     const mat = new PBRMetallicRoughnessMaterial(key, this.scene);
-    mat.baseColor = PALETTE.water;
-    mat.roughness = 0.04;
-    mat.metallic = 0.18;
-    mat.alpha = 0.86;
+    // Más profunda y más especular: con el celeste claro y casi sin reflejo el
+    // agua se leía como una losa pintada. Oscura, refleja el cielo del IBL y
+    // recién ahí parece agua.
+    mat.baseColor = PALETTE.waterDeep.scale(1.15);
+    mat.roughness = 0.07;
+    mat.metallic = 0.45;
+    mat.alpha = 0.92;
     this.cache.set(key, mat);
     return mat;
   }
@@ -241,6 +249,15 @@ export class Materials {
     this.textures.dispose();
   }
 }
+
+/**
+ * Factor con el que los StandardMaterial reciben el sol.
+ *
+ * El sol vale ~2,4 porque la ciudad es PBR con mapeo tonal. Los materiales
+ * baratos (follaje, césped, gente) no pasan por ese modelo y saturaban.
+ * 0,45 × 2,4 ≈ 1: al sol pleno dan exactamente su color.
+ */
+export const STANDARD_SUN_COMP = 0.45;
 
 /** Cuántas variantes de tinte se generan por tono base. */
 const VARIANTS = 4;

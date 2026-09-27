@@ -95,6 +95,61 @@
         line-height: 1.5; pointer-events: none; white-space: nowrap;
       }
 
+      /* ---------- misión ---------- */
+      #mission {
+        position: fixed; z-index: 22; left: 50%; top: calc(1rem + env(safe-area-inset-top, 0px));
+        transform: translateX(-50%); width: min(430px, calc(100vw - 2rem));
+        padding: 0.7rem 0.85rem 0.65rem; border: 1px solid var(--line);
+        background: rgba(13, 27, 24, 0.76); backdrop-filter: blur(12px);
+        border-radius: 8px; text-align: left;
+      }
+      #mission .eyebrow { display: block; color: var(--sun); font-size: 0.65rem; font-weight: 700; }
+      #mission-title { margin: 0.25rem 0 0.55rem; font-size: 0.78rem; line-height: 1.35; }
+      #mission-progress {
+        position: relative; height: 14px; overflow: hidden; border-radius: 3px;
+        background: rgba(255,255,255,0.12); color: #eef6f2; font-size: 0.66rem;
+        text-align: right; line-height: 14px; padding-right: 0.35rem;
+      }
+      #mission-progress::before {
+        content: ''; position: absolute; inset: 0 auto 0 0; width: var(--progress, 0%);
+        background: var(--leaf); transition: width 0.35s ease;
+      }
+      #mission-progress { text-shadow: 0 1px 2px #0d1b18; }
+      #mission-progress::before { z-index: -1; }
+      #mission-progress { isolation: isolate; }
+      /* Sin esta regla los tres paneles quedaban SIEMPRE visibles: el diálogo
+         vacío tapaba el centro de la pantalla y el aviso de estación aparecía
+         aunque no hubiera ninguna cerca. */
+      #mission.hidden, #station-prompt.hidden, #challenge.hidden { display: none; }
+      #station-prompt {
+        position: fixed; z-index: 22; left: 50%; bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+        transform: translateX(-50%); padding: 0.5rem 0.75rem; border-radius: 6px;
+        background: rgba(13, 27, 24, 0.82); border: 1px solid rgba(79,170,122,0.55);
+        font-size: 0.78rem; white-space: nowrap;
+      }
+      #station-prompt kbd { margin-left: 0.4rem; }
+
+      /* ---------- desafíos ---------- */
+      #challenge {
+        position: fixed; z-index: 40; left: 50%; top: 50%; transform: translate(-50%, -50%);
+        width: min(440px, calc(100vw - 2rem)); padding: 1.2rem; border-radius: 8px;
+        background: rgba(13, 27, 24, 0.95); border: 1px solid rgba(242,193,78,0.58);
+        box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+      }
+      #challenge-title { margin: 0; color: var(--sun); font-size: 1rem; }
+      .challenge-step { margin: 0.6rem 0 0.35rem; color: var(--leaf); font-size: 0.68rem; font-weight: 700; }
+      .challenge-question { margin: 0; font-size: 0.87rem; line-height: 1.45; }
+      .challenge-options { display: grid; gap: 0.45rem; margin: 1rem 0 0.55rem; }
+      .challenge-choice, .challenge-close {
+        width: 100%; border: 1px solid var(--line); border-radius: 5px; padding: 0.6rem 0.7rem;
+        background: rgba(255,255,255,0.05); color: #eef6f2; font: inherit; font-size: 0.78rem;
+        text-align: left; cursor: pointer;
+      }
+      .challenge-choice:hover, .challenge-close:hover { border-color: var(--leaf); background: rgba(79,170,122,0.18); }
+      .challenge-close { width: auto; margin-top: 0.55rem; }
+      .challenge-feedback { min-height: 1.2rem; margin: 0.4rem 0 0; color: var(--sun); font-size: 0.74rem; opacity: 0; }
+      .challenge-feedback.show { opacity: 1; }
+
       /* ---------- ayuda de controles ---------- */
       #help {
         position: fixed; z-index: 20; left: 1rem;
@@ -194,6 +249,7 @@
 
       @media (max-width: 560px) {
         #help { display: none; }
+        #mission { top: 0.6rem; }
         /* deslizador de hora */
       label.pill.time {
         display: flex; align-items: center; gap: 0.6rem;
@@ -224,6 +280,17 @@
   <body>
     <div id="app"><canvas id="render"></canvas></div>
     <div id="crosshair"></div>
+
+    <div id="mission" class="hidden" aria-live="polite">
+      <span class="eyebrow">DESAFÍO CIMDIP</span>
+      <p id="mission-title"></p>
+      <div id="mission-progress"></div>
+    </div>
+    <div id="station-prompt" class="hidden"><span id="station-name"></span><kbd>E</kbd></div>
+    <div id="challenge" class="hidden" role="dialog" aria-modal="true" aria-hidden="true">
+      <h2 id="challenge-title"></h2>
+      <div id="challenge-body"></div>
+    </div>
 
     <div id="boot">
       <h1>Ciudad <b>2050</b></h1>

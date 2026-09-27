@@ -64,10 +64,12 @@ export class NatureBuilder {
     const trunkH = height * trunkRatio;
     const trunkR = height * this.rng.range(0.022, 0.032);
     const trunkMat = this.mats.surface(
-      this.rng.chance(0.5) ? PALETTE.timberDark : PALETTE.timberMid,
-      0.9,
+      this.rng.chance(0.5) ? PALETTE.bark : PALETTE.barkLight,
+      0.95,
       0,
-      'timber',
+      // Grano irregular, no la veta con nudos de la madera laminada: con esa
+      // textura los troncos parecían postes de obra.
+      'concrete',
     );
 
     // Tronco, con una leve inclinación: ningún árbol real es una plomada.
@@ -83,6 +85,35 @@ export class NatureBuilder {
     );
 
     const crownR = height * crownRatio;
+
+    // Ramas principales: el tronco se abre en dos o tres brazos que se meten
+    // en la copa. Sin ellas la copa "flota" sobre un palo, que es lo que hace
+    // que un árbol low-poly parezca un chupetín. Fuera de VR solamente: son
+    // dos cilindros más por árbol.
+    if (this.highDetail) {
+      const limbs = height > 9.5 ? 3 : 2;
+      const yaw0 = this.rng.range(0, Math.PI * 2);
+      for (let i = 0; i < limbs; i++) {
+        const yaw = yaw0 + (i / limbs) * Math.PI * 2 + this.rng.range(-0.4, 0.4);
+        const tilt = this.rng.range(0.45, 0.75);
+        const len = crownR * this.rng.range(0.75, 1.05);
+        const baseY = groundY + trunkH * this.rng.range(0.78, 0.95);
+        // Rotar Z por −tilt y luego Y por yaw lleva el eje del cilindro a
+        // (sin t·cos y, cos t, −sin t·sin y).
+        const dx = Math.sin(tilt) * Math.cos(yaw);
+        const dy = Math.cos(tilt);
+        const dz = -Math.sin(tilt) * Math.sin(yaw);
+        this.farm.add(
+          'cylinder',
+          trunkMat,
+          new Vector3(x + (dx * len) / 2, baseY + (dy * len) / 2, z + (dz * len) / 2),
+          new Vector3(trunkR * 1.15, len, trunkR * 1.15),
+          yaw,
+          0,
+          -tilt,
+        );
+      }
+    }
     // Copa hecha de VARIAS masas chicas en vez de una o dos grandes.
     //
     // Antes eran 1-2 esferas grandes y el resultado se leía como un caramelo
@@ -133,17 +164,29 @@ export class NatureBuilder {
     const trunkH = height * 0.2;
     this.farm.add(
       'cylinder',
-      this.mats.surface(PALETTE.timberDark, 0.9, 0, 'timber'),
+      this.mats.surface(PALETTE.bark, 0.95, 0, 'concrete'),
       new Vector3(x, groundY + trunkH / 2, z),
       new Vector3(height * 0.05, trunkH, height * 0.05),
     );
     const coneH = height - trunkH;
     const r = height * this.rng.range(0.15, 0.2);
+    const leaf = this.mats.foliage(this.rng.pick([PALETTE.leafDeep, PALETTE.moss, PALETTE.leafMid]));
+    // Dos pisos de copa encastrados: un cono único se lee como un cucurucho;
+    // escalonado, como una conífera.
+    const lowH = coneH * 0.62;
     this.farm.add(
       'cone',
-      this.mats.foliage(this.rng.pick([PALETTE.leafDeep, PALETTE.moss, PALETTE.leafMid])),
-      new Vector3(x, groundY + trunkH + coneH / 2, z),
-      new Vector3(r * 2, coneH, r * 2),
+      leaf,
+      new Vector3(x, groundY + trunkH + lowH / 2, z),
+      new Vector3(r * 2, lowH, r * 2),
+      this.rng.range(0, Math.PI),
+    );
+    const topH = coneH * 0.66;
+    this.farm.add(
+      'cone',
+      leaf,
+      new Vector3(x, groundY + height - topH / 2, z),
+      new Vector3(r * 1.45, topH, r * 1.45),
       this.rng.range(0, Math.PI),
     );
   }

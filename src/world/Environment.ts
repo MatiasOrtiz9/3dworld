@@ -14,6 +14,7 @@ import '@babylonjs/core/Rendering/depthRendererSceneComponent';
 import { ReflectionProbe } from '@babylonjs/core/Probes/reflectionProbe';
 import { Texture } from '@babylonjs/core/Materials/Textures/texture';
 import { ImageProcessingConfiguration } from '@babylonjs/core/Materials/imageProcessingConfiguration';
+import { ColorCurves } from '@babylonjs/core/Materials/colorCurves';
 
 export type TimeOfDay = 'morning' | 'noon' | 'goldenHour' | 'dusk';
 
@@ -54,7 +55,13 @@ export function formatHour(hour: number): string {
 interface TimePreset {
   /** Inclinación solar: 0 = horizonte, 1 = cenit. */
   elevation: number;
-  /** Azimut en radianes. */
+  /**
+   * Azimut en radianes. El norte está en −Z (hacia ahí miran todos los paneles
+   * solares, como corresponde al hemisferio sur) y el este en −X. El sol sale
+   * por el este, culmina al norte y se pone por el oeste. Antes culminaba en
+   * +Z: los paneles le daban la espalda y la fachada de la escuela, que mira a
+   * la plaza, quedaba en sombra todo el día.
+   */
   azimuth: number;
   sunColor: Color3;
   sunIntensity: number;
@@ -71,7 +78,7 @@ interface TimePreset {
 const PRESETS: Record<TimeOfDay, TimePreset> = {
   morning: {
     elevation: 0.32,
-    azimuth: 2.5,
+    azimuth: 3.5,
     sunColor: new Color3(1, 0.9, 0.74),
     sunIntensity: 2.1,
     skyColor: new Color3(0.44, 0.58, 0.72),
@@ -83,8 +90,8 @@ const PRESETS: Record<TimeOfDay, TimePreset> = {
     fogColor: new Color3(0.72, 0.82, 0.88),
   },
   noon: {
-    elevation: 0.78,
-    azimuth: 1.4,
+    elevation: 0.74,
+    azimuth: 4.45,
     sunColor: new Color3(1, 0.97, 0.9),
     sunIntensity: 2.4,
     skyColor: new Color3(0.42, 0.56, 0.74),
@@ -97,7 +104,7 @@ const PRESETS: Record<TimeOfDay, TimePreset> = {
   },
   goldenHour: {
     elevation: 0.14,
-    azimuth: 5.4,
+    azimuth: 5.85,
     sunColor: new Color3(1, 0.72, 0.42),
     sunIntensity: 2.3,
     skyColor: new Color3(0.5, 0.45, 0.44),
@@ -110,7 +117,7 @@ const PRESETS: Record<TimeOfDay, TimePreset> = {
   },
   dusk: {
     elevation: 0.035,
-    azimuth: 5.9,
+    azimuth: 6.15,
     sunColor: new Color3(1, 0.52, 0.34),
     sunIntensity: 1.4,
     skyColor: new Color3(0.26, 0.3, 0.46),
@@ -195,8 +202,19 @@ export class Environment {
     const ip = scene.imageProcessingConfiguration;
     ip.toneMappingEnabled = true;
     ip.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
-    ip.exposure = 1.18;
-    ip.contrast = 1.35;
+    ip.exposure = 1.12;
+    // Contraste moderado: con 1,35 sobre ACES las sombras se empastaban en un
+    // gris azulado sin detalle y todo lo iluminado se iba a blanco.
+    ip.contrast = 1.2;
+    // Un poco más de saturación: el ACES desatura los medios tonos y la paleta
+    // solarpunk (maderas, verdes, terracotas) se apagaba hacia el gris.
+    const curves = new ColorCurves();
+    curves.globalSaturation = 14;
+    curves.highlightsHue = 40;
+    curves.highlightsDensity = 8;
+    curves.highlightsSaturation = 10;
+    ip.colorCurves = curves;
+    ip.colorCurvesEnabled = true;
 
     this.apply('noon');
   }

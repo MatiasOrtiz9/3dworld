@@ -19,6 +19,8 @@ import { Inspector } from './ui/Inspector';
 import { Soundscape } from './audio/Soundscape';
 import { isVrSupported } from './vr/isVrSupported';
 import { seedFromString } from './utils/rng';
+import { ChallengeSystem } from './game/ChallengeSystem';
+import { toWorld } from './world/SchoolLayout';
 
 // ---------------------------------------------------------------- referencias
 
@@ -55,6 +57,7 @@ let life: Life | null = null;
 let crowd: Crowd | null = null;
 let player: PlayerController | null = null;
 let inspector: Inspector | null = null;
+let challenge: ChallengeSystem | null = null;
 let hour = 13;
 // La semilla se puede fijar por URL (?seed=1234 o ?seed=cualquier-texto).
 // Sirve para volver a una ciudad concreta: comparar cambios, sacar capturas
@@ -132,10 +135,12 @@ async function buildCity(newSeed: number): Promise<void> {
   crowd?.dispose();
   player?.dispose();
   inspector?.dispose();
+  challenge?.dispose();
   life = null;
   crowd = null;
   player = null;
   inspector = null;
+  challenge = null;
   city?.dispose();
   environment?.dispose();
   city = null;
@@ -199,16 +204,19 @@ async function buildCity(newSeed: number): Promise<void> {
 
   // Clic para inspeccionar manzanas.
   inspector = new Inspector(scene, camera, city.index, canvas);
+  challenge = new ChallengeSystem(scene, camera, city.schoolFrame);
 
   updateEnergyPanel();
   quality.applyRuntime();
 
-  // Reubica la cámara mirando al Árbol Solar de la plaza.
-  // Aparicion DENTRO de la plaza, en el hueco sin arboles del sector sur, con
-  // el Arbol Solar de frente. Antes se aparecia en z=-46, o sea en plena calle
-  // y entre troncos: lo primero que se veia era corteza.
-  camera.position = new Vector3(0, 1.7, -20);
-  camera.setTarget(new Vector3(0, 5.5, 0));
+  // La primera mirada debe explicar el lugar: entrada y señalética de la
+  // escuela, no una copa o una torre aleatoria de la ciudad circundante.
+  // Del otro lado de la calle, sobre la vereda de la plaza: desde ahí entran
+  // en cuadro la reja, el portón, el cartel y las letras de la azotea.
+  const eye = toWorld(city.schoolFrame, 0, -33);
+  const look = toWorld(city.schoolFrame, 0, -14);
+  camera.position = new Vector3(eye.x, 1.7, eye.z);
+  camera.setTarget(new Vector3(look.x, 6.2, look.z));
   player.setMode('walk');
 
   await progress(100, 'Lista');
@@ -369,14 +377,22 @@ async function start(): Promise<void> {
       btnVr.disabled = false;
       btnVr.textContent = 'Entrar en VR';
       btnVr.addEventListener('click', async () => {
-        // Al entrar en VR forzamos el perfil conservador: 72 fps manda.
-        if (quality.current !== 'vr') {
-          quality.set('vr');
-          btnQuality.textContent = `Calidad: ${quality.profile.label}`;
-          environment?.disableShadows();
-          renderPipeline.apply(quality.profile.post);
+        btnVr.disabled = true;
+        boot.classList.remove('hidden');
+        try {
+          // El perfil VR cambia tamaño de grilla, follaje y multitud. Aplicar
+          // sólo los ajustes de runtime conservaba por error la ciudad "Alta"
+          // dentro del visor, justo donde el presupuesto de cuadro es menor.
+          if (quality.current !== 'vr') {
+            quality.set('vr');
+            btnQuality.textContent = `Calidad: ${quality.profile.label}`;
+            await rebuildFor('vr');
+          }
+          await experience.baseExperience.enterXRAsync('immersive-vr', 'local-floor');
+        } finally {
+          boot.classList.add('hidden');
+          btnVr.disabled = false;
         }
-        await experience.baseExperience.enterXRAsync('immersive-vr', 'local-floor');
       });
     } catch (err) {
       console.warn('[ciudad-2050] No se pudo inicializar WebXR:', err);

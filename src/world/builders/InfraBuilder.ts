@@ -18,6 +18,9 @@ import { PALETTE } from '../Palette';
  * sienta habitable cuando uno la recorre en VR.
  */
 export class InfraBuilder {
+  /** Paradas de tranvía ya ubicadas: el arbolado de vereda las esquiva. */
+  private readonly stops: Array<{ x: number; z: number }> = [];
+
   constructor(
     private readonly farm: InstanceFarm,
     private readonly mats: Materials,
@@ -81,13 +84,16 @@ export class InfraBuilder {
         const pitch = (plan.blockSize + plan.streetWidth) * 3;
         const stops = Math.floor(plan.extent / pitch) * 2;
         for (let k = -stops / 2; k <= stops / 2; k++) {
-          const along = k * pitch;
+          // La parada central se corre del eje: en el cruce con el eje de la
+          // plaza caía justo delante del portón de la escuela y lo tapaba.
+          const along = k * pitch + (k === 0 ? 19 : 0);
           if (Math.abs(along) > plan.extent - 20) continue;
           const side = k % 2 === 0 ? 1 : -1;
           const offset = lane / 2 + 2.6;
           const sx = isX ? along : street.at + side * offset;
           const sz = isX ? street.at + side * offset : along;
           this.street.tramStop(sx, sz, isX ? 0 : Math.PI / 2);
+          this.stops.push({ x: sx, z: sz });
         }
       }
     }
@@ -105,38 +111,62 @@ export class InfraBuilder {
   streetscape(block: Block, plan: CityPlan): void {
     if (block.kind === 'water') return;
     const half = plan.blockSize / 2;
-    const offset = half + plan.streetWidth * 0.3;
+    // Línea de arbolado sobre la vereda, justo detrás del cordón.
+    //
+    // Antes estaba a 0,3 del ancho de calle desde el borde de la manzana, o sea
+    // 15 cm DENTRO de la calzada: los alcorques pisaban el cordón y los troncos
+    // salían del asfalto. Ahora el alcorque entero queda en la vereda.
+    const lane = plan.streetWidth * 0.21;
+    const treeLine = plan.streetWidth / 2 - (lane + 0.32 + 1.0);
+    const offset = half + treeLine;
     const spacing = 12;
     const count = Math.max(2, Math.floor((plan.blockSize / spacing) * this.greenDensity));
 
     for (let i = 0; i < count; i++) {
       const t = (i + 0.5) / count - 0.5;
       const along = t * plan.blockSize + this.rng.range(-1.5, 1.5);
+      // Frente de la escuela: el acceso necesita respirar y verse desde la
+      // plaza, así que el tramo central queda libre de árboles y mobiliario.
+      if (block.landmark === 'school' && Math.abs(along) < 12) continue;
 
       // Solo dos lados por manzana: asi ninguna calle se planta dos veces.
-      const spots: Array<[number, number]> = [
-        [block.cx + along, block.cz - offset],
-        [block.cx - offset, block.cz + along],
+      // `ax`/`az` es la dirección de la calle (a lo largo de la vereda).
+      const spots: Array<{ x: number; z: number; ax: number; az: number }> = [
+        { x: block.cx + along, z: block.cz - offset, ax: 1, az: 0 },
+        { x: block.cx - offset, z: block.cz + along, ax: 0, az: 1 },
       ];
-      for (const [x, z] of spots) {
-        if (this.rng.chance(0.82)) {
+      for (const spot of spots) {
+        const { x, z, ax, az } = spot;
+        // Una parada de tranvía ocupa ~5 m de vereda: nada de árboles, bancos
+        // ni farolas encima (antes un tronco salía por el medio del banco).
+        if (this.stops.some((p) => Math.abs(p.x - x) < 5 && Math.abs(p.z - z) < 5)) continue;
+        const streetRot = ax === 1 ? 0 : Math.PI / 2;
+        const hasTree = this.rng.chance(0.72);
+        if (hasTree) {
           // Rango de escala amplio: arboles nuevos y ejemplares grandes en la
-          // misma cuadra. La variacion es lo que evita el efecto "chupetin".
-          const scale = this.rng.range(0.65, 1.6);
+          // misma cuadra, sin tapar fachadas ni cruzarse con el mobiliario.
+          const scale = this.rng.range(0.62, 1.12);
           // Alcorque: el árbol de vereda sale de un cuadro de tierra, no del
           // solado. Sin esto los troncos parecen clavados en el hormigón.
           this.street.treePit(x, z);
-          if (this.rng.chance(0.82)) this.nature.broadleaf(x, z, scale);
-          else this.nature.conifer(x, z, scale * 0.9);
+          if (this.rng.chance(0.82)) this.nature.broadleaf(x, z, scale, 0.1);
+          else this.nature.conifer(x, z, scale * 0.9, 0.1);
         } else if (this.street.fullDetail && this.rng.chance(0.3)) {
           // Donde no hay árbol, mobiliario: la vereda vacía se ve muerta.
           const pick = this.rng.next();
-          if (pick < 0.4) this.street.bikeRack(x, z, this.rng.range(0, Math.PI));
+          if (pick < 0.4) this.street.bikeRack(x, z, streetRot);
           else if (pick < 0.7) this.street.bin(x, z);
           else this.street.bollard(x, z);
         }
-        if (this.rng.chance(0.2)) this.solarLamp(x, z);
-        if (this.rng.chance(0.14)) this.bench(x, z, this.rng.range(0, Math.PI));
+        // Farolas y bancos van sobre la MISMA línea que los árboles, entre
+        // alcorques. Antes se corrían hacia la manzana y los bancos terminaban
+        // metidos dentro de las fachadas.
+        if (this.rng.chance(0.2)) {
+          this.solarLamp(x - ax * 3.6, z - az * 3.6);
+        }
+        if (this.rng.chance(0.14)) {
+          this.bench(x + ax * 3.4, z + az * 3.4, streetRot);
+        }
       }
     }
   }
@@ -169,10 +199,13 @@ export class InfraBuilder {
     const mat = this.mats.surface(PALETTE.timberLight, 0.85, 0, 'timber');
     this.farm.add('box', mat, new Vector3(x, 0.45, z), new Vector3(1.9, 0.12, 0.52), rotY);
     for (const s of [-1, 1]) {
+      // El eje X local de una caja girada `rotY` apunta a (cos, −sin). Con +sin
+      // las patas quedaban espejadas respecto del asiento en cualquier banco
+      // que no estuviera alineado con los ejes (los de la plaza, por ejemplo).
       this.farm.add(
         'box',
         mat,
-        new Vector3(x + Math.cos(rotY) * s * 0.75, 0.22, z + Math.sin(rotY) * s * 0.75),
+        new Vector3(x + Math.cos(rotY) * s * 0.75, 0.22, z - Math.sin(rotY) * s * 0.75),
         new Vector3(0.14, 0.44, 0.46),
         rotY,
       );
@@ -194,11 +227,14 @@ export class InfraBuilder {
     const midX = 0;
     const midZ = canal.offset;
 
-    // Lámina de agua, hundida.
+    // Lámina de agua. Su cara superior quedaba EXACTAMENTE en y = 0, igual que
+    // el suelo base de toda la ciudad: las dos superficies peleaban por el
+    // mismo píxel (z-fighting) y el canal se veía como manchas dentadas. Se la
+    // sube 3 cm: sigue por debajo de calzadas y cordones, que cruzan encima.
     this.farm.add(
       'box',
       this.mats.water(),
-      new Vector3(midX, -0.55, midZ),
+      new Vector3(midX, -0.52, midZ),
       new Vector3(length, 1.1, canal.halfWidth * 2),
       angle,
     );
@@ -212,8 +248,11 @@ export class InfraBuilder {
     );
 
     // Muros de borde + franja verde a cada lado.
+    // La dirección de la caja girada es (cos(angle), -sin(angle)); su normal
+    // correcta es (sin(angle), cos(angle)). Usar -sin desplazaba los bordes
+    // hacia una diagonal distinta de la lámina de agua.
     for (const s of [-1, 1]) {
-      const nx = -Math.sin(angle) * s * (canal.halfWidth + 0.6);
+      const nx = Math.sin(angle) * s * (canal.halfWidth + 0.6);
       const nz = Math.cos(angle) * s * (canal.halfWidth + 0.6);
       this.farm.add(
         'box',
@@ -222,7 +261,7 @@ export class InfraBuilder {
         new Vector3(length, 0.9, 1.4),
         angle,
       );
-      const gx = -Math.sin(angle) * s * (canal.halfWidth + 3.4);
+      const gx = Math.sin(angle) * s * (canal.halfWidth + 3.4);
       const gz = Math.cos(angle) * s * (canal.halfWidth + 3.4);
       this.farm.add(
         'box',
@@ -237,16 +276,21 @@ export class InfraBuilder {
     const steps = 46;
     for (let i = 0; i < steps; i++) {
       const t = (i + 0.5) / steps - 0.5;
+      // A lo largo de la dirección REAL de la lámina, (cos, −sin) del ángulo.
+      // Con (cos, +sin) la ribera se plantaba sobre la diagonal espejada: los
+      // árboles caían en medio de las calles y dentro de otras manzanas.
       const bx = midX + Math.cos(angle) * t * length;
-      const bz = midZ + Math.sin(angle) * t * length;
+      const bz = midZ - Math.sin(angle) * t * length;
       if (Math.abs(bx) > plan.extent || Math.abs(bz) > plan.extent) continue;
       for (const s of [-1, 1]) {
-        const ox = -Math.sin(angle) * s * (canal.halfWidth + this.rng.range(2.5, 5));
-        const oz = Math.cos(angle) * s * (canal.halfWidth + this.rng.range(2.5, 5));
-        if (this.rng.chance(0.55)) {
-          this.nature.broadleaf(bx + ox, bz + oz, this.rng.range(0.9, 1.35));
-        }
-        if (this.rng.chance(0.7)) this.nature.shrub(bx + ox, bz + oz, this.rng.range(0.8, 1.6));
+        const d = canal.halfWidth + this.rng.range(2.5, 5);
+        const px = bx + Math.sin(angle) * s * d;
+        const pz = bz + Math.cos(angle) * s * d;
+        const plantTree = this.rng.chance(0.55);
+        const plantShrub = this.rng.chance(0.7);
+        if (!this.isBankFree(plan, px, pz)) continue;
+        if (plantTree) this.nature.broadleaf(px, pz, this.rng.range(0.9, 1.35), 0.18);
+        if (plantShrub) this.nature.shrub(px, pz, this.rng.range(0.8, 1.6), 0.18);
       }
     }
 
@@ -264,11 +308,33 @@ export class InfraBuilder {
         pz = canal.slope * px + canal.offset;
       }
       if (Math.abs(px) > plan.extent || Math.abs(pz) > plan.extent) continue;
-      this.bridge(px, pz, street.axis, canal.halfWidth * 2 + 10);
+      const crossLength =
+        street.axis === 'x'
+          ? (canal.halfWidth * 2 * Math.hypot(1, canal.slope)) / Math.abs(canal.slope)
+          : canal.halfWidth * 2 * Math.hypot(1, canal.slope);
+      this.bridge(px, pz, street.axis, crossLength + 10);
     }
   }
 
   /** Puente peatonal/tranvía de madera y acero. */
+  /**
+   * ¿Se puede plantar en la ribera acá? No en la calzada (la ribera cruza la
+   * trama en diagonal) ni dentro de una manzana edificada vecina al canal.
+   */
+  private isBankFree(plan: CityPlan, x: number, z: number): boolean {
+    const pitch = plan.blockSize + plan.streetWidth;
+    const lane = plan.streetWidth * 0.21 + 1.2;
+    const street = (v: number) => (Math.round(v / pitch - 0.5) + 0.5) * pitch;
+    if (Math.abs(x - street(x)) < lane || Math.abs(z - street(z)) < lane) return false;
+    const n = Math.round(Math.sqrt(plan.blocks.length));
+    const half = (n - 1) / 2;
+    const gx = Math.round(x / pitch + half);
+    const gz = Math.round(z / pitch + half);
+    const b = plan.blocks.find((k) => k.gx === gx && k.gz === gz);
+    if (!b || Math.abs(x - b.cx) > b.width / 2 || Math.abs(z - b.cz) > b.depth / 2) return true;
+    return b.kind === 'water' || b.kind === 'park' || b.kind === 'plaza' || b.kind === 'energy';
+  }
+
   private bridge(x: number, z: number, axis: 'x' | 'z', span: number): void {
     const deckMat = this.mats.surface(PALETTE.timberMid, 0.82, 0, 'timber');
     const railMat = this.mats.metal(PALETTE.solarFrame, 0.35);
@@ -290,21 +356,31 @@ export class InfraBuilder {
         isX ? new Vector3(span, 1.1, 0.14) : new Vector3(0.14, 1.1, span),
       );
     }
-    // Arco estructural sencillo: tres cajas.
-    for (const s of [-1, 1]) {
-      this.farm.add(
-        'box',
-        railMat,
-        new Vector3(
-          isX ? x + (s * span) / 4 : x,
-          2.1,
-          isX ? z : z + (s * span) / 4,
-        ),
-        isX ? new Vector3(span * 0.4, 0.22, 0.22) : new Vector3(0.22, 0.22, span * 0.4),
-        0,
-        isX ? -s * 0.2 : 0,
-        isX ? 0 : s * 0.2,
-      );
+    // Arco rebajado sobre cada baranda: dos tramos inclinados que nacen en los
+    // extremos del tablero y se encuentran en el centro. Antes eran cajas en
+    // el EJE del puente, a 2 m de altura, sin tocar nada: flotaban sobre la
+    // calzada del tranvía.
+    const rise = 1.8;
+    const half = span / 2;
+    const slope = Math.atan2(rise, half);
+    const len = Math.hypot(rise, half);
+    for (const side of [-1, 1]) {
+      for (const s of [-1, 1]) {
+        const along = (s * half) / 2;
+        const cx = isX ? x + along : x + (side * width) / 2;
+        const cz = isX ? z + (side * width) / 2 : z + along;
+        this.farm.add(
+          'box',
+          railMat,
+          new Vector3(cx, 1.05 + rise / 2 + 0.1, cz),
+          isX ? new Vector3(len, 0.24, 0.24) : new Vector3(0.24, 0.24, len),
+          0,
+          // Z crece → el tramo baja (giro +α sobre X baja el extremo +Z).
+          isX ? 0 : s * slope,
+          // X crece → el tramo baja (giro −α sobre Z baja el extremo +X).
+          isX ? -s * slope : 0,
+        );
+      }
     }
   }
 
@@ -379,12 +455,16 @@ export class InfraBuilder {
         this.nature.broadleaf(
           cx + Math.cos(a) * r,
           cz + Math.sin(a) * r,
-          this.rng.range(1.1, 1.6),
+          this.rng.range(0.78, 1.05),
         );
       }
       if (i % 2 === 0) {
-        const br = size * 0.32;
-        this.bench(cx + Math.cos(a) * br, cz + Math.sin(a) * br, a + Math.PI / 2);
+        // Entre el espejo de agua (que termina a 0,36 del lado) y la fila de
+        // árboles. A 0,32 los bancos de las diagonales quedaban DENTRO del agua.
+        // El giro es −a − π/2 porque en Babylon rotar θ lleva +X a
+        // (cos θ, −sin θ): así el banco queda tangente al anillo.
+        const br = size * 0.4;
+        this.bench(cx + Math.cos(a) * br, cz + Math.sin(a) * br, -a - Math.PI / 2);
       }
     }
   }
@@ -468,7 +548,7 @@ export class InfraBuilder {
     const { cx, cz, width, depth } = block;
     this.farm.add(
       'box',
-      this.mats.foliage(PALETTE.leafPale),
+      this.mats.grass(PALETTE.leafPale),
       new Vector3(cx, 0.06, cz),
       new Vector3(width, 0.12, depth),
     );

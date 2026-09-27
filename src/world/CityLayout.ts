@@ -25,6 +25,8 @@ export interface Block {
   ring: number;
   /** Altura sugerida, en metros. */
   height: number;
+  /** Hito curado dentro de un plano que por lo demás puede regenerarse. */
+  landmark?: 'school';
 }
 
 export interface Street {
@@ -145,6 +147,15 @@ export function generateCityPlan(seed: number, options: LayoutOptions = {}): Cit
       });
     }
   }
+
+  // El recorrido tiene un destino estable. Elegimos un equipamiento del primer
+  // anillo, preferentemente al norte de la plaza, para que el campus no cambie
+  // de lugar cada vez que se regenera la ciudad. Nunca se toma una manzana de
+  // agua: la escuela debe conservar entrada, patio y caminos transitables.
+  const school =
+    blocks.find((b) => b.gx === half && b.gz === half + 1 && b.kind !== 'water') ??
+    blocks.find((b) => b.ring === 1 && b.kind !== 'water');
+  if (school) school.landmark = 'school';
 
   // Calles: una por cada línea de la grilla, más los bordes.
   const streets: Street[] = [];
