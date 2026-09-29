@@ -109,15 +109,22 @@ check(
   `${moved.toFixed(2)} m en 8 cuadros a ${fps.toFixed(0)} fps`,
 );
 
-// --- 6. los tranvías y pájaros se mueven ---
+// --- 6. los pájaros se mueven ---
 const m1 = await page.evaluate(() => {
-  const m = window.__scene.meshes.find((x) => x.name === 'birdSrc');
-  return m ? Array.from(m.thinInstanceGetWorldMatrices?.() ? [] : []).length || m._thinInstanceDataStorage?.matrixData?.[12] : null;
+  const m = window.__scene.meshes.find((x) => x.name === 'birdBodySrc');
+  return m?._thinInstanceDataStorage?.matrixData?.[12] ?? null;
 });
-await new Promise((r) => setTimeout(r, 800));
+await page.evaluate(
+  () =>
+    new Promise((res) => {
+      let n = 0;
+      const tick = () => (++n >= 12 ? res() : requestAnimationFrame(tick));
+      requestAnimationFrame(tick);
+    }),
+);
 const m2 = await page.evaluate(() => {
-  const m = window.__scene.meshes.find((x) => x.name === 'birdSrc');
-  return m ? m._thinInstanceDataStorage?.matrixData?.[12] : null;
+  const m = window.__scene.meshes.find((x) => x.name === 'birdBodySrc');
+  return m?._thinInstanceDataStorage?.matrixData?.[12] ?? null;
 });
 check('los pájaros se mueven', m1 !== null && m2 !== null && m1 !== m2, `x: ${m1} -> ${m2}`);
 

@@ -1,5 +1,6 @@
 import type { Engine } from '@babylonjs/core/Engines/engine';
 import type { Scene } from '@babylonjs/core/scene';
+import type { BaseTexture } from '@babylonjs/core/Materials/Textures/baseTexture';
 import type { RenderQuality } from './RenderPipeline';
 
 export type QualityTier = 'low' | 'vr' | 'balanced' | 'high';
@@ -107,6 +108,12 @@ export const TIER_ORDER: QualityTier[] = ['low', 'balanced', 'high'];
  */
 export class QualityManager {
   private tier: QualityTier;
+  private adaptive = 0;
+  private sampleElapsedMs = 0;
+  private sampleFrames = 0;
+  private slowWindows = 0;
+  private healthyMs = 0;
+  private readonly textureAnisotropy = new WeakMap<BaseTexture, number>();
 
   constructor(
     private readonly engine: Engine,
@@ -124,15 +131,82 @@ export class QualityManager {
     return QUALITY[this.tier];
   }
 
+  get adaptiveLevel(): number {
+    return this.adaptive;
+  }
+
+  /**
+   * Ajusta la carga en ventanas de 2,5 s: evita reaccionar a un tirón aislado.
+   * Devuelve un nivel sólo cuando cambió, para que el juego actualice sus
+   * subsistemas una vez y no dentro de cada cuadro.
+   */
+  observeFrame(deltaMs: number, inVr: boolean): number | null {
+    // Un cuadro aislado muy largo no debe contar como todo el intervalo, pero
+    // permitir hasta 1 s hace que la adaptación responda también a 1–2 fps.
+    this.sampleElapsedMs += Math.min(1000, Math.max(0, deltaMs));
+    this.sampleFrames++;
+    if (this.sampleElapsedMs < 2500) return null;
+
+    const fps = (this.sampleFrames * 1000) / this.sampleElapsedMs;
+    const target = inVr ? 72 : 60;
+    const previous = this.adaptive;
+    this.sampleElapsedMs = 0;
+    this.sampleFrames = 0;
+
+    if (fps < target * 0.72 && this.adaptive < 3) {
+      this.adaptive++;
+      this.slowWindows = 0;
+      this.healthyMs = 0;
+    } else if (fps < target * 0.9 && this.adaptive < 3) {
+      this.slowWindows++;
+      this.healthyMs = 0;
+      if (this.slowWindows >= 2) {
+        this.adaptive++;
+        this.slowWindows = 0;
+      }
+    } else {
+      this.slowWindows = 0;
+      if (fps >= target + 10 && this.adaptive > 0) {
+        this.healthyMs += 2500;
+        if (this.healthyMs >= 8000) {
+          this.adaptive--;
+          this.healthyMs = 0;
+        }
+      } else {
+        this.healthyMs = 0;
+      }
+    }
+
+    if (this.adaptive === previous) return null;
+    this.applyRuntime();
+    return this.adaptive;
+  }
+
   /** Aplica los ajustes que no requieren reconstruir la ciudad. */
   applyRuntime(): void {
     const p = this.profile;
-    this.engine.setHardwareScalingLevel(p.hardwareScaling);
-    for (const camera of this.scene.cameras) camera.maxZ = p.maxZ;
+    const resolutionScale = [1, 1.12, 1.28, 1.5][this.adaptive];
+    const distanceScale = [1, 0.86, 0.72, 0.58][this.adaptive];
+    const textureScale = [1, 0.75, 0.5, 0.25][this.adaptive];
+    this.engine.setHardwareScalingLevel(p.hardwareScaling * resolutionScale);
+    for (const camera of this.scene.cameras) camera.maxZ = p.maxZ * distanceScale;
+    for (const texture of this.scene.textures) {
+      if (!this.textureAnisotropy.has(texture)) {
+        this.textureAnisotropy.set(texture, texture.anisotropicFilteringLevel);
+      }
+      const original = this.textureAnisotropy.get(texture) ?? 1;
+      const level = Math.max(1, Math.round(original * textureScale));
+      if (texture.anisotropicFilteringLevel !== level) texture.anisotropicFilteringLevel = level;
+    }
   }
 
   set(tier: QualityTier): void {
     this.tier = tier;
+    this.adaptive = 0;
+    this.sampleElapsedMs = 0;
+    this.sampleFrames = 0;
+    this.slowWindows = 0;
+    this.healthyMs = 0;
     this.applyRuntime();
   }
 

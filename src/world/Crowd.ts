@@ -48,6 +48,8 @@ interface Person {
   tz: number;
   /** Animación. */
   phase: number;
+  /** Tiempo acumulado entre pasos de IA cuando el peatón está lejos. */
+  aiElapsed: number;
   gesture: number;
   idleSeed: number;
   /** Cuerpo: escala de altura y de contextura. */
@@ -158,8 +160,11 @@ export class Crowd {
   private readonly shadowTex: DynamicTexture;
   private readonly shadow: Channel;
   private readonly rng: Rng;
-  private readonly drawDistance: number;
-  private readonly detailDistance: number;
+  private readonly baseDrawDistance: number;
+  private readonly baseDetailDistance: number;
+  private drawDistance: number;
+  private detailDistance: number;
+  private activeCount = 0;
   private readonly streetHalf: number;
   private readonly lane: number;
   private time = 0;
@@ -173,12 +178,15 @@ export class Crowd {
     options: CrowdOptions = {},
   ) {
     this.rng = new Rng(seed ^ 0x9a1c);
-    this.drawDistance = options.drawDistance ?? 170;
-    this.detailDistance = options.detailDistance ?? 45;
+    this.baseDrawDistance = options.drawDistance ?? 170;
+    this.baseDetailDistance = options.detailDistance ?? 45;
+    this.drawDistance = this.baseDrawDistance;
+    this.detailDistance = this.baseDetailDistance;
     this.streetHalf = plan.streetWidth / 2;
     this.lane = plan.streetWidth * 0.21;
 
     this.spawn(plan, count);
+    this.activeCount = this.people.length;
 
     // Un único material para toda la multitud: el color sale del vértice
     // (sombreado, ojos, suela) multiplicado por el de la instancia (ropa, piel).
@@ -450,6 +458,7 @@ export class Crowd {
       tx: x,
       tz: z,
       phase: rng.range(0, Math.PI * 2),
+      aiElapsed: rng.range(0, 0.25),
       gesture: 0,
       idleSeed: rng.range(0, 100),
       s: height / 1.72,
@@ -503,14 +512,32 @@ export class Crowd {
     // Mirando desde lo alto (modo volar) el cono horizontal no sirve.
     const overhead = cy > 30;
 
-    for (const p of this.people) {
-      this.simulate(p, dt);
+    for (let i = 0; i < this.activeCount; i++) {
+      const p = this.people[i];
 
       // --- recorte: distancia y cono de visión horizontal generoso (±110°).
       const dx = p.x - cx;
       const dz = p.z - cz;
       const d2 = dx * dx + dz * dz;
-      if (d2 > far2) continue;
+      if (d2 > far2) {
+        // La población lejana queda en pausa hasta que el jugador se acerque.
+        p.aiElapsed = 0;
+        continue;
+      }
+
+      // Cerca se conserva el movimiento fluido. La IA de peatones lejanos se
+      // actualiza a 4 Hz y la intermedia a 2 Hz, repartiendo mejor el trabajo.
+      const interval = d2 < 52 * 52 ? 0 : d2 < 105 * 105 ? 0.25 : 0.5;
+      if (interval === 0) {
+        this.simulate(p, dt);
+      } else {
+        p.aiElapsed += dt;
+        if (p.aiElapsed >= interval) {
+          this.simulate(p, Math.min(0.5, p.aiElapsed));
+          p.aiElapsed = 0;
+        }
+      }
+
       if (!overhead && d2 > 36) {
         const d = Math.sqrt(d2);
         if ((dx * fx + dz * fz) / d < -0.35) continue;
@@ -823,7 +850,19 @@ export class Crowd {
   }
 
   get population(): number {
-    return this.people.length;
+    return this.activeCount;
+  }
+
+  setAdaptiveLevel(level: number): void {
+    const tier = Math.max(0, Math.min(3, level));
+    const factors = [1, 0.82, 0.64, 0.46];
+    const distanceFactors = [1, 0.88, 0.74, 0.62];
+    this.activeCount = Math.min(
+      this.people.length,
+      Math.max(1, Math.round(this.people.length * factors[tier])),
+    );
+    this.drawDistance = this.baseDrawDistance * distanceFactors[tier];
+    this.detailDistance = this.baseDetailDistance * distanceFactors[tier];
   }
 
   dispose(): void {

@@ -166,6 +166,8 @@ export class Environment {
   readonly skyBox: Mesh;
   private readonly skyMaterial: SkyMaterial;
   private shadows: CascadedShadowGenerator | null = null;
+  private shadowResolution = 0;
+  private activeShadowResolution = 0;
   private probe: ReflectionProbe | null = null;
 
   constructor(
@@ -355,13 +357,30 @@ export class Environment {
       mesh.receiveShadows = true;
     }
     this.shadows = gen;
+    this.shadowResolution = resolution;
+    this.activeShadowResolution = resolution;
     this.refreshShadowBounds();
+  }
+
+  /** Baja resolución del mapa de sombras sin invalidar los shaders congelados. */
+  setAdaptiveLevel(level: number): void {
+    const gen = this.shadows;
+    if (!gen) return;
+
+    const divisor = level === 0 ? 1 : level === 1 ? 2 : 4;
+    const resolution = Math.max(512, Math.floor(this.shadowResolution / divisor));
+    if (resolution !== this.activeShadowResolution) {
+      gen.getShadowMap()?.resize({ width: resolution, height: resolution });
+      this.activeShadowResolution = resolution;
+    }
   }
 
   disableShadows(): void {
     if (!this.shadows) return;
     this.shadows.dispose();
     this.shadows = null;
+    this.shadowResolution = 0;
+    this.activeShadowResolution = 0;
   }
 
   private refreshShadowBounds(): void {

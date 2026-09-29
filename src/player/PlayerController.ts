@@ -13,6 +13,11 @@ const FLY_BOOST = 55;
 const GRAVITY = -18;
 const JUMP = 6.4;
 const RADIUS = 0.45; // radio del cuerpo para la colisión
+const ACCELERATION = 11;
+const BRAKING = 15;
+const COLLISION_STEP = RADIUS * 0.5;
+const FORWARD = new Vector3(0, 0, 1);
+const RIGHT = new Vector3(1, 0, 0);
 
 /**
  * Controlador del jugador.
@@ -34,6 +39,11 @@ const RADIUS = 0.45; // radio del cuerpo para la colisión
 export class PlayerController {
   mode: MoveMode = 'walk';
   private velocityY = 0;
+  private velocityX = 0;
+  private velocityZ = 0;
+  private readonly forward = new Vector3();
+  private readonly right = new Vector3();
+  private readonly move = new Vector3();
   private grounded = false;
   private readonly keys = new Set<string>();
   private onModeChange?: (mode: MoveMode) => void;
@@ -64,6 +74,8 @@ export class PlayerController {
   setMode(mode: MoveMode): void {
     this.mode = mode;
     this.velocityY = 0;
+    this.velocityX = 0;
+    this.velocityZ = 0;
     if (mode === 'walk') {
       // Al aterrizar, buscar un punto libre cercano para no quedar dentro de un muro.
       const p = this.camera.position;
@@ -82,6 +94,8 @@ export class PlayerController {
     if (paused) {
       this.keys.clear();
       this.velocityY = 0;
+      this.velocityX = 0;
+      this.velocityZ = 0;
     }
   }
 
@@ -127,13 +141,13 @@ export class PlayerController {
     const cam = this.camera;
 
     // Vectores de avance y lateral, aplanados al suelo en modo caminar.
-    const forward = cam.getDirection(Vector3.Forward());
-    const right = cam.getDirection(Vector3.Right());
+    cam.getDirectionToRef(FORWARD, this.forward);
+    cam.getDirectionToRef(RIGHT, this.right);
     if (this.mode === 'walk') {
-      forward.y = 0;
-      right.y = 0;
-      forward.normalize();
-      right.normalize();
+      this.forward.y = 0;
+      this.right.y = 0;
+      this.forward.normalize();
+      this.right.normalize();
     }
 
     let dx = 0;
@@ -144,37 +158,77 @@ export class PlayerController {
     if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) dx -= 1;
 
     const running = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
+    const inputLength = Math.hypot(dx, dz);
+    if (inputLength > 1) {
+      dx /= inputLength;
+      dz /= inputLength;
+    }
 
     if (this.mode === 'fly') {
-      const speed = (running ? FLY_BOOST : FLY_SPEED) * dt;
-      const move = forward.scale(dz * speed).add(right.scale(dx * speed));
-      if (this.keys.has('KeyE')) move.y += speed;
-      if (this.keys.has('KeyQ')) move.y -= speed;
-      cam.position.addInPlace(move);
+      this.move.set(
+        this.forward.x * dz + this.right.x * dx,
+        this.forward.y * dz + this.right.y * dx +
+          Number(this.keys.has('KeyE')) - Number(this.keys.has('KeyQ')),
+        this.forward.z * dz + this.right.z * dx,
+      );
+      if (this.move.lengthSquared() > 1) this.move.normalize();
+      this.move.scaleInPlace((running ? FLY_BOOST : FLY_SPEED) * dt);
+      cam.position.addInPlace(this.move);
       return;
     }
 
-    // --- caminar ---
-    const speed = (running ? RUN_SPEED : WALK_SPEED) * dt;
-    const move = forward.scale(dz * speed).add(right.scale(dx * speed));
+    // --- caminar: aceleración y frenado suaves, con velocidad de carrera ---
+    const hasInput = dx !== 0 || dz !== 0;
+    const speed = running ? RUN_SPEED : WALK_SPEED;
+    const targetX = (this.forward.x * dz + this.right.x * dx) * speed;
+    const targetZ = (this.forward.z * dz + this.right.z * dx) * speed;
+    const blend = 1 - Math.exp(-(hasInput ? ACCELERATION : BRAKING) * dt);
+    this.velocityX += (targetX - this.velocityX) * blend;
+    this.velocityZ += (targetZ - this.velocityZ) * blend;
+    const moveX = this.velocityX * dt;
+    const moveZ = this.velocityZ * dt;
 
     // Colisión por ejes separados: si el eje X está bloqueado pero Z no, el
     // jugador se desliza a lo largo de la pared en vez de quedarse trabado.
     // Es la diferencia entre una colisión que se siente natural y una que
     // frustra.
-    const px = cam.position.x;
-    const pz = cam.position.z;
-    const before = { x: px, z: pz };
-    if (!this.blocked(px + move.x + Math.sign(move.x) * RADIUS, pz)) {
-      cam.position.x = px + move.x;
+    const beforeX = cam.position.x;
+    const beforeZ = cam.position.z;
+    let px = beforeX;
+    let pz = beforeZ;
+    const steps = Math.max(
+      1,
+      Math.ceil(Math.max(Math.abs(moveX), Math.abs(moveZ)) / COLLISION_STEP),
+    );
+    const stepX = moveX / steps;
+    const stepZ = moveZ / steps;
+    for (let i = 0; i < steps; i++) {
+      const nextX = px + stepX;
+      if (
+        stepX === 0 ||
+        !this.blocked(nextX + Math.sign(stepX) * RADIUS, pz)
+      ) {
+        px = nextX;
+      } else {
+        this.velocityX = 0;
+      }
+
+      const nextZ = pz + stepZ;
+      if (
+        stepZ === 0 ||
+        !this.blocked(px, nextZ + Math.sign(stepZ) * RADIUS)
+      ) {
+        pz = nextZ;
+      } else {
+        this.velocityZ = 0;
+      }
     }
-    if (!this.blocked(cam.position.x, pz + move.z + Math.sign(move.z) * RADIUS)) {
-      cam.position.z = pz + move.z;
-    }
+    cam.position.x = px;
+    cam.position.z = pz;
 
     // Pisadas: una cada 0,78 m recorridos, que es la zancada de una persona.
     if (this.onStep && this.grounded) {
-      this.strideAccum += Math.hypot(cam.position.x - before.x, cam.position.z - before.z);
+      this.strideAccum += Math.hypot(cam.position.x - beforeX, cam.position.z - beforeZ);
       if (this.strideAccum >= 0.78) {
         this.strideAccum = 0;
         this.onStep(running);

@@ -32,6 +32,8 @@ export type RenderQuality = 'off' | 'lite' | 'balanced' | 'high';
 export class RenderPipeline {
   private pipeline: DefaultRenderingPipeline | null = null;
   private ssao: SSAO2RenderingPipeline | null = null;
+  private quality: RenderQuality = 'off';
+  private adaptiveLevel = 0;
 
   constructor(
     private readonly scene: Scene,
@@ -40,6 +42,8 @@ export class RenderPipeline {
 
   apply(quality: RenderQuality): void {
     this.dispose();
+    this.quality = quality;
+    this.adaptiveLevel = 0;
     if (quality === 'off') return;
 
     const high = quality === 'high';
@@ -90,6 +94,36 @@ export class RenderPipeline {
     //
     // El ratio es la palanca dominante: la oclusión se calcula a esa fracción
     // de la resolución de pantalla, así que su coste crece con el cuadrado.
+    this.createSsao(high);
+  }
+
+  /** Reduce efectos costosos sólo al cambiar de nivel adaptativo. */
+  setAdaptiveLevel(level: number): void {
+    this.adaptiveLevel = Math.max(0, Math.min(3, level));
+    if (this.quality === 'off' || !this.pipeline) return;
+
+    const high = this.quality === 'high';
+    const lite = this.quality === 'lite';
+    if (!lite && this.adaptiveLevel >= 3 && this.ssao) {
+      this.ssao.dispose();
+      this.ssao = null;
+    } else if (!lite && this.adaptiveLevel < 3 && !this.ssao) {
+      this.createSsao(high);
+    }
+
+    this.pipeline.bloomEnabled = this.adaptiveLevel < 2;
+    this.pipeline.sharpenEnabled = this.adaptiveLevel < 2;
+    this.pipeline.imageProcessing.vignetteEnabled = this.adaptiveLevel === 0;
+    this.pipeline.bloomWeight = this.adaptiveLevel === 0 ? (high ? 0.32 : 0.22) : 0.12;
+    this.pipeline.bloomKernel = this.adaptiveLevel === 0 ? (high ? 48 : 32) : 16;
+    if (this.ssao) {
+      this.ssao.samples = this.adaptiveLevel === 0 ? (high ? 16 : 12) : 8;
+      this.ssao.bypassBlur = this.adaptiveLevel >= 2;
+      this.ssao.maxZ = this.adaptiveLevel === 0 ? 220 : 120;
+    }
+  }
+
+  private createSsao(high: boolean): void {
     const ssao = new SSAO2RenderingPipeline(
       'ssao',
       this.scene,
@@ -98,12 +132,11 @@ export class RenderPipeline {
       true,
     );
     ssao.samples = high ? 16 : 12;
-    ssao.radius = 2.6; // metros: la escala de un alféizar, un cordón, un tronco
+    ssao.radius = 2.6;
     ssao.totalStrength = 1.15;
-    ssao.base = 0.12; // cuánta luz queda igual sin ocluir
-    // Blur barato en los dos niveles: el caro no justifica su precio.
+    ssao.base = 0.12;
     ssao.expensiveBlur = false;
-    ssao.maxZ = 220; // más lejos no se percibe y cuesta igual
+    ssao.maxZ = 220;
     this.ssao = ssao;
   }
 

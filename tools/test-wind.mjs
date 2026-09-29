@@ -101,7 +101,7 @@ await page.evaluate(() => {
   // Se ocultan gente, tranvias y pajaros. Sin esto, la comparacion de imagen
   // pasa siempre —hay cosas moviendose todo el tiempo— y el test daria por
   // bueno el viento aunque estuviera roto. Que fue exactamente lo que paso.
-  const moving = /^(torso|head|legL|legR|birdSrc|tramBodySrc|tramGlassSrc)/;
+  const moving = /^(person-|peopleShadow|bird.*Src|tram.*Src|pod.*Src)/;
   for (const m of window.__scene.meshes) {
     if (moving.test(m.name)) m.setEnabled(false);
   }

@@ -16,6 +16,7 @@ import '@babylonjs/core/Helpers/sceneHelpers';
 export interface XRResult {
   experience: WebXRDefaultExperience;
   teleportFloor: Mesh;
+  dispose(): void;
 }
 
 /**
@@ -99,7 +100,7 @@ export async function setupXR(scene: Scene, worldExtent: number): Promise<XRResu
   }
 
   // Respuesta háptica táctil en mandos VR al presionar gatillos/botones principales
-  experience.input.onControllerAddedObservable.add((controller) => {
+  const controllerAddedObserver = experience.input.onControllerAddedObservable.add((controller) => {
     controller.onMotionControllerInitObservable.add((motionController) => {
       const mainComp = motionController.getMainComponent();
       if (mainComp) {
@@ -113,7 +114,8 @@ export async function setupXR(scene: Scene, worldExtent: number): Promise<XRResu
   });
 
   // Al entrar en VR, poner al jugador de pie en la plaza mirando al Árbol Solar.
-  experience.baseExperience.onStateChangedObservable.add((state) => {
+  const stateObservable = experience.baseExperience.onStateChangedObservable;
+  const enterObserver = stateObservable.add((state) => {
     if (state !== WebXRState.IN_XR) return;
     const cam = experience.baseExperience.camera;
     cam.position = new Vector3(0, 0, -20);
@@ -133,15 +135,30 @@ export async function setupXR(scene: Scene, worldExtent: number): Promise<XRResu
   grid.isPickable = false;
   grid.setEnabled(false);
 
-  experience.baseExperience.onStateChangedObservable.add((state) => {
+  const gridStateObserver = stateObservable.add((state) => {
     grid.setEnabled(state === WebXRState.IN_XR);
   });
 
-  scene.onBeforeRenderObservable.add(() => {
+  const gridRenderObserver = scene.onBeforeRenderObservable.add(() => {
     if (!grid.isEnabled()) return;
     const cam = experience.baseExperience.camera;
     grid.position.set(cam.position.x, 0.05, cam.position.z);
   });
 
-  return { experience, teleportFloor };
+  let disposed = false;
+  const dispose = (): void => {
+    if (disposed) return;
+    disposed = true;
+    scene.onBeforeRenderObservable.remove(gridRenderObserver);
+    stateObservable.remove(enterObserver);
+    stateObservable.remove(gridStateObserver);
+    experience.input.onControllerAddedObservable.remove(controllerAddedObserver);
+    experience.dispose();
+    grid.dispose();
+    gridMat.dispose();
+    floorMat.dispose();
+    teleportFloor.dispose();
+  };
+
+  return { experience, teleportFloor, dispose };
 }

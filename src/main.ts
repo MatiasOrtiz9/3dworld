@@ -58,6 +58,7 @@ let crowd: Crowd | null = null;
 let player: PlayerController | null = null;
 let inspector: Inspector | null = null;
 let challenge: ChallengeSystem | null = null;
+let disposeXR: (() => void) | null = null;
 let hour = 13;
 // La semilla se puede fijar por URL (?seed=1234 o ?seed=cualquier-texto).
 // Sirve para volver a una ciudad concreta: comparar cambios, sacar capturas
@@ -120,10 +121,28 @@ Object.assign(window as unknown as Record<string, unknown>, {
     if (!environment || !city) return;
     if (on) environment.enableShadows(city.shadowCasters, quality.profile.shadowResolution || 1024);
     else environment.disableShadows();
+    environment.setAdaptiveLevel(quality.adaptiveLevel);
   },
   __setPost: (mode: 'off' | 'lite' | 'balanced' | 'high') => renderPipeline.apply(mode),
   __windClock: () => city?.windClock ?? -1,
 });
+
+window.addEventListener('pagehide', (event) => {
+  if (event.persisted) return;
+  disposeXR?.();
+  engine.stopRenderLoop();
+  life?.dispose();
+  crowd?.dispose();
+  player?.dispose();
+  inspector?.dispose();
+  challenge?.dispose();
+  renderPipeline.dispose();
+  environment?.dispose();
+  city?.dispose();
+  sound.dispose();
+  scene.dispose();
+  engine.dispose();
+}, { once: true });
 
 /** Construye (o reconstruye) la ciudad completa. */
 async function buildCity(newSeed: number): Promise<void> {
@@ -162,6 +181,7 @@ async function buildCity(newSeed: number): Promise<void> {
   if (profile.shadows) {
     await progress(65, 'Proyectando sombras…');
     environment.enableShadows(city.shadowCasters, profile.shadowResolution);
+    environment.setAdaptiveLevel(quality.adaptiveLevel);
   }
 
   // IBL desde la propia ciudad: sin esto los metales salen negros.
@@ -171,6 +191,7 @@ async function buildCity(newSeed: number): Promise<void> {
   // sus propios defines a los shaders.
   await progress(72, 'Preparando el render…');
   renderPipeline.apply(quality.profile.post);
+  renderPipeline.setAdaptiveLevel(quality.adaptiveLevel);
 
   // El orden importa: primero las sombras, después el congelado. Al revés, los
   // materiales quedan con el shader viejo y no se ve ni una sombra.
@@ -203,6 +224,7 @@ async function buildCity(newSeed: number): Promise<void> {
   // Gente. Es lo que más cambia la percepción del espacio: una ciudad con
   // locales, bancos y bicicleteros pero sin nadie sigue siendo una maqueta.
   crowd = new Crowd(scene, city.plan, city.index, newSeed, profile.crowdSize);
+  crowd.setAdaptiveLevel(quality.adaptiveLevel);
 
   // Jugador con colisión y modo caminar/volar.
   player = new PlayerController(scene, camera, city.index);
@@ -258,7 +280,7 @@ function updateStats(): void {
     `${engine.getFps().toFixed(0)} fps`,
     `${fmt(s.instances)} objetos · ${fmt(Math.round(s.triangles / 1000))}k tris`,
     `${drawn} draw calls · ${s.materials} materiales`,
-    `${crowd?.population ?? 0} personas · semilla ${s.seed} · ${s.buildTimeMs} ms`,
+    `${crowd?.population ?? 0} personas activas · semilla ${s.seed} · ${s.buildTimeMs} ms`,
   ].join('<br>');
 }
 
@@ -266,7 +288,7 @@ function updateStats(): void {
 
 btnQuality.addEventListener('click', async () => {
   const tier = quality.cycle();
-  btnQuality.textContent = `Calidad: ${quality.profile.label}`;
+  updateQualityButton();
   btnQuality.disabled = true;
   boot.classList.remove('hidden');
   await rebuildFor(tier);
@@ -275,10 +297,14 @@ btnQuality.addEventListener('click', async () => {
 });
 
 async function rebuildFor(_tier: QualityTier): Promise<void> {
-  renderPipeline.apply(quality.profile.post);
   // La densidad de verde y el tamaño de grilla son datos de generación:
   // cambiarlos exige reconstruir. El resto se aplica en caliente.
   await buildCity(seed);
+}
+
+function updateQualityButton(): void {
+  const suffix = quality.adaptiveLevel ? ` · ajuste ${quality.adaptiveLevel}/3` : '';
+  btnQuality.textContent = `Calidad: ${quality.profile.label}${suffix}`;
 }
 
 timeSlider.addEventListener('input', () => {
@@ -348,7 +374,7 @@ function updateEnergyPanel(): void {
 // ---------------------------------------------------------------------- inicio
 
 async function start(): Promise<void> {
-  btnQuality.textContent = `Calidad: ${quality.profile.label}`;
+  updateQualityButton();
   btnEnergy.addEventListener('click', () => {
     const open = energyEl.classList.toggle('open');
     btnEnergy.setAttribute('aria-pressed', String(open));
@@ -370,6 +396,16 @@ async function start(): Promise<void> {
     if (!(window as unknown as { __freezeWind?: boolean }).__freezeWind) {
       city?.tickWind(engine.getDeltaTime() / 1000);
     }
+    const adaptiveLevel = quality.observeFrame(
+      engine.getDeltaTime(),
+      scene.activeCamera?.getClassName().includes('WebXR') ?? false,
+    );
+    if (adaptiveLevel !== null) {
+      crowd?.setAdaptiveLevel(adaptiveLevel);
+      environment?.setAdaptiveLevel(adaptiveLevel);
+      renderPipeline.setAdaptiveLevel(adaptiveLevel);
+      updateQualityButton();
+    }
     scene.render();
   });
   window.addEventListener('resize', () => engine.resize());
@@ -386,7 +422,8 @@ async function start(): Promise<void> {
       // la enorme mayoría de visitantes —que entran desde una computadora— es
       // peso que ya no viaja por la red.
       const { setupXR } = await import('./vr/XRSetup');
-      const { experience } = await setupXR(scene, city!.plan.extent);
+      const { experience, dispose } = await setupXR(scene, city!.plan.extent);
+      disposeXR = dispose;
       btnVr.disabled = false;
       btnVr.textContent = 'Entrar en VR';
       btnVr.addEventListener('click', async () => {
@@ -398,7 +435,7 @@ async function start(): Promise<void> {
           // dentro del visor, justo donde el presupuesto de cuadro es menor.
           if (quality.current !== 'vr') {
             quality.set('vr');
-            btnQuality.textContent = `Calidad: ${quality.profile.label}`;
+            updateQualityButton();
             await rebuildFor('vr');
           }
           await experience.baseExperience.enterXRAsync('immersive-vr', 'local-floor');
