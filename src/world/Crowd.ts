@@ -20,10 +20,11 @@ import {
   buildPeopleParts,
   type PartName,
 } from './PeopleGeometry';
-import { COURT, FORECOURT, GARDEN, toWorld, type Rect, type SchoolFrame } from './SchoolLayout';
+import { COURT, FORECOURT, PLAYGROUND, toWorld, type Rect, type SchoolFrame } from './SchoolLayout';
 
 type Mode = 'street' | 'wander' | 'group' | 'cycle';
 type RGB = [number, number, number];
+type SchoolLevel = 'initial' | 'primary' | 'secondary';
 
 interface Person {
   mode: Mode;
@@ -60,6 +61,7 @@ interface Person {
   shoe: RGB;
   bag: RGB;
   bike: RGB;
+  tie: RGB | null;
   hairStyle: 0 | 1 | 2 | 3;
   skirt: boolean;
   shorts: boolean;
@@ -104,17 +106,19 @@ const HAIRS = ['#1e1612', '#2e2018', '#4a3020', '#6b4526', '#a0673a', '#c9a064',
 const SHOES = ['#f2f2ef', '#2a2a2a', '#3a2c22', '#c94b3b', '#355f8a', '#d9d9d2'].map(hex);
 const BAGS = ['#2f5d8a', '#c8643b', '#3f6e4a', '#d9a441', '#6b3b6b', '#2d2f33', '#b8433a'].map(hex);
 const BIKES = ['#2b7a78', '#d9a441', '#c8643b', '#f4efe6', '#3f6e9c', '#2d2f33'].map(hex);
-/** Uniforme escolar: remera blanca o chomba azul, pantalón oscuro. */
-const UNIFORM_TOPS = ['#f4f2ee', '#f4f2ee', '#2c4a7a', '#1f5f4f'].map(hex);
-const UNIFORM_BOTTOMS = ['#1f2a44', '#2a2c30', '#3a3f4a'].map(hex);
+/** Uniforme CIMDIP: chomba roja, prendas inferiores azul marino y corbata roja. */
+const UNIFORM_RED = hex('#c84445');
+const UNIFORM_NAVY = hex('#202d4b');
+const UNIFORM_BLUE = hex('#a9cce0');
+const UNIFORM_SHOES = ['#20242b', '#263650', '#20242b'].map(hex);
 
 /** Qué partes llevan cuántas copias por persona y quién decide su color. */
 const PARTS: PartName[] = [
-  'torso', 'head', 'hairShort', 'hairLong', 'hairBun', 'skirt', 'backpack',
+  'torso', 'tie', 'head', 'hairShort', 'hairLong', 'hairBun', 'skirt', 'backpack',
   'upperArm', 'forearm', 'hand', 'thigh', 'shin', 'shoe', 'bike',
 ];
 const PER_PERSON: Record<PartName, number> = {
-  torso: 1, head: 1, hairShort: 1, hairLong: 1, hairBun: 1, skirt: 1, backpack: 1,
+  torso: 1, tie: 1, head: 1, hairShort: 1, hairLong: 1, hairBun: 1, skirt: 1, backpack: 1,
   upperArm: 2, forearm: 2, hand: 2, thigh: 2, shin: 2, shoe: 2, bike: 1,
 };
 
@@ -264,7 +268,7 @@ export class Crowd {
     const plaza = blocks.find((b) => b.kind === 'plaza');
     const school = this.index.school;
 
-    const nStudents = school ? Math.round(count * 0.16) : 0;
+    const nStudents = school ? Math.round(count * 0.2) : 0;
     const nGroups = Math.round(count * 0.14);
     const nWander = Math.round(count * 0.2);
     const nCyclists = Math.round(count * 0.08);
@@ -274,16 +278,17 @@ export class Crowd {
       let placed = 0;
       let guard = 0;
       while (placed < nStudents && guard++ < 400) {
-        // Explanada de entrada 45 %, patio 40 %, huerta 15 %.
-        const r = rng.next();
-        const rect = r < 0.45 ? FORECOURT : r < 0.85 ? COURT : GARDEN;
+        // Inicial juega en su sector protegido; primaria usa la cancha y
+        // secundaria circula por la explanada de acceso.
+        const level = (['initial', 'primary', 'secondary'] as const)[placed % 3];
+        const rect = level === 'initial' ? PLAYGROUND : level === 'primary' ? COURT : FORECOURT;
         const zone = schoolZone(school, rect);
         if (rng.chance(0.6)) {
-          placed += this.spawnGroup(zone, rng.int(2, 4), true);
+          placed += this.spawnGroup(zone, rng.int(2, 4), true, level);
         } else {
           const p = this.randomIn(zone);
           if (!p) continue;
-          this.people.push(this.makePerson('wander', p.x, p.z, { student: true, zone }));
+          this.people.push(this.makePerson('wander', p.x, p.z, { student: true, schoolLevel: level, zone }));
           placed++;
         }
       }
@@ -346,7 +351,7 @@ export class Crowd {
   }
 
   /** Un grupo de 2-4 personas mirándose, alrededor de un punto libre. */
-  private spawnGroup(zone: Zone, size: number, students: boolean): number {
+  private spawnGroup(zone: Zone, size: number, students: boolean, schoolLevel?: SchoolLevel): number {
     const c = this.randomIn(zone, 1.2);
     if (!c) return 0;
     // Dos grupos pegados se leen como uno solo, desordenado: se exige aire.
@@ -363,7 +368,7 @@ export class Crowd {
       const x = c.x + Math.cos(a) * r;
       const z = c.z + Math.sin(a) * r;
       if (this.index.isPedestrianBlocked(x, z)) continue;
-      const p = this.makePerson('group', x, z, { student: students, zone });
+      const p = this.makePerson('group', x, z, { student: students, schoolLevel, zone });
       // Mirando al centro del grupo.
       p.heading = p.targetHeading = Math.atan2(c.x - x, c.z - z) + rng.range(-0.2, 0.2);
       this.people.push(p);
@@ -395,22 +400,37 @@ export class Crowd {
     mode: Mode,
     x: number,
     z: number,
-    opts: { student?: boolean; zone?: Zone },
+    opts: { student?: boolean; schoolLevel?: SchoolLevel; zone?: Zone },
   ): Person {
     const rng = this.rng;
     const student = opts.student ?? false;
-    // Alturas reales: adultos 1,55-1,92 m; alumnos de secundaria 1,45-1,78 m.
-    const height = student ? rng.range(1.45, 1.78) : rng.range(1.55, 1.92);
+    const schoolLevel: SchoolLevel | null = student
+      ? (opts.schoolLevel ?? rng.pick(['initial', 'primary', 'secondary'] as const))
+      : null;
+    const height = !student
+      ? rng.range(1.55, 1.92)
+      : schoolLevel === 'initial'
+        ? rng.range(1.02, 1.35)
+        : schoolLevel === 'primary'
+          ? rng.range(1.2, 1.55)
+          : rng.range(1.45, 1.78);
     const feminine = rng.chance(0.5);
-    const skirt = !student && feminine && rng.chance(0.3);
+    const skirt = feminine && rng.chance(student ? 0.42 : 0.3);
     const hairStyle: Person['hairStyle'] = feminine
       ? rng.pick([2, 2, 3, 1] as const)
       : rng.chance(0.1)
         ? 0
         : rng.pick([1, 1, 1, 2] as const);
     const skin = rng.pick(SKINS);
-    const top = student && rng.chance(0.7) ? rng.pick(UNIFORM_TOPS) : rng.pick(TOPS);
-    const bottom = skirt ? rng.pick(SKIRTS) : student ? rng.pick(UNIFORM_BOTTOMS) : rng.pick(BOTTOMS);
+    const secondaryFormal = schoolLevel === 'secondary' && rng.chance(0.58);
+    const top = student
+      ? schoolLevel === 'secondary' && secondaryFormal
+        ? UNIFORM_BLUE
+        : rng.chance(0.76)
+          ? UNIFORM_RED
+          : UNIFORM_NAVY
+      : rng.pick(TOPS);
+    const bottom = student ? UNIFORM_NAVY : skirt ? rng.pick(SKIRTS) : rng.pick(BOTTOMS);
     const cruise = mode === 'cycle' ? rng.range(3.8, 5.4) : rng.range(1.05, 1.55);
     const heading = rng.range(0, Math.PI * 2);
     return {
@@ -438,9 +458,10 @@ export class Crowd {
       bottom,
       skin,
       hair: rng.chance(0.08) && !student ? rng.pick(HAIRS.slice(6, 8)) : rng.pick(HAIRS.slice(0, 6).concat(HAIRS[8])),
-      shoe: rng.pick(SHOES),
+      shoe: student ? rng.pick(UNIFORM_SHOES) : rng.pick(SHOES),
       bag: rng.pick(BAGS),
       bike: rng.pick(BIKES),
+      tie: secondaryFormal ? UNIFORM_RED : null,
       hairStyle,
       skirt,
       shorts: !skirt && !student && rng.chance(0.18),
@@ -739,6 +760,7 @@ export class Crowd {
     const body = composePivot(lean, h + twist, rollSway, s * g, s, s * g, HIP_Y, hipX, hipY, hipZ);
     body.copyToArray(_bodyArr);
     this.emitArr('torso', _bodyArr, p.top);
+    if (p.tie) this.emitArr('tie', _bodyArr, p.tie);
     this.emitArr('head', _bodyArr, p.skin);
     if (p.hairStyle === 1) this.emitArr('hairShort', _bodyArr, p.hair);
     else if (p.hairStyle === 2) this.emitArr('hairLong', _bodyArr, p.hair);

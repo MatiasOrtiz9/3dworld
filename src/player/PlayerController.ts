@@ -38,6 +38,7 @@ export class PlayerController {
   private readonly keys = new Set<string>();
   private onModeChange?: (mode: MoveMode) => void;
   private onStep?: (running: boolean) => void;
+  private paused = false;
   /** Distancia acumulada desde el último paso, en metros. */
   private strideAccum = 0;
 
@@ -76,6 +77,14 @@ export class PlayerController {
     this.setMode(this.mode === 'walk' ? 'fly' : 'walk');
   }
 
+  setPaused(paused: boolean): void {
+    this.paused = paused;
+    if (paused) {
+      this.keys.clear();
+      this.velocityY = 0;
+    }
+  }
+
   onModeChanged(cb: (mode: MoveMode) => void): void {
     this.onModeChange = cb;
   }
@@ -99,6 +108,10 @@ export class PlayerController {
   private handleDown = (e: KeyboardEvent): void => {
     // No capturar teclas mientras se escribe en un campo.
     if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+    if (this.paused) {
+      e.preventDefault();
+      return;
+    }
     this.keys.add(e.code);
     if (e.code === 'KeyF') this.toggleMode();
     if (e.code === 'Space') e.preventDefault();
@@ -109,6 +122,7 @@ export class PlayerController {
   };
 
   private update = (): void => {
+    if (this.paused) return;
     const dt = Math.min(this.scene.getEngine().getDeltaTime() / 1000, 0.05);
     const cam = this.camera;
 

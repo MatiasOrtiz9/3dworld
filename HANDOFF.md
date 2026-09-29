@@ -82,7 +82,7 @@ src/
 │       ├── StreetLevel.ts      # planta baja, toldos, balcones, mobiliario
 │       ├── InfraBuilder.ts     # calles, canal, puentes, plaza, energía
 │       └── SchoolBuilder.ts    # campus CIMDIP & Miguel Cané
-├── game/ChallengeSystem.ts # estaciones de desafíos dentro del campus
+├── game/ChallengeSystem.ts # cinco guías NPC, diálogo y preguntas del campus
 ├── player/
 │   ├── FlyCamera.ts        # cámara base
 │   └── PlayerController.ts # caminar/volar, gravedad, salto, colisión

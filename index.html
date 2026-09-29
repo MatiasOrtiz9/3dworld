@@ -125,30 +125,36 @@
         position: fixed; z-index: 22; left: 50%; bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
         transform: translateX(-50%); padding: 0.5rem 0.75rem; border-radius: 6px;
         background: rgba(13, 27, 24, 0.82); border: 1px solid rgba(79,170,122,0.55);
-        font-size: 0.78rem; white-space: nowrap;
+        display: flex; align-items: center; gap: 0.65rem;
+        font-size: 0.78rem; white-space: nowrap; box-shadow: 0 8px 28px rgba(0,0,0,0.24);
       }
-      #station-prompt kbd { margin-left: 0.4rem; }
+      #station-prompt kbd { border: 1px solid rgba(238,246,242,0.35); border-radius: 4px; padding: 0.12rem 0.38rem; color: var(--sun); }
 
       /* ---------- desafíos ---------- */
       #challenge {
         position: fixed; z-index: 40; left: 50%; top: 50%; transform: translate(-50%, -50%);
-        width: min(440px, calc(100vw - 2rem)); padding: 1.2rem; border-radius: 8px;
+        width: min(500px, calc(100vw - 2rem)); max-height: min(82dvh, 680px); overflow: auto;
+        padding: clamp(1rem, 4vw, 1.5rem); border-radius: 16px;
         background: rgba(13, 27, 24, 0.95); border: 1px solid rgba(242,193,78,0.58);
-        box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        box-shadow: 0 24px 80px rgba(0,0,0,0.5); backdrop-filter: blur(18px);
       }
-      #challenge-title { margin: 0; color: var(--sun); font-size: 1rem; }
+      #challenge-title { margin: 0; color: var(--sun); font-size: clamp(1.15rem, 4vw, 1.45rem); }
       .challenge-step { margin: 0.6rem 0 0.35rem; color: var(--leaf); font-size: 0.68rem; font-weight: 700; }
-      .challenge-question { margin: 0; font-size: 0.87rem; line-height: 1.45; }
-      .challenge-options { display: grid; gap: 0.45rem; margin: 1rem 0 0.55rem; }
+      .challenge-greeting { margin: 0.45rem 0 0.9rem; color: rgba(238,246,242,0.78); font-size: 0.85rem; line-height: 1.55; }
+      .challenge-question { margin: 0; font-size: 1rem; line-height: 1.5; font-weight: 650; }
+      .challenge-options { display: grid; gap: 0.55rem; margin: 1rem 0 0.55rem; }
       .challenge-choice, .challenge-close {
-        width: 100%; border: 1px solid var(--line); border-radius: 5px; padding: 0.6rem 0.7rem;
-        background: rgba(255,255,255,0.05); color: #eef6f2; font: inherit; font-size: 0.78rem;
-        text-align: left; cursor: pointer;
+        width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; padding: 0.7rem 0.85rem;
+        background: rgba(255,255,255,0.05); color: #eef6f2; font: inherit; font-size: 0.86rem;
+        text-align: left; cursor: pointer; transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
       }
       .challenge-choice:hover, .challenge-close:hover { border-color: var(--leaf); background: rgba(79,170,122,0.18); }
-      .challenge-close { width: auto; margin-top: 0.55rem; }
-      .challenge-feedback { min-height: 1.2rem; margin: 0.4rem 0 0; color: var(--sun); font-size: 0.74rem; opacity: 0; }
-      .challenge-feedback.show { opacity: 1; }
+      .challenge-choice:focus-visible, .challenge-close:focus-visible { outline: 3px solid var(--sun); outline-offset: 2px; }
+      .challenge-choice:active { transform: translateY(1px); }
+      .challenge-close { width: auto; margin-top: 0.55rem; color: rgba(238,246,242,0.78); }
+      .challenge-close kbd { margin-left: 0.35rem; color: var(--sun); }
+      .challenge-feedback { min-height: 1.2rem; margin: 0.55rem 0 0; color: var(--sun); font-size: 0.82rem; line-height: 1.45; }
+      .challenge-feedback:empty { display: none; }
 
       /* ---------- ayuda de controles ---------- */
       #help {
@@ -282,12 +288,12 @@
     <div id="crosshair"></div>
 
     <div id="mission" class="hidden" aria-live="polite">
-      <span class="eyebrow">DESAFÍO CIMDIP</span>
+      <span class="eyebrow">CONVERSACIONES CIMDIP</span>
       <p id="mission-title"></p>
       <div id="mission-progress"></div>
     </div>
-    <div id="station-prompt" class="hidden"><span id="station-name"></span><kbd>E</kbd></div>
-    <div id="challenge" class="hidden" role="dialog" aria-modal="true" aria-hidden="true">
+    <div id="station-prompt" class="hidden"><span id="station-name"></span><kbd>E · hablar</kbd></div>
+    <div id="challenge" class="hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="challenge-title" aria-describedby="challenge-body">
       <h2 id="challenge-title"></h2>
       <div id="challenge-body"></div>
     </div>
@@ -301,7 +307,8 @@
     <div id="help" class="hidden">
       <div id="help-walk">
         <div><b>Caminar</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · <b>Correr</b> <kbd>Shift</kbd></div>
-        <div><b>Saltar</b> <kbd>Espacio</kbd> · <b>Mirar</b> clic + arrastrar</div>
+        <div><b>Saltar</b> <kbd>Espacio</kbd> · <b>Hablar con docentes</b> <kbd>E</kbd></div>
+        <div><b>Mirar</b> clic + arrastrar</div>
       </div>
       <div id="help-fly" hidden>
         <div><b>Volar</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · <b>Rápido</b> <kbd>Shift</kbd></div>

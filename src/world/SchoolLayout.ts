@@ -48,8 +48,8 @@ export const SCHOOL = {
   wingEndV: 11,
   /** Hall pasante de planta baja (se cruza caminando al patio). */
   lobbyHalf: 3.2,
-  /** Pisos: bloque del frente y alas. */
-  frontFloors: 3,
+  /** Pisos: bloque del frente y alas, según las fotos de la sede. */
+  frontFloors: 2,
   wingFloors: 2,
   floorH: 3.6,
   /** Reja de frente: se interrumpe en el portón. */
@@ -65,6 +65,8 @@ export const COURTYARD: Rect = { u0: -10.6, v0: -3.6, u1: 10.6, v1: 12 };
 export const FORECOURT: Rect = { u0: -19, v0: -20, u1: 19, v1: -15 };
 /** Huerta escolar al fondo. */
 export const GARDEN: Rect = { u0: -19, v0: 12.6, u1: 19, v1: 19.8 };
+/** Patio de juegos iniciales, detrás del ala izquierda del campus. */
+export const PLAYGROUND: Rect = { u0: -14.2, v0: 13, u1: -5.8, v1: 19.1 };
 
 /** Mástil de la bandera, en la explanada. */
 export const FLAG = { u: -12.2, v: -17.6 } as const;
@@ -137,6 +139,13 @@ export function schoolSolidLocal(u: number, v: number, margin = 0.35): boolean {
   if (v > S.half - 0.8 - margin) return true;
   // Mástil de la bandera, pedestales de las estaciones y columnas de la marquesina.
   if (Math.hypot(u - FLAG.u, v - FLAG.v) < 0.5) return true;
+  if (Math.hypot(u - 6.8, v + 20.45) < 1.65) return true;
+  // Equipamiento del patio infantil: torre, tobogán y postes de hamacas.
+  if (Math.hypot(u + 11.1, v - 16.7) < 0.95) return true;
+  if (Math.hypot(u + 9.35, v - 16.75) < 0.5) return true;
+  for (const swingU of [-8.3, -6.2]) {
+    if (Math.hypot(u - swingU, v - 16.5) < 0.28) return true;
+  }
   for (const k in STATION_SPOTS) {
     const p = STATION_SPOTS[k as keyof typeof STATION_SPOTS];
     if (Math.hypot(u - p.u, v - p.v) < 0.85) return true;

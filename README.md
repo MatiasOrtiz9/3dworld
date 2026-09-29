@@ -37,7 +37,13 @@ cortando la red de verdad y recargando — 0 peticiones fallidas.
 |---|---|
 | `/` | Ciudad aleatoria |
 | `/?seed=42` | Ciudad reproducible (número o texto) |
+| `/?quality=low` | Fuerza el perfil de bajo consumo para equipos modestos |
 | `/?quality=vr` | Fuerza el perfil VR |
+
+En escritorio, la calidad inicial se estima con núcleos, memoria disponible y
+GPU. Los equipos modestos arrancan en **Baja**: renderiza a resolución reducida,
+sin sombras ni oclusión ambiental, y genera una ciudad más compacta con menos
+vegetación y peatones. El botón **Calidad** permite pasar por Baja, Media y Alta.
 
 ## Controles
 
@@ -46,6 +52,7 @@ cortando la red de verdad y recargando — 0 peticiones fallidas.
 | Caminar / volar | `W` `A` `S` `D` · `Shift` corre |
 | Hora del día | deslizador en el HUD |
 | Saltar | `Espacio` (sólo caminando) |
+| Hablar con docentes y responder preguntas | acercarse a un NPC y pulsar `E` (sólo caminando) |
 | Subir / bajar | `E` / `Q` (sólo volando) |
 | Cambiar de modo | `F` |
 | Mirar | clic + arrastrar |
@@ -66,6 +73,9 @@ parques, canal diagonal con puentes, y huertas solares con turbinas de eje
 vertical. **Sin autos**: calzada angosta, vereda ancha, tranvía.
 
 **Interactividad**
+- **Cinco docentes NPC en el campus**: acercate, pulsá `E`, conversá y respondé
+  preguntas de tecnología, robótica, ciencia, deporte y ambiente. Las respuestas
+  incluyen explicación; el avance se conserva en el navegador.
 - **Caminar** con gravedad, salto y colisión contra los edificios, a 1,68 m de
   altura de ojos. Es lo que da escala: un espacio urbano sólo se entiende
   cuando hay que rodear la manzana en vez de atravesarla.

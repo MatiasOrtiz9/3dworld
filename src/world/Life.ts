@@ -3,6 +3,8 @@ import type { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
 import { CreateBox } from '@babylonjs/core/Meshes/Builders/boxBuilder';
+import { CreateCylinder } from '@babylonjs/core/Meshes/Builders/cylinderBuilder';
+import { CreateSphere } from '@babylonjs/core/Meshes/Builders/sphereBuilder';
 import { PBRMetallicRoughnessMaterial } from '@babylonjs/core/Materials/PBR/pbrMetallicRoughnessMaterial';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import type { CityPlan } from './CityLayout';
@@ -16,6 +18,7 @@ interface Tram {
   speed: number;
   /** Segundos que lleva detenido en una parada; 0 = en movimiento. */
   stopped: number;
+  wheelPhase: number;
 }
 
 interface Pod {
@@ -26,6 +29,7 @@ interface Pod {
   dir: 1 | -1;
   speed: number;
   stopped: number;
+  wheelPhase: number;
 }
 
 interface Bird {
@@ -59,6 +63,8 @@ export class Life {
   private tramRoof!: Mesh;
   private tramHeadlight!: Mesh;
   private tramTaillight!: Mesh;
+  private tramWheel!: Mesh;
+  private tramWindowFrame!: Mesh;
 
   private tramCarBuf!: Float32Array;
   private tramGlassBuf!: Float32Array;
@@ -66,6 +72,8 @@ export class Life {
   private tramRoofBuf!: Float32Array;
   private tramHeadlightBuf!: Float32Array;
   private tramTaillightBuf!: Float32Array;
+  private tramWheelBuf!: Float32Array;
+  private tramWindowFrameBuf!: Float32Array;
 
   // Mallas de autos autónomos (EcoPods)
   private podBody!: Mesh;
@@ -73,12 +81,20 @@ export class Life {
   private podChassis!: Mesh;
   private podHeadlight!: Mesh;
   private podTaillight!: Mesh;
+  private podWheel!: Mesh;
+  private podHub!: Mesh;
+  private podSideWindow!: Mesh;
+  private podWindshield!: Mesh;
 
   private podBodyBuf!: Float32Array;
   private podGlassBuf!: Float32Array;
   private podChassisBuf!: Float32Array;
   private podHeadlightBuf!: Float32Array;
   private podTaillightBuf!: Float32Array;
+  private podWheelBuf!: Float32Array;
+  private podHubBuf!: Float32Array;
+  private podSideWindowBuf!: Float32Array;
+  private podWindshieldBuf!: Float32Array;
 
   // Mallas de pájaros con alas articuladas
   private birdBody!: Mesh;
@@ -101,6 +117,35 @@ export class Life {
     this.createTrams(rng);
     this.createPods(rng);
     this.createBirds(rng);
+    // Los buffers arrancan llenos de ceros y después cambian cada cuadro. Si
+    // Babylon conserva ese bounding inicial en el origen, los vehículos y las
+    // aves desaparecen al alejarse de la plaza. Se dibujan como lotes completos;
+    // sus pocas instancias cuestan mucho menos que recalcular el bounding.
+    for (const mesh of [
+      this.tramCar,
+      this.tramGlass,
+      this.tramBellows,
+      this.tramRoof,
+      this.tramHeadlight,
+      this.tramTaillight,
+      this.tramWheel,
+      this.tramWindowFrame,
+      this.podBody,
+      this.podGlass,
+      this.podChassis,
+      this.podHeadlight,
+      this.podTaillight,
+      this.podWheel,
+      this.podHub,
+      this.podSideWindow,
+      this.podWindshield,
+      this.birdBody,
+      this.birdWingL,
+      this.birdWingR,
+    ]) {
+      mesh.alwaysSelectAsActiveMesh = true;
+      mesh.doNotSyncBoundingInfo = true;
+    }
     this.scene.onBeforeRenderObservable.add(this.update);
   }
 
@@ -124,6 +169,7 @@ export class Life {
           dir: i === 0 ? 1 : -1,
           speed: rng.range(7.5, 11.5),
           stopped: 0,
+          wheelPhase: 0,
         });
       }
     }
@@ -156,17 +202,17 @@ export class Life {
     tailMat.emissiveColor = Color3.FromHexString('#ff2828');
     tailMat.disableLighting = true;
 
-    // Vagón (2 por tranvía: delantero y trasero)
-    this.tramCar = CreateBox('tramCarSrc', { width: 2.5, height: 3.1, depth: 8.5 }, this.scene);
+    // Caja baja sobre bogies, con una franja de ventanas separada del techo.
+    this.tramCar = CreateBox('tramCarSrc', { width: 2.5, height: 2.65, depth: 8.5 }, this.scene);
     this.tramCar.material = bodyMat;
     this.tramCar.isPickable = false;
 
-    this.tramGlass = CreateBox('tramGlassSrc', { width: 2.56, height: 1.18, depth: 7.9 }, this.scene);
+    this.tramGlass = CreateBox('tramGlassSrc', { width: 2.54, height: 1.08, depth: 7.86 }, this.scene);
     this.tramGlass.material = glassMat;
     this.tramGlass.isPickable = false;
 
     // Fuelle articulado en el centro
-    this.tramBellows = CreateBox('tramBellowsSrc', { width: 2.42, height: 2.95, depth: 1.1 }, this.scene);
+    this.tramBellows = CreateBox('tramBellowsSrc', { width: 2.34, height: 2.65, depth: 1.0 }, this.scene);
     this.tramBellows.material = bellowsMat;
     this.tramBellows.isPickable = false;
 
@@ -184,6 +230,20 @@ export class Life {
     this.tramTaillight.material = tailMat;
     this.tramTaillight.isPickable = false;
 
+    const tireMat = new PBRMetallicRoughnessMaterial('tramTireMat', this.scene);
+    tireMat.baseColor = Color3.FromHexString('#20262a');
+    tireMat.roughness = 0.88;
+    tireMat.metallic = 0.02;
+    this.tramWheel = CreateCylinder('tramWheelSrc', { height: 0.2, diameter: 0.78, tessellation: 10 }, this.scene);
+    this.tramWheel.material = tireMat;
+    this.tramWheel.isPickable = false;
+
+    // Montantes verticales: hacen que la banda de vidrio se lea como ventanas,
+    // no como una única pieza negra pegada a todo el vagón.
+    this.tramWindowFrame = CreateBox('tramWindowFrameSrc', { width: 2.57, height: 1.14, depth: 0.075 }, this.scene);
+    this.tramWindowFrame.material = bodyMat;
+    this.tramWindowFrame.isPickable = false;
+
     const totalCars = this.trams.length * 2;
     this.tramCarBuf = new Float32Array(totalCars * 16);
     this.tramGlassBuf = new Float32Array(totalCars * 16);
@@ -191,6 +251,8 @@ export class Life {
     this.tramBellowsBuf = new Float32Array(this.trams.length * 16);
     this.tramHeadlightBuf = new Float32Array(this.trams.length * 16);
     this.tramTaillightBuf = new Float32Array(this.trams.length * 16);
+    this.tramWheelBuf = new Float32Array(totalCars * 4 * 16);
+    this.tramWindowFrameBuf = new Float32Array(totalCars * 5 * 16);
 
     this.tramCar.thinInstanceSetBuffer('matrix', this.tramCarBuf, 16, false);
     this.tramGlass.thinInstanceSetBuffer('matrix', this.tramGlassBuf, 16, false);
@@ -198,6 +260,8 @@ export class Life {
     this.tramBellows.thinInstanceSetBuffer('matrix', this.tramBellowsBuf, 16, false);
     this.tramHeadlight.thinInstanceSetBuffer('matrix', this.tramHeadlightBuf, 16, false);
     this.tramTaillight.thinInstanceSetBuffer('matrix', this.tramTaillightBuf, 16, false);
+    this.tramWheel.thinInstanceSetBuffer('matrix', this.tramWheelBuf, 16, false);
+    this.tramWindowFrame.thinInstanceSetBuffer('matrix', this.tramWindowFrameBuf, 16, false);
   }
 
   // ---------------------------------------------------------------- autos autónomos (EcoPods)
@@ -219,6 +283,7 @@ export class Life {
           dir,
           speed: rng.range(5.5, 9.5),
           stopped: 0,
+          wheelPhase: 0,
         });
       }
     }
@@ -234,7 +299,7 @@ export class Life {
     podGlassMat.metallic = 0.7;
 
     const chassisMat = new PBRMetallicRoughnessMaterial('podChassisMat', this.scene);
-    chassisMat.baseColor = Color3.FromHexString('#25282d');
+    chassisMat.baseColor = Color3.FromHexString('#38534f');
     chassisMat.roughness = 0.75;
     chassisMat.metallic = 0.2;
 
@@ -246,15 +311,17 @@ export class Life {
     podTailMat.emissiveColor = Color3.FromHexString('#ff3232');
     podTailMat.disableLighting = true;
 
-    this.podBody = CreateBox('podBodySrc', { width: 1.85, height: 1.35, depth: 3.3 }, this.scene);
+    // Carrocería baja y cabina central: la separación hace legible el parabrisas
+    // y deja espacio visual para las ruedas, en vez de una caja única.
+    this.podBody = CreateBox('podBodySrc', { width: 1.85, height: 0.82, depth: 3.4 }, this.scene);
     this.podBody.material = podBodyMat;
     this.podBody.isPickable = false;
 
-    this.podGlass = CreateBox('podGlassSrc', { width: 1.88, height: 0.72, depth: 2.15 }, this.scene);
+    this.podGlass = CreateBox('podGlassSrc', { width: 1.53, height: 0.5, depth: 1.92 }, this.scene);
     this.podGlass.material = podGlassMat;
     this.podGlass.isPickable = false;
 
-    this.podChassis = CreateBox('podChassisSrc', { width: 1.9, height: 0.42, depth: 3.0 }, this.scene);
+    this.podChassis = CreateBox('podChassisSrc', { width: 1.9, height: 0.24, depth: 3.0 }, this.scene);
     this.podChassis.material = chassisMat;
     this.podChassis.isPickable = false;
 
@@ -266,18 +333,49 @@ export class Life {
     this.podTaillight.material = podTailMat;
     this.podTaillight.isPickable = false;
 
+    const tireMat = new PBRMetallicRoughnessMaterial('podTireMat', this.scene);
+    tireMat.baseColor = Color3.FromHexString('#20262a');
+    tireMat.roughness = 0.9;
+    tireMat.metallic = 0.02;
+    this.podWheel = CreateCylinder('podWheelSrc', { height: 0.2, diameter: 0.68, tessellation: 10 }, this.scene);
+    this.podWheel.material = tireMat;
+    this.podWheel.isPickable = false;
+
+    const hubMat = new PBRMetallicRoughnessMaterial('podHubMat', this.scene);
+    hubMat.baseColor = Color3.FromHexString('#b8c9c1');
+    hubMat.roughness = 0.34;
+    hubMat.metallic = 0.62;
+    this.podHub = CreateCylinder('podHubSrc', { height: 0.215, diameter: 0.25, tessellation: 8 }, this.scene);
+    this.podHub.material = hubMat;
+    this.podHub.isPickable = false;
+
+    this.podSideWindow = CreateBox('podSideWindowSrc', { width: 0.07, height: 0.27, depth: 0.52 }, this.scene);
+    this.podSideWindow.material = podGlassMat;
+    this.podSideWindow.isPickable = false;
+    this.podWindshield = CreateBox('podWindshieldSrc', { width: 1.23, height: 0.34, depth: 0.065 }, this.scene);
+    this.podWindshield.material = podGlassMat;
+    this.podWindshield.isPickable = false;
+
     const count = this.pods.length;
     this.podBodyBuf = new Float32Array(count * 16);
     this.podGlassBuf = new Float32Array(count * 16);
     this.podChassisBuf = new Float32Array(count * 16);
     this.podHeadlightBuf = new Float32Array(count * 16);
     this.podTaillightBuf = new Float32Array(count * 16);
+    this.podWheelBuf = new Float32Array(count * 4 * 16);
+    this.podHubBuf = new Float32Array(count * 4 * 16);
+    this.podSideWindowBuf = new Float32Array(count * 4 * 16);
+    this.podWindshieldBuf = new Float32Array(count * 2 * 16);
 
     this.podBody.thinInstanceSetBuffer('matrix', this.podBodyBuf, 16, false);
     this.podGlass.thinInstanceSetBuffer('matrix', this.podGlassBuf, 16, false);
     this.podChassis.thinInstanceSetBuffer('matrix', this.podChassisBuf, 16, false);
     this.podHeadlight.thinInstanceSetBuffer('matrix', this.podHeadlightBuf, 16, false);
     this.podTaillight.thinInstanceSetBuffer('matrix', this.podTaillightBuf, 16, false);
+    this.podWheel.thinInstanceSetBuffer('matrix', this.podWheelBuf, 16, false);
+    this.podHub.thinInstanceSetBuffer('matrix', this.podHubBuf, 16, false);
+    this.podSideWindow.thinInstanceSetBuffer('matrix', this.podSideWindowBuf, 16, false);
+    this.podWindshield.thinInstanceSetBuffer('matrix', this.podWindshieldBuf, 16, false);
   }
 
   // ---------------------------------------------------------------- pájaros
@@ -306,16 +404,16 @@ export class Life {
     wingMat.emissiveColor = Color3.FromHexString('#4b4d54').scale(0.32);
 
     // Cuerpo aerodinámico del ave
-    this.birdBody = CreateBox('birdBodySrc', { width: 0.28, height: 0.16, depth: 0.78 }, this.scene);
+    this.birdBody = CreateSphere('birdBodySrc', { diameter: 1, segments: 6 }, this.scene);
     this.birdBody.material = birdBodyMat;
     this.birdBody.isPickable = false;
 
     // Alas izquierda y derecha articuladas
-    this.birdWingL = CreateBox('birdWingLSrc', { width: 0.68, height: 0.04, depth: 0.36 }, this.scene);
+    this.birdWingL = CreateSphere('birdWingLSrc', { diameter: 1, segments: 6 }, this.scene);
     this.birdWingL.material = wingMat;
     this.birdWingL.isPickable = false;
 
-    this.birdWingR = CreateBox('birdWingRSrc', { width: 0.68, height: 0.04, depth: 0.36 }, this.scene);
+    this.birdWingR = CreateSphere('birdWingRSrc', { diameter: 1, segments: 6 }, this.scene);
     this.birdWingR.material = wingMat;
     this.birdWingR.isPickable = false;
 
@@ -346,6 +444,7 @@ export class Life {
       } else {
         const before = t.pos;
         t.pos += t.speed * t.dir * dt;
+        t.wheelPhase = (t.wheelPhase + (t.speed * t.dir * dt) / 0.39) % (Math.PI * 2);
 
         const cross = Math.floor(t.pos / pitch) !== Math.floor(before / pitch);
         if (cross && Math.random() < 0.45) {
@@ -359,7 +458,7 @@ export class Life {
         if (t.pos < -limit) t.pos = limit;
       }
 
-      const rotY = t.axis === 'x' ? Math.PI / 2 : 0;
+      const rotY = (t.axis === 'x' ? Math.PI / 2 : 0) + (t.dir < 0 ? Math.PI : 0);
       const fwd = t.dir;
       const dx = t.axis === 'x' ? 1 : 0;
       const dz = t.axis === 'x' ? 0 : 1;
@@ -376,16 +475,46 @@ export class Life {
       const idx1 = i * 2;
       const idx2 = i * 2 + 1;
 
-      writeMatrix(this.tramCarBuf, idx1, c1x, 1.72, c1z, rotY);
-      writeMatrix(this.tramGlassBuf, idx1, c1x, 2.22, c1z, rotY);
-      writeMatrix(this.tramRoofBuf, idx1, c1x, 3.42, c1z, rotY);
+      writeMatrix(this.tramCarBuf, idx1, c1x, 1.88, c1z, rotY);
+      writeMatrix(this.tramGlassBuf, idx1, c1x, 2.34, c1z, rotY);
+      writeMatrix(this.tramRoofBuf, idx1, c1x, 3.36, c1z, rotY);
 
-      writeMatrix(this.tramCarBuf, idx2, c2x, 1.72, c2z, rotY);
-      writeMatrix(this.tramGlassBuf, idx2, c2x, 2.22, c2z, rotY);
-      writeMatrix(this.tramRoofBuf, idx2, c2x, 3.42, c2z, rotY);
+      writeMatrix(this.tramCarBuf, idx2, c2x, 1.88, c2z, rotY);
+      writeMatrix(this.tramGlassBuf, idx2, c2x, 2.34, c2z, rotY);
+      writeMatrix(this.tramRoofBuf, idx2, c2x, 3.36, c2z, rotY);
+
+      const forwardX = dx * fwd;
+      const forwardZ = dz * fwd;
+      const rightX = Math.cos(rotY);
+      const rightZ = -Math.sin(rotY);
+      for (const [carIndex, carX, carZ] of [[idx1, c1x, c1z], [idx2, c2x, c2z]] as const) {
+        const wheelBase = carIndex * 4;
+        for (let axle = 0; axle < 2; axle++) {
+          const along = axle === 0 ? -2.75 : 2.75;
+          for (let side = 0; side < 2; side++) {
+            const lateral = side === 0 ? -1.35 : 1.35;
+            const wheelX = carX + forwardX * along + rightX * lateral;
+            const wheelZ = carZ + forwardZ * along + rightZ * lateral;
+            writeMatrix(this.tramWheelBuf, wheelBase + axle * 2 + side, wheelX, 0.4, wheelZ, rotY, t.wheelPhase, Math.PI / 2);
+          }
+        }
+
+        const frameBase = carIndex * 5;
+        for (let frame = 0; frame < 5; frame++) {
+          const along = (frame - 2) * 1.48;
+          writeMatrix(
+            this.tramWindowFrameBuf,
+            frameBase + frame,
+            carX + forwardX * along,
+            2.34,
+            carZ + forwardZ * along,
+            rotY,
+          );
+        }
+      }
 
       // Fuelle articulado central
-      writeMatrix(this.tramBellowsBuf, i, cx, 1.68, cz, rotY);
+      writeMatrix(this.tramBellowsBuf, i, cx, 1.88, cz, rotY);
 
       // Luces LED (delanteras en punta frontal, traseras en cola)
       const hx = cx + dx * fwd * 8.85;
@@ -393,8 +522,8 @@ export class Life {
       const tx = cx - dx * fwd * 8.85;
       const tz = cz - dz * fwd * 8.85;
 
-      writeMatrix(this.tramHeadlightBuf, i, hx, 1.15, hz, rotY);
-      writeMatrix(this.tramTaillightBuf, i, tx, 1.15, tz, rotY);
+      writeMatrix(this.tramHeadlightBuf, i, hx, 1.32, hz, rotY);
+      writeMatrix(this.tramTaillightBuf, i, tx, 1.32, tz, rotY);
     }
 
     if (this.trams.length) {
@@ -404,6 +533,8 @@ export class Life {
       this.tramBellows.thinInstanceBufferUpdated('matrix');
       this.tramHeadlight.thinInstanceBufferUpdated('matrix');
       this.tramTaillight.thinInstanceBufferUpdated('matrix');
+      this.tramWheel.thinInstanceBufferUpdated('matrix');
+      this.tramWindowFrame.thinInstanceBufferUpdated('matrix');
     }
 
     // Actualización de autos autónomos (EcoPods)
@@ -415,6 +546,7 @@ export class Life {
       } else {
         const before = p.pos;
         p.pos += p.speed * p.dir * dt;
+        p.wheelPhase = (p.wheelPhase + (p.speed * p.dir * dt) / 0.34) % (Math.PI * 2);
 
         // Ceder el paso en esquinas ocasionalmente
         const cross = Math.floor(p.pos / pitch) !== Math.floor(before / pitch);
@@ -426,7 +558,7 @@ export class Life {
         if (p.pos < -limit) p.pos = limit;
       }
 
-      const rotY = p.axis === 'x' ? Math.PI / 2 : 0;
+      const rotY = (p.axis === 'x' ? Math.PI / 2 : 0) + (p.dir < 0 ? Math.PI : 0);
       const fwd = p.dir;
       const dx = p.axis === 'x' ? 1 : 0;
       const dz = p.axis === 'x' ? 0 : 1;
@@ -435,11 +567,54 @@ export class Life {
 
       const px = (p.axis === 'x' ? p.pos : p.at) + perpX * p.laneOffset;
       const pz = (p.axis === 'x' ? p.at : p.pos) + perpZ * p.laneOffset;
-      const py = 0.88;
+      const py = 0.82;
 
       writeMatrix(this.podBodyBuf, i, px, py, pz, rotY);
-      writeMatrix(this.podGlassBuf, i, px, py + 0.35, pz, rotY);
-      writeMatrix(this.podChassisBuf, i, px, 0.28, pz, rotY);
+      writeMatrix(this.podGlassBuf, i, px, 1.34, pz, rotY);
+      writeMatrix(this.podChassisBuf, i, px, 0.36, pz, rotY);
+
+      const rightX = Math.cos(rotY);
+      const rightZ = -Math.sin(rotY);
+      const forwardX = Math.sin(rotY);
+      const forwardZ = Math.cos(rotY);
+      for (let axle = 0; axle < 2; axle++) {
+        const along = axle === 0 ? -1.03 : 1.03;
+        for (let side = 0; side < 2; side++) {
+          const lateral = side === 0 ? -0.91 : 0.91;
+          const wheelIndex = i * 4 + axle * 2 + side;
+          const wx = px + rightX * lateral + forwardX * along;
+          const wz = pz + rightZ * lateral + forwardZ * along;
+          writeMatrix(this.podWheelBuf, wheelIndex, wx, 0.36, wz, rotY, p.wheelPhase, Math.PI / 2);
+          writeMatrix(this.podHubBuf, wheelIndex, wx, 0.36, wz, rotY, p.wheelPhase, Math.PI / 2);
+        }
+      }
+
+      for (let side = 0; side < 2; side++) {
+        const lateral = side === 0 ? -0.91 : 0.91;
+        for (let pane = 0; pane < 2; pane++) {
+          const along = pane === 0 ? -0.48 : 0.48;
+          const windowIndex = i * 4 + side * 2 + pane;
+          writeMatrix(
+            this.podSideWindowBuf,
+            windowIndex,
+            px + rightX * lateral + forwardX * along,
+            1.1,
+            pz + rightZ * lateral + forwardZ * along,
+            rotY,
+          );
+        }
+      }
+      for (let end = 0; end < 2; end++) {
+        const along = end === 0 ? -1.685 : 1.685;
+        writeMatrix(
+          this.podWindshieldBuf,
+          i * 2 + end,
+          px + forwardX * along,
+          1.17,
+          pz + forwardZ * along,
+          rotY,
+        );
+      }
 
       // Barra frontal y trasera
       const fx = px + dx * fwd * 1.66;
@@ -457,6 +632,10 @@ export class Life {
       this.podChassis.thinInstanceBufferUpdated('matrix');
       this.podHeadlight.thinInstanceBufferUpdated('matrix');
       this.podTaillight.thinInstanceBufferUpdated('matrix');
+      this.podWheel.thinInstanceBufferUpdated('matrix');
+      this.podHub.thinInstanceBufferUpdated('matrix');
+      this.podSideWindow.thinInstanceBufferUpdated('matrix');
+      this.podWindshield.thinInstanceBufferUpdated('matrix');
     }
 
     // Actualización de pájaros con aleteo biomecánico
@@ -476,7 +655,7 @@ export class Life {
       const isGliding = climb > 0.35;
       const flapAngle = isGliding ? -0.04 : Math.sin(this.time * b.flapFreq + b.bobPhase) * 0.44;
 
-      writeMatrix(this.birdBodyBuf, i, x, y, z, rotY, climb * 0.08, bank);
+      writeMatrix(this.birdBodyBuf, i, x, y, z, rotY, climb * 0.08, bank, 0.28, 0.16, 0.78);
 
       // Alas izquierda y derecha compensadas
       const wingDist = 0.42;
@@ -488,8 +667,8 @@ export class Life {
       const wrx = x + cosY * wingDist;
       const wrz = z - sinY * wingDist;
 
-      writeMatrix(this.birdWingLBuf, i, wlx, y + 0.02, wlz, rotY, climb * 0.08, bank + flapAngle);
-      writeMatrix(this.birdWingRBuf, i, wrx, y + 0.02, wrz, rotY, climb * 0.08, bank - flapAngle);
+      writeMatrix(this.birdWingLBuf, i, wlx, y + 0.02, wlz, rotY, climb * 0.08, bank + flapAngle, 0.68, 0.04, 0.36);
+      writeMatrix(this.birdWingRBuf, i, wrx, y + 0.02, wrz, rotY, climb * 0.08, bank - flapAngle, 0.68, 0.04, 0.36);
     }
 
     if (this.birds.length) {
@@ -509,6 +688,7 @@ export class Life {
     this.tramRoof?.material?.dispose();
     this.tramHeadlight?.material?.dispose();
     this.tramTaillight?.material?.dispose();
+    this.tramWheel?.material?.dispose();
 
     this.tramCar?.dispose();
     this.tramGlass?.dispose();
@@ -516,6 +696,8 @@ export class Life {
     this.tramRoof?.dispose();
     this.tramHeadlight?.dispose();
     this.tramTaillight?.dispose();
+    this.tramWheel?.dispose();
+    this.tramWindowFrame?.dispose();
 
     // Dispose pods
     this.podBody?.material?.dispose();
@@ -523,12 +705,18 @@ export class Life {
     this.podChassis?.material?.dispose();
     this.podHeadlight?.material?.dispose();
     this.podTaillight?.material?.dispose();
+    this.podWheel?.material?.dispose();
+    this.podHub?.material?.dispose();
 
     this.podBody?.dispose();
     this.podGlass?.dispose();
     this.podChassis?.dispose();
     this.podHeadlight?.dispose();
     this.podTaillight?.dispose();
+    this.podWheel?.dispose();
+    this.podHub?.dispose();
+    this.podSideWindow?.dispose();
+    this.podWindshield?.dispose();
 
     // Dispose pájaros
     this.birdBody?.material?.dispose();
@@ -556,8 +744,12 @@ function writeMatrix(
   rotY: number,
   rotX = 0,
   rotZ = 0,
+  scaleX = 1,
+  scaleY = 1,
+  scaleZ = 1,
 ): void {
   _pos.set(x, y, z);
+  _scale.set(scaleX, scaleY, scaleZ);
   Quaternion.FromEulerAnglesToRef(rotX, rotY, rotZ, _rot);
   Matrix.ComposeToRef(_scale, _rot, _pos, _mat);
   _mat.copyToArray(buf, i * 16);

@@ -277,6 +277,7 @@ function rect(y: number, hw: number, hd: number, shade: number, cx = 0, cz = 0):
 
 export type PartName =
   | 'torso'
+  | 'tie'
   | 'head'
   | 'hairShort'
   | 'hairLong'
@@ -312,6 +313,16 @@ export function buildPeopleParts(scene: Scene): Record<PartName, Mesh> {
       oct(1.4, 0.198, 0.108, 0.055, 1),
       neck,
     ]);
+    // Cuello abierto de la camisa, modelado como sombreado en la misma malla.
+    b.tri([0, 1.405, 0.112], [-0.062, 1.372, 0.117], [-0.018, 1.286, 0.126], 0.64, [0, 1.36, 0]);
+    b.tri([0, 1.405, 0.112], [0.062, 1.372, 0.117], [0.018, 1.286, 0.126], 0.72, [0, 1.36, 0]);
+  });
+
+  // Corbata roja opcional para la camisa celeste del uniforme secundario.
+  // Es una sola pieza instanciada para toda la multitud, igual que el resto.
+  make('tie', (b) => {
+    b.tri([0, 1.405, 0.13], [-0.026, 1.35, 0.13], [0, 1.08, 0.13], 0.86, [0, 1.25, 0]);
+    b.tri([0, 1.405, 0.13], [0, 1.08, 0.13], [0.026, 1.35, 0.13], 0.72, [0, 1.25, 0]);
   });
 
   // --- cabeza: cuello, cráneo achaflanado, nariz y ojos.
@@ -340,6 +351,20 @@ export function buildPeopleParts(scene: Scene): Record<PartName, Mesh> {
       const z = zf + 0.0035;
       b.quad([x0, 1.672, z], [x1, 1.672, z], [x1, 1.688, z - 0.002], [x0, 1.688, z], 0.12, [0, 1.68, 0]);
     }
+    // Orejas pequeñas a ambos lados: ayudan a leer el perfil de la cabeza sin
+    // agregar otra malla ni otro draw call por persona.
+    for (const sx of [-1, 1]) {
+      b.loft(
+        [
+          oct(1.625, 0.024, 0.026, 0.01, 0.8, sx * 0.087, 0.012),
+          oct(1.68, 0.026, 0.028, 0.01, 0.88, sx * 0.09, 0.012),
+        ],
+        true,
+        true,
+      );
+    }
+    // Una línea de boca muy discreta completa la expresión frontal.
+    b.quad([-0.025, 1.615, 0.105], [0.025, 1.615, 0.105], [0.021, 1.623, 0.108], [-0.021, 1.623, 0.108], 0.38, [0, 1.62, 0]);
   });
 
   // --- pelo: tres cortes. El borde inferior baja hacia la nuca: un casco
@@ -408,13 +433,12 @@ export function buildPeopleParts(scene: Scene): Record<PartName, Mesh> {
   });
   make('shoe', (b) => {
     const sole = -SHIN_LEN;
-    // Zapatilla compacta: la suela oscura y el capellada más angosta hacia el
-    // tobillo. Con 24 cm de largo y el ancho de la pierna se leían como
-    // zapatos de payaso.
+    // Punta achaflanada y empeine estrecho: mantiene el tamaño realista, pero
+    // evita que el pie parezca otro bloque rectangular.
     b.loft([
-      { ...rect(sole, 0.043, 0.108, 0.35, 0, 0.038), capShade: 0.2 },
-      rect(sole + 0.022, 0.045, 0.11, 0.85, 0, 0.038),
-      rect(-0.395, 0.04, 0.058, 1, 0, 0.004),
+      { ...oct(sole, 0.043, 0.105, 0.035, 0.35, 0, 0.038), capShade: 0.2 },
+      oct(sole + 0.022, 0.045, 0.11, 0.038, 0.85, 0, 0.038),
+      oct(-0.395, 0.04, 0.062, 0.032, 1, 0, 0.004),
     ]);
   });
 

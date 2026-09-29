@@ -88,13 +88,12 @@ scene.autoClearDepthAndStencil = true;
 scene.blockMaterialDirtyMechanism = false;
 scene.skipPointerMovePicking = true;
 
-// ?quality=vr|balanced|high fuerza un perfil. Sirve para medir el presupuesto
-// del visor desde una notebook, sin depender del autodetectado.
+// ?quality=low|vr|balanced|high fuerza un perfil para comparar equipos.
 const qualityParam = new URLSearchParams(location.search).get('quality') as QualityTier | null;
 const initialTier: QualityTier =
-  qualityParam && TIER_ORDER.includes(qualityParam)
+  qualityParam && (TIER_ORDER.includes(qualityParam) || qualityParam === 'vr')
     ? qualityParam
-    : QualityManager.suggestInitial();
+    : QualityManager.suggestInitial(canvas);
 const quality = new QualityManager(engine, scene, initialTier);
 const camera = createFlyCamera(scene, canvas);
 
@@ -212,7 +211,13 @@ async function buildCity(newSeed: number): Promise<void> {
 
   // Clic para inspeccionar manzanas.
   inspector = new Inspector(scene, camera, city.index, canvas);
-  challenge = new ChallengeSystem(scene, camera, city.schoolFrame);
+  challenge = new ChallengeSystem(
+    scene,
+    camera,
+    city.schoolFrame,
+    (paused) => player?.setPaused(paused),
+    () => player?.mode === 'walk',
+  );
 
   updateEnergyPanel();
   quality.applyRuntime();
@@ -224,7 +229,7 @@ async function buildCity(newSeed: number): Promise<void> {
   const eye = toWorld(city.schoolFrame, 0, -33);
   const look = toWorld(city.schoolFrame, 0, -14);
   camera.position = new Vector3(eye.x, 1.7, eye.z);
-  camera.setTarget(new Vector3(look.x, 6.2, look.z));
+  camera.setTarget(new Vector3(look.x, 3.8, look.z));
   player.setMode('walk');
 
   await progress(100, 'Lista');

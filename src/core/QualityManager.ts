@@ -2,7 +2,7 @@ import type { Engine } from '@babylonjs/core/Engines/engine';
 import type { Scene } from '@babylonjs/core/scene';
 import type { RenderQuality } from './RenderPipeline';
 
-export type QualityTier = 'vr' | 'balanced' | 'high';
+export type QualityTier = 'low' | 'vr' | 'balanced' | 'high';
 
 export interface QualityProfile {
   label: string;
@@ -27,6 +27,24 @@ export interface QualityProfile {
 }
 
 export const QUALITY: Record<QualityTier, QualityProfile> = {
+  // Perfil de entrada para equipos con integrada débil o poca memoria.
+  // La escala 1.5 reduce a ~44 % los píxeles de la resolución nativa; las
+  // sombras y el SSAO son las pasadas que más tiempo consumen según la auditoría.
+  low: {
+    label: 'Baja',
+    hardwareScaling: 1.5,
+    shadows: false,
+    shadowResolution: 0,
+    greenDensity: 0.55,
+    gridSize: 7,
+    maxZ: 700,
+    highDetailFoliage: false,
+    highDetailStreet: false,
+    crowdSize: 60,
+    // El FXAA evita bordes escalonados a baja resolución y bloom + FXAA
+    // midieron sólo 0,11 ms por cuadro en la GPU de referencia.
+    post: 'lite',
+  },
   // Perfil pensado para Quest 2/3: el objetivo son 72 fps sostenidos.
   // Sin sombras dinámicas (es el gasto más grande) y ciudad más compacta.
   vr: {
@@ -76,7 +94,8 @@ export const QUALITY: Record<QualityTier, QualityProfile> = {
   },
 };
 
-export const TIER_ORDER: QualityTier[] = ['vr', 'balanced', 'high'];
+/** Perfiles de escritorio. VR se activa desde el visor, no desde el ciclo. */
+export const TIER_ORDER: QualityTier[] = ['low', 'balanced', 'high'];
 
 /**
  * Niveles de calidad.
@@ -129,12 +148,40 @@ export class QualityManager {
    * Es heurístico a propósito: mejor arrancar conservador y que el usuario
    * suba, que arrancar en Alta y que la primera impresión sea a 20 fps.
    */
-  static suggestInitial(): QualityTier {
+  static suggestInitial(canvas?: HTMLCanvasElement): QualityTier {
     const nav = navigator as Navigator & { deviceMemory?: number };
     const cores = nav.hardwareConcurrency ?? 4;
     const mobile = /Android|iPhone|iPad|Quest|Pico/i.test(navigator.userAgent);
     if (mobile) return 'vr';
-    if (cores <= 4) return 'balanced';
+    // Los núcleos no representan la potencia gráfica. La memoria disponible
+    // y las GPUs Intel antiguas ayudan a no arrancar con sombras/SSAO en una
+    // notebook económica que informa muchos hilos de CPU.
+    const renderer = getWebGLRenderer(canvas);
+    const weakGpu = /swiftshader|llvmpipe|software rasterizer|intel.*(?:hd graphics|uhd graphics [1-6])/i.test(
+      renderer,
+    );
+    if (cores <= 4 || (nav.deviceMemory !== undefined && nav.deviceMemory <= 4) || weakGpu) {
+      return 'low';
+    }
+    if (cores <= 8 || (nav.deviceMemory !== undefined && nav.deviceMemory <= 8)) return 'balanced';
     return 'high';
+  }
+}
+
+function getWebGLRenderer(canvas?: HTMLCanvasElement): string {
+  try {
+    const probe = canvas ?? document.createElement('canvas');
+    const gl = probe.getContext('webgl2') ?? probe.getContext('webgl');
+    if (!gl) return '';
+    const extension = gl.getExtension('WEBGL_debug_renderer_info');
+    const renderer = extension
+      ? gl.getParameter(extension.UNMASKED_RENDERER_WEBGL)
+      : gl.getParameter(gl.RENDERER);
+    // Si usamos el canvas de Babylon, es el contexto activo de la ciudad y no
+    // se debe liberar. Sólo descartamos el contexto del canvas auxiliar.
+    if (!canvas) gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return String(renderer);
+  } catch {
+    return '';
   }
 }
