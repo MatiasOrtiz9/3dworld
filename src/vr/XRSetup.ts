@@ -4,6 +4,8 @@ import { WebXRDefaultExperience } from '@babylonjs/core/XR/webXRDefaultExperienc
 import { WebXRFeatureName } from '@babylonjs/core/XR/webXRFeaturesManager';
 import { WebXRState } from '@babylonjs/core/XR/webXRTypes';
 import type { WebXRMotionControllerTeleportation } from '@babylonjs/core/XR/features/WebXRControllerTeleportation';
+import type { WebXRControllerMovementRegistrationConfiguration } from '@babylonjs/core/XR/features/WebXRControllerMovement';
+import { WebXRControllerComponent } from '@babylonjs/core/XR/motionController/webXRControllerComponent';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
 import { CreateGround } from '@babylonjs/core/Meshes/Builders/groundBuilder';
@@ -12,6 +14,7 @@ import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 // Efectos secundarios que Babylon necesita para XR y para el gizmo de teleport.
 import '@babylonjs/core/Materials/Textures/Loaders/envTextureLoader';
 import '@babylonjs/core/Helpers/sceneHelpers';
+import '@babylonjs/core/XR/features/WebXRControllerMovement';
 
 export interface XRResult {
   experience: WebXRDefaultExperience;
@@ -24,10 +27,10 @@ export interface XRResult {
  *
  * Decisiones de confort, tomadas a propósito y no por defecto:
  *
- *  - **Teletransporte, no movimiento continuo.** El desplazamiento continuo con
- *    joystick es la causa principal de mareo en VR, porque el sistema vestibular
- *    no recibe la aceleración que los ojos reportan. El teletransporte la elimina.
- *  - **Giro por pasos (snap) de 30°.** Misma razón, aplicada a la rotación.
+ *  - **Movimiento continuo opcional desde el stick izquierdo**, con velocidad
+ *    moderada; el teletransporte sigue disponible como alternativa cómoda.
+ *  - **Giro por pasos (snap) de 30° al teletransportarse**, para evitar giro
+ *    continuo que puede provocar mareo.
  *  - **Suelo de teletransporte propio y plano.** La ciudad son decenas de miles
  *    de instancias finas; hacer raycast contra todas para validar el destino
  *    sería carísimo. Un plano invisible a nivel de calle resuelve el 95 % de los
@@ -85,6 +88,30 @@ export async function setupXR(
   teleport.rotationEnabled = true; // giro por pasos al teletransportarse
   teleport.rotationAngle = Math.PI / 6; // 30°
   teleport.backwardsTeleportationDistance = 0.8;
+
+  // Quest: stick izquierdo camina (adelante/atrás y lateral). El predeterminado
+  // de Babylon asigna estas acciones al revés, por eso se registra el mapeo
+  // explícitamente. El stick derecho sigue libre para apuntar el teletransporte.
+  const movementControls: WebXRControllerMovementRegistrationConfiguration[] = [
+    {
+      allowedComponentTypes: [WebXRControllerComponent.THUMBSTICK_TYPE],
+      forceHandedness: 'left',
+      axisChangedHandler: (axes, state, context) => {
+        state.moveX = Math.abs(axes.x) > context.movementThreshold ? axes.x : 0;
+        state.moveY = Math.abs(axes.y) > context.movementThreshold ? axes.y : 0;
+      },
+    },
+  ];
+  features.enableFeature(WebXRFeatureName.MOVEMENT, 'stable', {
+    xrInput: experience.input,
+    customRegistrationConfigurations: movementControls,
+    movementEnabled: true,
+    movementOrientationFollowsViewerPose: true,
+    movementOrientationFollowsController: false,
+    movementSpeed: 0.65,
+    movementThreshold: 0.18,
+    rotationEnabled: false,
+  });
 
   // Punteros: sirven para señalar e interactuar con paneles.
   features.enableFeature(WebXRFeatureName.POINTER_SELECTION, 'stable', {
