@@ -41,6 +41,8 @@ export async function setupXR(
   worldExtent: number,
   /** Dónde pararse al entrar: se consulta en cada entrada (la ciudad puede haberse regenerado). */
   spawn: () => { eye: Vector3; look: Vector3 },
+  /** Rechaza destinos de teletransporte dentro de edificios, agua o fuera del barrio. */
+  canTeleportTo: (x: number, z: number) => boolean,
 ): Promise<XRResult> {
   // Suelo invisible para validar los destinos de teletransporte.
   const teleportFloor = CreateGround(
@@ -77,6 +79,7 @@ export async function setupXR(
       disableLighting: true,
     },
     useMainComponentOnly: true,
+    forceHandedness: 'right',
     // Solo el suelo de teleport bloquea el rayo: no hay que testear la ciudad.
     blockAllPickableMeshes: false,
   }) as WebXRMotionControllerTeleportation;
@@ -88,6 +91,14 @@ export async function setupXR(
   teleport.rotationEnabled = true; // giro por pasos al teletransportarse
   teleport.rotationAngle = Math.PI / 6; // 30°
   teleport.backwardsTeleportationDistance = 0.8;
+  const teleportTargetObserver = teleport.onTargetMeshPositionUpdatedObservable.add((pick) => {
+    const point = pick.pickedPoint;
+    const allowed = Boolean(point && canTeleportTo(point.x, point.z));
+    teleport.skipNextTeleportation = !allowed;
+    // Oculta el anillo cuando el arco termina dentro de un obstáculo.
+    const target = teleport.teleportationTargetMesh;
+    if (target) target.isVisible = allowed;
+  });
 
   // Quest: stick izquierdo camina (adelante/atrás y lateral). El predeterminado
   // de Babylon asigna estas acciones al revés, por eso se registra el mapeo
@@ -116,7 +127,11 @@ export async function setupXR(
   // Punteros: sirven para señalar e interactuar con paneles.
   features.enableFeature(WebXRFeatureName.POINTER_SELECTION, 'stable', {
     xrInput: experience.input,
-    enablePointerSelectionOnAllControllers: true,
+    // Separar las acciones evita que hablar con un docente active también
+    // el teletransporte: izquierda interactúa, derecha teletransporta.
+    enablePointerSelectionOnAllControllers: false,
+    preferredHandedness: 'left',
+    disableSwitchOnClick: true,
     disablePointerUpOnTouchOut: false,
     forceGazeMode: false,
     disableScenePointerVectorUpdate: false,
@@ -185,6 +200,7 @@ export async function setupXR(
     if (disposed) return;
     disposed = true;
     scene.onBeforeRenderObservable.remove(gridRenderObserver);
+    teleport.onTargetMeshPositionUpdatedObservable.remove(teleportTargetObserver);
     stateObservable.remove(enterObserver);
     stateObservable.remove(gridStateObserver);
     experience.input.onControllerAddedObservable.remove(controllerAddedObserver);

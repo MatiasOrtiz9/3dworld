@@ -18,6 +18,7 @@ import { Crowd } from './world/Crowd';
 import { Inspector } from './ui/Inspector';
 import { Soundscape } from './audio/Soundscape';
 import { isVrSupported } from './vr/isVrSupported';
+import type { WebXRDefaultExperience } from '@babylonjs/core/XR/webXRDefaultExperience';
 import { seedFromString } from './utils/rng';
 import { ChallengeSystem } from './game/ChallengeSystem';
 import { SCHOOL, roomAt, toLocal, toWorld } from './world/SchoolLayout';
@@ -59,6 +60,7 @@ let crowd: Crowd | null = null;
 let player: PlayerController | null = null;
 let inspector: Inspector | null = null;
 let challenge: ChallengeSystem | null = null;
+let xrExperience: WebXRDefaultExperience | null = null;
 let disposeXR: (() => void) | null = null;
 let hour = 13;
 // La semilla se puede fijar por URL (?seed=1234 o ?seed=cualquier-texto).
@@ -248,6 +250,7 @@ async function buildCity(newSeed: number): Promise<void> {
     (paused) => player?.setPaused(paused),
     () => player?.mode === 'walk',
   );
+  if (xrExperience) await challenge.connectXR(xrExperience);
 
   updateEnergyPanel();
   quality.applyRuntime();
@@ -449,7 +452,14 @@ async function start(): Promise<void> {
       // la enorme mayoría de visitantes —que entran desde una computadora— es
       // peso que ya no viaja por la red.
       const { setupXR } = await import('./vr/XRSetup');
-      const { experience, dispose } = await setupXR(scene, city!.plan.extent, () => startView(city!));
+      const { experience, dispose } = await setupXR(
+        scene,
+        city!.plan.extent,
+        () => startView(city!),
+        (x, z) => Boolean(city && !city.index.isPedestrianBlocked(x, z)),
+      );
+      xrExperience = experience;
+      await challenge?.connectXR(experience);
       disposeXR = dispose;
       btnVr.disabled = false;
       btnVr.textContent = 'Entrar en VR';

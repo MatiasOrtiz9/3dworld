@@ -97,7 +97,7 @@ export class StationPanel3D {
     const dx = station.x - viewer.x;
     const dz = station.z - viewer.z;
     const d = Math.hypot(dx, dz) || 1;
-    const dist = Math.min(1.25, Math.max(0.9, d * 0.5));
+    const dist = Math.min(1.8, Math.max(1.35, d * 0.42));
     const x = viewer.x + (dx / d) * dist;
     const z = viewer.z + (dz / d) * dist;
     this.panel.position.set(x, viewer.y - 0.12, z);
@@ -150,7 +150,7 @@ export class StationPanel3D {
       this.labelText = '';
       return;
     }
-    this.label.position.set(at.x, at.y + 0.75, at.z);
+    this.label.position.set(at.x, at.y + 3, at.z);
     this.label.setEnabled(true);
     if (text === this.labelText) return;
     this.labelText = text;

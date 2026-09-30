@@ -7,8 +7,15 @@ import { CreateSphere } from '@babylonjs/core/Meshes/Builders/sphereBuilder';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
+import { PointerEventTypes, type PointerInfo } from '@babylonjs/core/Events/pointerEvents';
 import type { Observer } from '@babylonjs/core/Misc/observable';
+import type { WebXRDefaultExperience } from '@babylonjs/core/XR/webXRDefaultExperience';
+import { WebXRFeatureName } from '@babylonjs/core/XR/webXRFeaturesManager';
+import type { WebXRControllerMovement } from '@babylonjs/core/XR/features/WebXRControllerMovement';
+import type { WebXRMotionControllerTeleportation } from '@babylonjs/core/XR/features/WebXRControllerTeleportation';
+import { WebXRState } from '@babylonjs/core/XR/webXRTypes';
 import { SCHOOL, STATION_SPOTS, toWorld, type SchoolFrame } from '../world/SchoolLayout';
+import type { StationPanel3D } from './StationPanel3D';
 
 type StationId = 'tech' | 'robotics' | 'science' | 'sport' | 'environment';
 
@@ -152,6 +159,7 @@ export class ChallengeSystem {
   private readonly dialogTitle = document.getElementById('challenge-title') as HTMLHeadingElement;
   private readonly dialogBody = document.getElementById('challenge-body') as HTMLDivElement;
   private readonly beforeRender: Observer<Scene>;
+  private readonly xrPointer: Observer<PointerInfo>;
   private readonly guideMeshes: Mesh[] = [];
   private readonly guideMaterials: StandardMaterial[] = [];
   private beaconMesh: Mesh | null = null;
@@ -168,6 +176,13 @@ export class ChallengeSystem {
   private elapsed = 0;
   private previousFocus: HTMLElement | null = null;
   private introPending = false;
+  private xrExperience: WebXRDefaultExperience | null = null;
+  private xrMovement: WebXRControllerMovement | null = null;
+  private xrTeleportation: WebXRMotionControllerTeleportation | null = null;
+  private xrStateObserver: Observer<WebXRState> | null = null;
+  private xrPanel: StationPanel3D | null = null;
+  private inXR = false;
+  private xrWelcomeOpen = false;
 
   constructor(
     private readonly scene: Scene,
@@ -180,8 +195,23 @@ export class ChallengeSystem {
     this.createStations(school);
     this.createGuides(school);
     this.beforeRender = this.scene.onBeforeRenderObservable.add(this.update);
+    this.xrPointer = this.scene.onPointerObservable.add(this.onXRPointer);
     window.addEventListener('keydown', this.onKeyDown);
     this.updateMission();
+  }
+
+  /** Conecta las interacciones 3D al visor sin cargar sus texturas en escritorio. */
+  async connectXR(experience: WebXRDefaultExperience): Promise<void> {
+    if (this.xrStateObserver && this.xrExperience) {
+      this.xrExperience.baseExperience.onStateChangedObservable.remove(this.xrStateObserver);
+    }
+    this.xrExperience = experience;
+    this.xrMovement = experience.baseExperience.featuresManager.getEnabledFeature(WebXRFeatureName.MOVEMENT);
+    this.xrTeleportation = experience.baseExperience.featuresManager.getEnabledFeature(WebXRFeatureName.TELEPORTATION);
+    const { StationPanel3D } = await import('./StationPanel3D');
+    this.xrPanel ??= new StationPanel3D(this.scene);
+    this.xrStateObserver = experience.baseExperience.onStateChangedObservable.add(this.onXRStateChanged);
+    this.onXRStateChanged(experience.baseExperience.state);
   }
 
   private createStations(school: SchoolFrame): void {
@@ -196,6 +226,7 @@ export class ChallengeSystem {
     this.beaconMaterial.specularColor = Color3.Black();
     this.beaconMesh = CreatePolyhedron('npc-markers', { type: 1, size: 0.3 }, this.scene);
     this.beaconMesh.material = this.beaconMaterial;
+    // Solo se vuelve pickable en XR: la ciudad de escritorio evita esos raycasts.
     this.beaconMesh.isPickable = false;
     this.beaconColors = new Float32Array(DEFINITIONS.length * 4);
 
@@ -312,18 +343,96 @@ export class ChallengeSystem {
 
     if (this.active) return;
     const nearby = this.findNearby();
+    if (this.inXR) {
+      const prompt = nearby
+        ? `${nearby.guide}\n${this.completed.has(nearby.id) ? 'Control izq. · conversar' : 'Control izq. · gatillo'}`
+        : null;
+      this.xrPanel?.setLabel(prompt, nearby?.position);
+      this.promptEl.classList.add('hidden');
+      return;
+    }
+    this.xrPanel?.setLabel(null);
     if (nearby?.id === this.nearbyId) return;
     this.nearbyId = nearby?.id ?? null;
     this.promptEl.classList.toggle('hidden', !nearby);
     if (nearby) this.promptName.textContent = `${nearby.guide} · ${nearby.short}`;
   };
 
+  private onXRStateChanged = (state: WebXRState): void => {
+    const entering = state === WebXRState.IN_XR && !this.inXR;
+    const leaving = state !== WebXRState.IN_XR && this.inXR;
+    this.inXR = state === WebXRState.IN_XR;
+    if (this.beaconMesh) this.beaconMesh.isPickable = this.inXR;
+    if (entering) {
+      if (this.active) this.close();
+      this.showXRWelcome();
+    } else if (leaving) {
+      this.xrWelcomeOpen = false;
+      this.xrPanel?.hide();
+      this.xrPanel?.setLabel(null);
+      this.setXRPanelActive(false);
+      if (this.active) this.close();
+    }
+  };
+
+  private showXRWelcome(): void {
+    const panel = this.xrPanel;
+    const camera = this.xrExperience?.baseExperience.camera;
+    if (!panel || !camera) return;
+    this.xrWelcomeOpen = true;
+    this.setXRPanelActive(true);
+    const viewer = camera.globalPosition;
+    const forward = camera.getDirection(new Vector3(0, 0, 1));
+    forward.y = 0;
+    forward.normalize();
+    panel.placeFacing(viewer, new Vector3(viewer.x + forward.x, viewer.y, viewer.z + forward.z));
+    panel.showMessage(
+      'RECORRIDO CIMDIP',
+      'CONTROLES VR',
+      'Stick izquierdo para caminar. Control izquierdo: apuntá al rombo de un docente y presioná el gatillo para hablar y elegir respuestas. Control derecho: teletransporte.',
+      'Apuntá con el control izquierdo y presioná el gatillo para empezar.',
+      'INICIO',
+      () => {
+        this.xrWelcomeOpen = false;
+        panel.hide();
+        this.setXRPanelActive(false);
+      },
+    );
+  }
+
+  private onXRPointer = (info: PointerInfo): void => {
+    if (
+      !this.inXR ||
+      this.xrWelcomeOpen ||
+      this.active ||
+      !this.canTalk() ||
+      info.type !== PointerEventTypes.POINTERDOWN
+    ) {
+      return;
+    }
+    const pick = info.pickInfo;
+    if (!pick?.hit || pick.pickedMesh !== this.beaconMesh || pick.thinInstanceIndex < 0) return;
+    const station = this.stations[pick.thinInstanceIndex];
+    if (station && this.findNearby()?.id === station.id) this.open(station);
+  };
+
+  private viewerPosition(): Vector3 {
+    if (this.inXR && this.xrExperience) return this.xrExperience.baseExperience.camera.globalPosition;
+    return this.camera.globalPosition;
+  }
+
+  private setXRPanelActive(active: boolean): void {
+    if (this.xrMovement) this.xrMovement.movementEnabled = !active;
+    if (this.xrTeleportation) this.xrTeleportation.teleportationEnabled = !active;
+  }
+
   private findNearby(): Station | null {
     let nearest: Station | null = null;
     let best = INTERACT_RANGE * INTERACT_RANGE;
+    const viewer = this.viewerPosition();
     for (const station of this.stations) {
-      const dx = this.camera.position.x - station.position.x;
-      const dz = this.camera.position.z - station.position.z;
+      const dx = viewer.x - station.position.x;
+      const dz = viewer.z - station.position.z;
       const distance = dx * dx + dz * dz;
       if (distance < best) {
         best = distance;
@@ -350,12 +459,50 @@ export class ChallengeSystem {
     this.active = station;
     this.questionIndex = 0;
     this.introPending = true;
+    this.nearbyId = station.id;
+    if (this.inXR) {
+      const panel = this.xrPanel;
+      if (!panel) return;
+      this.xrWelcomeOpen = false;
+      this.setXRPanelActive(true);
+      this.xrPanel?.setLabel(null);
+      this.onModalChange(true);
+      panel.placeFacing(this.viewerPosition(), station.position);
+      panel.showMessage(
+        station.guide,
+        station.title,
+        station.greeting,
+        'Usá el control izquierdo: apuntá a una respuesta y presioná el gatillo.',
+        'PRESENTACIÓN',
+        () => this.renderXRQuestion(),
+      );
+      return;
+    }
     this.previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     this.promptEl.classList.add('hidden');
     this.dialog.classList.remove('hidden');
     this.dialog.setAttribute('aria-hidden', 'false');
     this.onModalChange(true);
     this.renderQuestion();
+  }
+
+  private renderXRQuestion(message = ''): void {
+    const station = this.active;
+    const panel = this.xrPanel;
+    if (!station || !panel) return;
+    const question = station.questions[this.questionIndex];
+    panel.showQuestion(
+      {
+        title: station.guide,
+        step: `${station.title} · pregunta ${this.questionIndex + 1}`,
+        question: question.prompt,
+        options: question.options,
+        feedback: message,
+        progress: `${this.completed.size} / ${DEFINITIONS.length} docentes`,
+      },
+      (choice) => this.answer(choice),
+      () => this.close(),
+    );
   }
 
   private renderQuestion(message = ''): void {
@@ -387,11 +534,19 @@ export class ChallengeSystem {
     if (!station) return;
     const question = station.questions[this.questionIndex];
     if (choice !== question.answer) {
+      if (this.inXR) {
+        this.renderXRQuestion('No es esa. Pensá la situación y volvé a elegir.');
+        return;
+      }
       this.renderQuestion('Probá otra vez: observá la consigna y elegí la acción más segura.');
       return;
     }
     if (this.questionIndex < station.questions.length - 1) {
       this.questionIndex++;
+      if (this.inXR) {
+        this.renderXRQuestion(`Correcto. ${question.explanation}`);
+        return;
+      }
       this.renderQuestion(`Correcto. ${question.explanation}`);
       return;
     }
@@ -402,6 +557,17 @@ export class ChallengeSystem {
     this.beaconMesh?.thinInstanceBufferUpdated('color');
     this.persist();
     this.updateMission();
+    if (this.inXR) {
+      this.xrPanel?.showMessage(
+        station.guide,
+        'ESTACIÓN COMPLETADA',
+        question.explanation,
+        '+1 conocimiento',
+        `${this.completed.size} / ${DEFINITIONS.length}`,
+        () => this.close(),
+      );
+      return;
+    }
     this.dialogBody.innerHTML = `
       <p class="challenge-step">ESTACIÓN COMPLETADA</p>
       <p class="challenge-question">${question.explanation}</p>
@@ -414,6 +580,8 @@ export class ChallengeSystem {
   private close(): void {
     this.active = null;
     this.nearbyId = null;
+    this.xrPanel?.hide();
+    this.setXRPanelActive(false);
     this.dialog.classList.add('hidden');
     this.dialog.setAttribute('aria-hidden', 'true');
     this.onModalChange(false);
@@ -457,6 +625,13 @@ export class ChallengeSystem {
     if (this.active) this.onModalChange(false);
     window.removeEventListener('keydown', this.onKeyDown);
     this.scene.onBeforeRenderObservable.remove(this.beforeRender);
+    this.scene.onPointerObservable.remove(this.xrPointer);
+    if (this.xrExperience && this.xrStateObserver) {
+      this.xrExperience.baseExperience.onStateChangedObservable.remove(this.xrStateObserver);
+    }
+    this.setXRPanelActive(false);
+    this.xrPanel?.dispose();
+    this.xrPanel = null;
     this.stations.length = 0;
     this.beaconMesh?.dispose();
     this.beaconMesh = null;
