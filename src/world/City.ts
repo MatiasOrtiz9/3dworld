@@ -13,6 +13,7 @@ import { SchoolIdentity } from './SchoolIdentity';
 import { SchoolBuilder } from './builders/SchoolBuilder';
 import type { Block } from './CityLayout';
 import type { SchoolFrame } from './SchoolLayout';
+import type { Mesh } from '@babylonjs/core/Meshes/mesh';
 
 /**
  * Clave del material de ventana encendida.
@@ -59,6 +60,8 @@ export class City {
   private readonly farm: InstanceFarm;
   private readonly mats: Materials;
   private readonly schoolIdentity: SchoolIdentity;
+  /** Pisos, losas y volúmenes poligonales de la escuela (fuera de la granja). */
+  private schoolMeshes: Mesh[] = [];
 
   constructor(scene: Scene, seed: number, options: CityOptions = {}) {
     const t0 = performance.now();
@@ -102,9 +105,6 @@ export class City {
 
     for (const block of this.plan.blocks) {
       switch (block.kind) {
-        case 'plaza':
-          infra.plaza(block, this.plan);
-          break;
         case 'park':
           infra.park(block);
           break;
@@ -115,8 +115,9 @@ export class City {
           // El canal se dibuja una vez, entero, no manzana por manzana.
           break;
         default:
-          if (block.landmark === 'school') schoolBuilder.build(this.schoolFrame);
-          else buildings.build(block);
+          // La escuela ocupa dos manzanas: se levanta una vez, desde la principal.
+          if (block.landmark === 'school') this.schoolMeshes = schoolBuilder.build(this.schoolFrame, this.plan, scene);
+          else if (!block.landmark) buildings.build(block);
           break;
       }
       infra.streetscape(block, this.plan);
@@ -128,11 +129,12 @@ export class City {
     this.farm.commit();
     this.schoolIdentity = new SchoolIdentity(scene, this.schoolFrame);
 
+    const schoolTris = this.schoolMeshes.reduce((n, m) => n + m.getTotalIndices() / 3, 0);
     this.stats = {
       seed,
       blocks: this.plan.blocks.length,
       instances: this.farm.instanceCount,
-      triangles: this.farm.triangleCount,
+      triangles: this.farm.triangleCount + schoolTris,
       drawCalls: this.farm.drawCalls,
       materials: this.mats.count,
       buildTimeMs: Math.round(performance.now() - t0),
@@ -166,7 +168,7 @@ export class City {
     const t0 = performance.now();
     // Los materiales que cubren más geometría primero: si el presupuesto se
     // agota, que lo ya compilado sea lo que más se ve.
-    const meshes = this.farm.sourceMeshes
+    const meshes = [...this.farm.sourceMeshes, ...this.schoolMeshes]
       .slice()
       .sort((a, b) => b.thinInstanceCount * b.getTotalIndices() - a.thinInstanceCount * a.getTotalIndices());
 
@@ -217,11 +219,13 @@ export class City {
 
   /** Mallas fuente, para registrarlas como proyectoras de sombra. */
   get shadowCasters() {
-    return [...this.farm.sourceMeshes, ...this.schoolIdentity.shadowCasters];
+    return [...this.farm.sourceMeshes, ...this.schoolMeshes, ...this.schoolIdentity.shadowCasters];
   }
 
   dispose(): void {
     this.farm.dispose();
+    for (const mesh of this.schoolMeshes) mesh.dispose();
+    this.schoolMeshes = [];
     this.mats.dispose();
     this.schoolIdentity.dispose();
   }

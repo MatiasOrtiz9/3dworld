@@ -10,3 +10,6 @@ shots/
 Thumbs.db
 .idea/
 .vscode/
+
+# Recorrido virtual de la escuela (~800 MB): referencia local, no se versiona
+*.mp4

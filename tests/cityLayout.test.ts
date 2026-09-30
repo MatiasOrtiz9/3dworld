@@ -20,24 +20,51 @@ describe('generateCityPlan — invariantes sobre 300 semillas', () => {
     }
   });
 
-  it('la manzana central SIEMPRE es la plaza', () => {
-    // Es el hito de orientación y el punto de aparición del jugador. Hubo un
-    // bug real en el que el canal se comía la manzana central con ciertas
-    // semillas y la ciudad nacía sin plaza.
+  it('la escuela está en el centro de la ciudad, con manzanas delante y detrás', () => {
+    for (const gridSize of [5, 7, 9]) {
+      for (const seed of SEEDS.slice(0, 30)) {
+        const plan = generateCityPlan(seed, { gridSize });
+        const school = plan.blocks.find((b) => b.landmark === 'school')!;
+        expect(school.ring, `grilla ${gridSize}, semilla ${seed}`).toBe(0);
+        expect(school.cx).toBe(0);
+        expect(school.cz).toBe(0);
+        expect(plan.blocks.some((b) => b.gz > school.gz)).toBe(true);
+        expect(plan.blocks.some((b) => b.gz < school.gz)).toBe(true);
+      }
+    }
+  });
+
+  it('Laprida, la calle de la fachada, no lleva tranvía', () => {
+    for (const gridSize of [5, 7, 9]) {
+      const plan = generateCityPlan(42, { gridSize });
+      const site = plan.schoolSite!;
+      const pitch = plan.blockSize + plan.streetWidth;
+      const laprida = plan.streets.find((s) => s.axis === 'x' && Math.abs(s.at - (site.z1 + (pitch - plan.blockSize) / 2)) < 1e-6);
+      expect(laprida, `grilla ${gridSize}`).toBeDefined();
+      expect(laprida!.tram).toBe(false);
+      expect(laprida!.width).toBe(plan.streetWidth);
+    }
+  });
+
+  it('el canal corre detrás de la escuela, nunca delante', () => {
+    for (const seed of SEEDS) {
+      const { canal, schoolSite } = generateCityPlan(seed, { gridSize: 5 });
+      // En las dos esquinas del frente, el eje del canal queda al norte.
+      for (const x of [schoolSite!.x0, schoolSite!.x1]) {
+        expect(canal.slope * x + canal.offset, `semilla ${seed}`).toBeLessThan(schoolSite!.z0);
+      }
+    }
+  });
+
+  it('la manzana central SIEMPRE es la escuela, nunca agua', () => {
+    // Antes era la plaza; hubo un bug real en el que el canal se comía la
+    // manzana central con ciertas semillas.
     for (const seed of SEEDS) {
       const plan = generateCityPlan(seed);
       const centre = plan.blocks.find((b) => b.ring === 0);
       expect(centre, `semilla ${seed}`).toBeDefined();
-      expect(centre!.kind, `semilla ${seed}`).toBe('plaza');
-      expect(centre!.cx).toBe(0);
-      expect(centre!.cz).toBe(0);
-    }
-  });
-
-  it('hay exactamente una plaza por ciudad', () => {
-    for (const seed of SEEDS) {
-      const plazas = generateCityPlan(seed).blocks.filter((b) => b.kind === 'plaza');
-      expect(plazas, `semilla ${seed}`).toHaveLength(1);
+      expect(centre!.kind, `semilla ${seed}`).toBe('civic');
+      expect(centre!.landmark, `semilla ${seed}`).toBe('school');
     }
   });
 
@@ -55,7 +82,7 @@ describe('generateCityPlan — invariantes sobre 300 semillas', () => {
   });
 
   it('los tipos sin construcción tienen altura cero', () => {
-    const openKinds: BlockKind[] = ['plaza', 'park', 'water'];
+    const openKinds: BlockKind[] = ['park', 'water'];
     for (const seed of SEEDS) {
       for (const b of generateCityPlan(seed).blocks) {
         if (openKinds.includes(b.kind)) {
@@ -103,25 +130,25 @@ describe('generateCityPlan — invariantes sobre 300 semillas', () => {
 });
 
 /**
- * Defensa de la plaza, probada directamente.
+ * Defensa de la manzana central, probada directamente.
  *
  * Sin estos tests la cobertura es ilusoria: una prueba de mutación mostró que
  * se puede invertir el orden de comprobaciones en `classifyBlock` —
- * reintroduciendo el bug original por el que el canal borraba la plaza— y la
- * suite entera sigue pasando, porque el desplazamiento mínimo del canal tapa el
- * problema. Acá se ataca la salvaguarda misma.
+ * reintroduciendo el bug original por el que el canal borraba la manzana
+ * central— y la suite entera sigue pasando, porque el desplazamiento mínimo
+ * del canal tapa el problema. Acá se ataca la salvaguarda misma.
  */
-describe('classifyBlock — la plaza es intocable', () => {
-  it('ring 0 es plaza aunque el canal pase justo por encima', () => {
+describe('classifyBlock — la manzana central es intocable', () => {
+  it('ring 0 es edificio público aunque el canal pase justo por encima', () => {
     const rng = new Rng(1);
     // canalDistance = 0 significa que el eje del canal atraviesa la manzana.
-    expect(classifyBlock(rng, 0, 0, 14)).toBe('plaza');
+    expect(classifyBlock(rng, 0, 0, 14)).toBe('civic');
   });
 
-  it('ring 0 es plaza para cualquier distancia al canal', () => {
+  it('ring 0 es edificio público para cualquier distancia al canal', () => {
     for (let d = 0; d < 60; d += 1.5) {
       const rng = new Rng(d * 1000);
-      expect(classifyBlock(rng, 0, d, 14), `distancia ${d}`).toBe('plaza');
+      expect(classifyBlock(rng, 0, d, 14), `distancia ${d}`).toBe('civic');
     }
   });
 
@@ -155,6 +182,7 @@ describe('generateCityPlan — determinismo', () => {
 describe('generateCityPlan — opciones', () => {
   it('respeta un tamaño de grilla distinto', () => {
     expect(generateCityPlan(42, { gridSize: 7 }).blocks).toHaveLength(49);
+    expect(generateCityPlan(42, { gridSize: 5 }).blocks).toHaveLength(25);
   });
 
   it('respeta el tamaño de manzana y el ancho de calle', () => {
@@ -168,7 +196,7 @@ describe('generateCityPlan — opciones', () => {
 /**
  * Este control no es un invariante duro sino una medida de DISEÑO urbano, y
  * está acá porque la auditoría detectó que el canal había quedado relegado al
- * borde de la ciudad como efecto secundario de proteger la plaza.
+ * borde de la ciudad como efecto secundario de proteger la manzana central.
  *
  * Se documenta el valor actual para que la mejora de la Fase 3 sea verificable:
  * cuando se corrija, este test tiene que subir y hay que actualizar el umbral.

@@ -17,8 +17,8 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector';
  * `camera.speed` ya no se lee nunca. Encima esos dos listeners no se quitaban
  * jamás. Parecían dos sistemas de movimiento compitiendo, y sólo había uno.
  *
- * La cámara aparece dentro de la plaza, en el hueco sin árboles del sector sur,
- * mirando al Árbol Solar.
+ * La posición inicial es provisoria: `main.ts` la reemplaza, una vez armada la
+ * ciudad, por la vereda de enfrente de la escuela.
  */
 export function createFlyCamera(scene: Scene, canvas: HTMLCanvasElement): UniversalCamera {
   const camera = new UniversalCamera('playerCam', new Vector3(0, 1.7, -20), scene);

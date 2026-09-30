@@ -68,7 +68,7 @@ export class Inspector {
       if (block) {
         // Golpeó el volumen construido: hay que estar por debajo de su altura.
         if (this.index.isSolid(x, z) && y <= block.height + 2 && y > -2) return block;
-        // O tocó el suelo dentro de una manzana abierta (plaza, parque, huerta).
+        // O tocó el suelo dentro de una manzana abierta (parque, huerta).
         if (y <= 0.4) return block;
       }
       if (y < -3) return null; // se fue bajo tierra

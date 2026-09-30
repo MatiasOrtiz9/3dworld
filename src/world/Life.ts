@@ -24,6 +24,8 @@ interface Tram {
 interface Pod {
   axis: 'x' | 'z';
   at: number;
+  /** Tramos donde la calle no existe (predio escolar): ahí el pod da la vuelta. */
+  gaps?: Array<[number, number]>;
   laneOffset: number;
   pos: number;
   dir: 1 | -1;
@@ -278,6 +280,7 @@ export class Life {
         this.pods.push({
           axis: st.axis,
           at: st.at,
+          gaps: st.gaps,
           laneOffset,
           pos: rng.range(-this.plan.extent, this.plan.extent),
           dir,
@@ -556,6 +559,17 @@ export class Life {
 
         if (p.pos > limit) p.pos = -limit;
         if (p.pos < -limit) p.pos = limit;
+        // Calle cortada por el predio escolar: al llegar, pega la vuelta y
+        // sigue por el otro carril, como en una calle sin salida.
+        if (p.gaps) {
+          for (const [g0, g1] of p.gaps) {
+            if (p.pos > g0 - 4 && p.pos < g1 + 4) {
+              p.pos = p.dir > 0 ? g0 - 4 : g1 + 4;
+              p.dir = p.dir > 0 ? -1 : 1;
+              p.laneOffset = -p.laneOffset;
+            }
+          }
+        }
       }
 
       const rotY = (p.axis === 'x' ? Math.PI / 2 : 0) + (p.dir < 0 ? Math.PI : 0);

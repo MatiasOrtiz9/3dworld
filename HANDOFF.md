@@ -70,7 +70,7 @@ src/
 │   ├── Life.ts             # tranvías y pájaros (thin instances dinámicas)
 │   ├── Crowd.ts            # gente: comportamiento, animación, recorte
 │   ├── PeopleGeometry.ts   # piezas low-poly de las personas y la bici
-│   ├── SchoolLayout.ts     # trazado del campus CIMDIP (datos puros)
+│   ├── SchoolLayout.ts     # planta del plano de evacuación CIMDIP (datos puros)
 │   ├── SchoolIdentity.ts   # cartel, reloj, tótem, bandera, cancha (1 atlas)
 │   ├── Environment.ts      # cielo, sol, sombras CSM, IBL, mapeo tonal
 │   ├── Textures.ts         # texturas procedurales en canvas 2D
@@ -80,8 +80,9 @@ src/
 │       ├── NatureBuilder.ts    # árboles, arbustos, jardineras, bosque
 │       ├── BuildingBuilder.ts  # volúmenes escalonados, torres, mercado, cívico
 │       ├── StreetLevel.ts      # planta baja, toldos, balcones, mobiliario
-│       ├── InfraBuilder.ts     # calles, canal, puentes, plaza, energía
-│       └── SchoolBuilder.ts    # campus CIMDIP & Miguel Cané
+│       ├── InfraBuilder.ts     # calles, canal, puentes, energía
+│       ├── SchoolBuilder.ts    # escuela CIMDIP & Miguel Cané en 3D
+│       └── PrismBatch.ts       # pisos y losas poligonales (diagonales del plano)
 ├── game/ChallengeSystem.ts # cinco guías NPC, diálogo y preguntas del campus
 ├── player/
 │   ├── FlyCamera.ts        # cámara base
@@ -93,8 +94,9 @@ src/
 
 ### Flujo de generación
 
-1. `generateCityPlan(seed)` produce un **plano de datos puros**: 81 manzanas con
-   tipo, posición y altura, más las calles y la recta del canal.
+1. `generateCityPlan(seed)` produce un **plano de datos puros**: las manzanas
+   de la grilla con tipo, posición y altura, más las calles y la recta del
+   canal.
 2. Los *builders* recorren ese plano y emiten geometría dentro de una única
    `InstanceFarm`.
 3. `farm.commit()` sube todo a la GPU en buffers estáticos.
@@ -105,11 +107,11 @@ src/
 
 **El orden de los pasos 4→7 importa y está explicado en el punto 5.**
 
-### Ocho tipos de manzana
+### Siete tipos de manzana
 
-`plaza` (central, con el "Árbol Solar" — una pérgola fotovoltaica radial que es
-el hito de orientación) · `park` · `water` (canal) · `residential` (manzana
-perimetral con patio interior) · `civic` · `tower` (con jardines en altura cada
+`park` · `water` (canal) · `residential` (manzana perimetral con patio
+interior) · `civic` (la central siempre lo es: ahí está la escuela) ·
+`tower` (con jardines en altura cada
 4-6 pisos) · `market` (estructura de madera laminada) · `energy` (huerta solar
 con turbinas de eje vertical).
 
@@ -253,10 +255,15 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     ciudad termina en 0: con el agua también en 0 había z-fighting en todo el
     canal.
 
-22. **`SchoolLayout` es la única fuente de coordenadas del campus.** Lo usan
-    `SchoolBuilder`, `SchoolIdentity`, `CityIndex` (colisión), `Crowd`
-    (alumnos) y `ChallengeSystem` (estaciones). Todo está en coordenadas locales
-    (u, v) y rota para que la entrada mire siempre a la plaza.
+22. **`SchoolLayout` es la única fuente de coordenadas de la escuela.** Es la
+    planta baja del plano de evacuación, medida píxel a píxel y pasada a
+    metros (0,07 m/px): muros con sus vanos, ambientes, escaleras,
+    equipamiento, zonas de alumnos y estaciones. La usan `SchoolBuilder`,
+    `SchoolIdentity` (incluido el plano de evacuación colgado en el hall),
+    `CityIndex` (colisión por grilla de ocupación de 10 cm), `Crowd`,
+    `ChallengeSystem` y el indicador "Estás en" de `main.ts`. No inventar
+    ambientes: la planta alta no está en el plano y se levanta como volumen
+    cerrado.
 
 23. **Personas: un material, color = vértice × instancia.** Las piezas
     articuladas tienen el origen en su pivote (hombro, cadera, rodilla) para
@@ -265,16 +272,42 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     las mallas son `alwaysSelectAsActiveMesh`: su bounding no se puede
     mantener barato. Ver `PeopleGeometry.ts` y `Crowd.ts`.
 
+24. **La escuela ocupa DOS manzanas** (`schoolSite`): la central y la de su
+    oeste, sin la calle intermedia (`Street.gaps`). La planta real
+    (~67 × 39 m) no entra en una manzana de 42 m. `CityIndex.blockAt` devuelve
+    la escuela en todo el rectángulo, incluida la franja de la calle cortada;
+    los EcoPods pegan la vuelta ahí y los peatones de vereda no entran.
+
+25. **En este mundo el este es −x** (el norte es −z y el sol sale por −x).
+    Por eso `toWorld` hace `x = ox − u`: con `u = +x` la escuela quedaba
+    espejada y el gimnasio aparecía a la izquierda mirando desde Laprida.
+    Cualquier rotación calculada en coordenadas locales tiene que pasar por
+    el mundo (ver `SchoolBuilder.yaw` y `QuadBatch.wall`).
+
+26. **La escuela está en el centro y ya no hay plaza.** Ocupa la manzana
+    central (antes la plaza con el Árbol Solar) y la de su oeste. El canal
+    corre siempre al norte del predio, a sus espaldas. Laprida, la calle de la
+    fachada, nunca es avenida: sin tranvía ni ensanche delante del portón.
+    `classifyBlock` sigue protegiendo `ring === 0` del agua y le da altura
+    fija sin consumir azar. En VR se aparece frente a la escuela, igual que en
+    escritorio (`startView` en `main.ts`).
+
 ---
 
 ## 6. Estado actual
 
 ### Métricas (semilla 42)
 
+Con el mundo centrado en la escuela (grilla 5×5 con la escuela en el centro,
+sin plaza, y planta del plano de evacuación). Draw calls = todas las
+mallas con material en escena, que es lo que muestra el panel de métricas;
+entre paréntesis, la versión anterior (9×9 en Alta, 7×7 en VR, escuela
+artística) medida igual.
+
 | Perfil | Objetos | Triángulos | Draw calls | Generación |
 |---|---|---|---|---|
-| Alta | 29.800 | 596k | 128 | ~220 ms |
-| VR | 17.700 | 266k | 117 | ~215 ms |
+| Alta | 12.262 (31.967) | 185k (500k) | 192 (204) | ~200 ms |
+| VR | 9.520 (14.241) | 133k (205k) | 177 (181) | ~200 ms |
 
 ### Carga
 

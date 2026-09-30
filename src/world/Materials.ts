@@ -98,6 +98,35 @@ export class Materials {
     return this.surface(tinted, roughness, metallic, kind);
   }
 
+  /**
+   * Superficie interior: PBR con una luz propia tenue que imita la luz
+   * rebotada.
+   *
+   * Bajo techo, con sombras activas, el sol no llega y sólo queda la luz
+   * ambiente del cielo: aulas y pasillos salían casi negros. Sumar cientos de
+   * luces puntuales costaría un shader nuevo por material; un emisivo bajo,
+   * proporcional al color, da el mismo efecto de "ambiente iluminado" gratis.
+   */
+  interior(
+    color: Color3,
+    kind: SurfaceKind | null = null,
+    lift = 0.24,
+    roughness = 0.82,
+  ): PBRMetallicRoughnessMaterial {
+    const key = `i:${color.toHexString()}:${kind ?? 'flat'}:${lift}:${roughness}`;
+    const hit = this.cache.get(key);
+    if (hit) return hit as PBRMetallicRoughnessMaterial;
+
+    const mat = new PBRMetallicRoughnessMaterial(key, this.scene);
+    mat.baseColor = color;
+    mat.roughness = roughness;
+    mat.metallic = 0;
+    mat.emissiveColor = color.scale(lift);
+    if (kind) mat.baseTexture = this.textures.get(kind);
+    this.cache.set(key, mat);
+    return mat;
+  }
+
   /** Vidrio: translúcido, liso, con reflexión del entorno. */
   glass(color: Color3 = PALETTE.glassGreen, alpha = 0.88): PBRMetallicRoughnessMaterial {
     const key = `g:${color.toHexString()}:${alpha}`;

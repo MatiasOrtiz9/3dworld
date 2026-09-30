@@ -55,9 +55,11 @@ describe('CityIndex.blockAt', () => {
 });
 
 describe('CityIndex.isSolid', () => {
-  it('la plaza nunca bloquea: es el punto de aparición', () => {
-    const plaza = plan.blocks.find((b) => b.kind === 'plaza')!;
-    expect(index.isSolid(plaza.cx, plaza.cz)).toBe(false);
+  it('fuera del terreno no camina nadie, pero el jugador puede volar', () => {
+    const z = plan.extent + 30;
+    expect(index.blockAt(0, z)).toBeNull();
+    expect(index.isPedestrianBlocked(0, z)).toBe(true);
+    expect(index.isSolid(0, z)).toBe(false);
   });
 
   it('parques y huertas solares se pueden atravesar caminando', () => {
@@ -94,8 +96,8 @@ describe('CityIndex.groundHeight', () => {
   it('el canal está hundido y el resto a cota cero', () => {
     const water = require_(plan.blocks.find((b) => b.kind === 'water'), 'water');
     expect(index.groundHeight(water.cx, water.cz)).toBeLessThan(0);
-    const plaza = plan.blocks.find((b) => b.kind === 'plaza')!;
-    expect(index.groundHeight(plaza.cx, plaza.cz)).toBe(0);
+    const park = require_(plan.blocks.find((b) => b.kind === 'park'), 'park');
+    expect(index.groundHeight(park.cx, park.cz)).toBe(0);
   });
 });
 

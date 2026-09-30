@@ -1,50 +1,93 @@
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
 import type { Material } from '@babylonjs/core/Materials/material';
+import type { Scene } from '@babylonjs/core/scene';
+import type { Mesh } from '@babylonjs/core/Meshes/mesh';
 import type { InstanceFarm } from '../../core/InstanceFarm';
 import type { Materials } from '../Materials';
 import type { Rng } from '../../utils/rng';
+import type { CityPlan } from '../CityLayout';
 import type { NatureBuilder } from './NatureBuilder';
 import type { StreetLevel } from './StreetLevel';
 import { PALETTE } from '../Palette';
-import { FLAG, SCHOOL, toWorld, type SchoolFrame } from '../SchoolLayout';
+import { PrismBatch, offsetPolygon, polygonArea } from './PrismBatch';
+import {
+  APEX,
+  FENCES,
+  LANDINGS,
+  MEETING_POINT,
+  FRONT_PLANTERS,
+  GRAY_CORE,
+  ITEMS,
+  MC_COS,
+  ROOFS,
+  ROOMS,
+  SCHOOL,
+  STAIRS,
+  U,
+  UPPER,
+  V,
+  WALLS,
+  inLot,
+  inPoly,
+  miguelCaneU,
+  rearV,
+  roomAt,
+  toWorld,
+  type Item,
+  type OpeningType,
+  type P,
+  type Room,
+  type SchoolFrame,
+  type Stair,
+  type Wall,
+} from '../SchoolLayout';
+
+const hex = (h: string) => Color3.FromHexString(h);
+const H = SCHOOL.storey;
+const FY = SCHOOL.floorY;
+
+/** Alto de cada tipo de vano: [antepecho, dintel]. */
+const HOLE: Record<OpeningType, [number, number]> = {
+  door: [0, 2.15],
+  double: [0, 2.25],
+  pass: [0, 2.6],
+  exit: [0, 2.3],
+  entrance: [0, 2.75],
+  window: [0.95, 2.35],
+  high: [4.3, 6.2],
+  counter: [0.95, 2.05],
+};
+
+interface Side {
+  bands: Array<[number, number, Material]>;
+  stripe: boolean;
+  exterior: boolean;
+  room: Room | null;
+}
+
+interface Layer {
+  off: number;
+  t: number;
+  side: Side;
+}
 
 /**
- * Campus de la escuela CIMDIP & Miguel Cané.
+ * Escuela CIMDIP & Miguel Cané, levantada desde el plano de evacuación.
  *
- * No replica planos reales: es una reconstrucción artística que tiene que
- * reconocerse de un vistazo como ESCUELA —y como esta escuela— en vez de como
- * un equipamiento genérico más. Lo que la hace legible:
- *
- *  - Bloque de aulas de dos pisos con ventanas en serie:
- *    la tipología de escuela, no la de oficina ni la de vivienda.
- *  - Hall de acceso pasante bajo un portal gris con el escudo y la marquesina
- *    institucional roja, visibles desde la plaza.
- *  - Reja con zócalo de ladrillo y portón, mástil con la bandera, tótem.
- *  - Patio entre dos alas con la cancha pintada, aros y bancos; huerta al fondo.
- *
- * Todo está en coordenadas locales (ver `SchoolLayout`) y rota con la manzana,
- * así que la entrada siempre mira hacia la plaza. Las superficies con texto o
- * pintura (cartel, tótem, cancha, bandera) viven en `SchoolIdentity`.
+ * Todo sale de `SchoolLayout`: muros con sus vanos reales (se cortan en
+ * antepechos, dinteles y tramos llenos, así las ventanas se ven desde adentro
+ * y las puertas se atraviesan), pisos y losas con el polígono exacto de cada
+ * ambiente, la planta alta como volumen cerrado sobre las alas que la tienen,
+ * el gimnasio con su bóveda y el equipamiento que se ve en el recorrido
+ * virtual de 2020. Los colores también vienen de ahí: muros blancos con
+ * guarda roja, gimnasio gris, aula de danzas con piso de madera y columnas
+ * rojas, Tecnología con piso verde y sillas azules, jardín amarillo.
  */
 export class SchoolBuilder {
   private f!: SchoolFrame;
-  private readonly m: {
-    wall: Material;
-    slab: Material;
-    brick: Material;
-    green: Material;
-    gold: Material;
-    glass: Material;
-    timber: Material;
-    metal: Material;
-    roof: Material;
-    paver: Material;
-    hedge: Material;
-    glow: Material;
-    white: Material;
-    letters: Material;
-  };
+  private prisms!: PrismBatch;
+  private readonly m: Record<string, Material>;
 
   constructor(
     private readonly farm: InstanceFarm,
@@ -53,46 +96,96 @@ export class SchoolBuilder {
     private readonly nature: NatureBuilder,
     private readonly street: StreetLevel,
   ) {
+    const i = (h: string, kind: Parameters<Materials['interior']>[1] = null, lift?: number) =>
+      mats.interior(hex(h), kind, lift);
+    const s = (h: string, rough = 0.8, metal = 0, kind: Parameters<Materials['surface']>[3] = null) =>
+      mats.surface(hex(h), rough, metal, kind);
     this.m = {
-      wall: mats.surface(Color3.FromHexString('#85878a'), 0.86, 0, 'concreteXL'),
-      slab: mats.surface(PALETTE.concreteLight, 0.75, 0, 'concrete'),
-      brick: mats.surface(PALETTE.brick, 0.86, 0, 'concrete'),
-      green: mats.surface(Color3.FromHexString('#343943'), 0.62, 0.04, 'metal'),
-      gold: mats.surface(Color3.FromHexString('#b74b58'), 0.62, 0.02, null),
-      glass: mats.glass(PALETTE.glassBlue, 0.9),
-      timber: mats.surface(PALETTE.timberMid, 0.85, 0, 'timber'),
+      // Exterior: gris claro de la fachada real, zócalos y remates.
+      facade: s('#c6c9c9', 0.9, 0, 'concreteXL'),
+      slab: s('#d9dbd9', 0.8, 0, 'concrete'),
+      roof: s('#74777a', 0.85, 0, 'concrete'),
+      gymRoof: s('#86675a', 0.6, 0.2, 'metal'),
+      patio: s('#aeaba4', 0.92, 0, 'pavement'),
+      // Interior (con luz rebotada simulada).
+      white: i('#efefeb'),
+      stripe: i('#b9262c', null, 0.2),
+      ceiling: i('#f4f4f0', null, 0.3),
+      tile: i('#d4cec2', 'pavement'),
+      wood: i('#b07a47', 'timber'),
+      gymFloor: i('#bdb9ae', 'pavement'),
+      green: i('#5f9270', 'pavement'),
+      gymWall: i('#8e9296'),
+      yellow: i('#e9c23c'),
+
+      // Carpintería, herrería y mobiliario.
+      glass: mats.glass(hex('#a9c3cf'), 0.26),
+      glassDark: mats.glass(PALETTE.glassBlue, 0.9),
+      frame: s('#e6e8e8', 0.45, 0.15),
+      red: s('#b8353c', 0.6),
+      blue: s('#2d4f9e', 0.6),
+      navy: s('#243b67', 0.65),
+      metalDark: s('#2c2f35', 0.5, 0.25, 'metal'),
       metal: mats.metal(PALETTE.solarFrame, 0.4),
-      roof: mats.surface(Color3.FromHexString('#5c6064'), 0.74, 0.08, 'metal'),
-      paver: mats.surface(PALETTE.concreteLight, 0.88, 0, 'pavement'),
-      hedge: mats.grass(PALETTE.leafDeep),
-      glow: mats.glow(PALETTE.glassLit, 0.7),
-      white: mats.surface(PALETTE.turbineBody, 0.6, 0, null),
-      // Las letras son pintura clara y mate, no metal: el dorado metálico con
-      // tan poco IBL se veía caqui oscuro contra el cielo.
-      letters: mats.surface(PALETTE.sun, 0.5, 0, null),
+      timber: s('#c99a62', 0.8, 0, 'timber'),
+      timberDark: s('#7b5236', 0.8, 0, 'timber'),
+      chairGreen: s('#2f7a5c', 0.6),
+      board: i('#f6f7f6', null, 0.35),
+      soil: mats.surface(PALETTE.soil, 0.95, 0, null),
+      grass: mats.grass(PALETTE.leafMid),
+      stair: i('#9a9a96', 'concrete', 0.18),
+      light: mats.glow(hex('#f5f8ff'), 0.95),
+      exitSign: mats.glow(hex('#37c46b'), 0.9),
+      lit: mats.glow(PALETTE.glassLit, 0.7),
+      lane: mats.surface(PALETTE.pavementDark, 0.88, 0, 'pavementXL'),
+      kerb: mats.surface(PALETTE.concreteShade, 0.9, 0, 'pavement'),
     };
+    // Alias: mismos materiales con otro nombre de uso. Cada material nuevo es
+    // una malla fuente más (un draw call); acá se comparten a propósito.
+    const m = this.m;
+    Object.assign(m, {
+      bars: m.metalDark,
+      black: m.metalDark,
+      portal: m.metalDark,
+      stone: m.timberDark,
+      appliance: m.frame,
+      mirror: m.frame,
+      leaf: m.board,
+      chairBlue: m.blue,
+      curtainBlue: m.blue,
+      curtainRed: m.red,
+      paving: m.patio,
+      tileDark: m.tile,
+    });
   }
 
-  build(frame: SchoolFrame): void {
+  build(frame: SchoolFrame, plan: CityPlan, scene: Scene): Mesh[] {
     this.f = frame;
-    this.grounds();
-    this.frontBlock();
-    this.wings();
-    this.courtyard();
-    this.makerClassroom();
-    this.playground();
-    this.garden();
-    this.forecourt();
-    this.fence();
+    this.prisms = new PrismBatch((u, v) => toWorld(frame, u, v), 0.3);
+    this.grounds(plan);
+    this.floors();
+    for (const w of WALLS) this.wall(w);
+    this.ceilings();
+    this.upperFloors();
+    this.roofs();
+    this.gym();
+    for (const s of STAIRS) this.stair(s);
+    this.cores();
+    for (const it of ITEMS) this.item(it);
+    this.lights();
+    this.portal();
+    this.frontage();
+    this.fences();
     this.utilityLines();
+    return this.prisms.build(scene, 'school');
   }
 
-  // --------------------------------------------------------------- utilidades
+  // ================================================================ utilidades
 
-  /** Caja apoyada en `y`, en coordenadas locales. */
+  /** Caja alineada, apoyada en `y`, en coordenadas locales. */
   private box(mat: Material, u: number, v: number, w: number, h: number, d: number, y = 0): void {
     const p = toWorld(this.f, u, v);
-    this.farm.addBoxOnGround(mat, p.x, p.z, w, h, d, y, this.f.rot);
+    this.farm.addBoxOnGround(mat, p.x, p.z, w, h, d, y, 0);
   }
 
   private cyl(mat: Material, u: number, v: number, dia: number, h: number, y = 0): void {
@@ -100,475 +193,942 @@ export class SchoolBuilder {
     this.farm.add('cylinder', mat, new Vector3(p.x, y + h / 2, p.z), new Vector3(dia, h, dia));
   }
 
-  /** Dimensiones mundo de un rectángulo local alineado (para ayudantes no rotables). */
-  private dims(w: number, d: number): [number, number] {
-    return Math.abs(this.f.sin) === 1 ? [d, w] : [w, d];
-  }
-
   /**
-   * Ventana: marco verde saliente, vidrio apenas por delante y parteluz.
-   * `nu`/`nv` es la normal de la fachada en coordenadas locales.
+   * Caja a lo largo del segmento a→b (cualquier ángulo), de espesor `t`,
+   * entre `y0` e `y1`, corrida `off` metros hacia la normal izquierda.
    */
-  private window(u: number, v: number, y: number, nu: number, nv: number, width = 2.3): void {
-    const { green, glass } = this.m;
-    const alongU = nv !== 0;
-    const n = alongU ? nv : nu;
-    const at = (off: number): [number, number] => (alongU ? [u, v + n * off] : [u + n * off, v]);
-    const size = (w: number, t: number): [number, number] => (alongU ? [w, t] : [t, w]);
-
-    let [pu, pv] = at(0.1);
-    let [sw, sd] = size(width + 0.28, 0.2);
-    this.box(green, pu, pv, sw, 2.05, sd, y);
-    [pu, pv] = at(0.225);
-    [sw, sd] = size(width, 0.05);
-    this.box(glass, pu, pv, sw, 1.76, sd, y + 0.145);
-    [pu, pv] = at(0.26);
-    [sw, sd] = size(0.07, 0.03);
-    this.box(green, pu, pv, sw, 1.76, sd, y + 0.145);
-    // Rejas negras como las de las ventanas de la escuela real. Las barras
-    // quedan por fuera del vidrio y comparten la misma granja de instancias.
-    for (let i = -2; i <= 2; i++) {
-      [pu, pv] = at(0.34);
-      [sw, sd] = size(0.045, 0.045);
-      const [bu, bv] = alongU ? [pu + (i * (width - 0.26)) / 6, pv] : [pu, pv + (i * (width - 0.26)) / 6];
-      this.box(green, bu, bv, sw, 1.77, sd, y + 0.14);
-    }
-    for (const railY of [0.43, 1.28]) {
-      [pu, pv] = at(0.37);
-      [sw, sd] = size(width - 0.04, 0.045);
-      this.box(green, pu, pv, sw, 0.045, sd, y + railY);
-    }
-    // Aulas con la luz prendida: se encienden con el resto de las ventanas de
-    // la ciudad al caer el sol (grupo conmutado por City.setLitWindows).
-    if (this.rng.chance(0.55)) {
-      [pu, pv] = at(0.253);
-      [sw, sd] = size(width - 0.1, 0.01);
-      this.box(this.m.glow, pu, pv, sw, 1.66, sd, y + 0.195);
-    }
+  private piece(mat: Material, a: P, b: P, t: number, y0: number, y1: number, off = 0): void {
+    const du = b[0] - a[0];
+    const dv = b[1] - a[1];
+    const len = Math.hypot(du, dv);
+    if (len < 0.01 || y1 - y0 < 0.004) return;
+    const nu = -dv / len;
+    const nv = du / len;
+    const p = toWorld(this.f, (a[0] + b[0]) / 2 + nu * off, (a[1] + b[1]) / 2 + nv * off);
+    // rotY lleva +X a (cos, −sin): el eje largo va sobre la dirección del
+    // segmento EN EL MUNDO, donde +u es −x.
+    this.farm.add('box', mat, new Vector3(p.x, (y0 + y1) / 2, p.z), new Vector3(len, y1 - y0, t), this.yaw(du, dv));
   }
 
-  /**
-   * Banco de listones con respaldo. `facingV` dice si el banco mira a lo
-   * largo de v; `backSign` hacia qué lado queda el respaldo.
-   */
-  private bench(u: number, v: number, facingV: boolean, backSign = 1): void {
-    const { timber, green } = this.m;
-    const [w, d] = facingV ? [1.9, 0.5] : [0.5, 1.9];
-    this.box(timber, u, v, w, 0.08, d, 0.42);
-    const back: [number, number] = facingV ? [0, 0.22 * backSign] : [0.22 * backSign, 0];
-    const [bw, bd] = facingV ? [1.9, 0.06] : [0.06, 1.9];
-    this.box(timber, u + back[0], v + back[1], bw, 0.4, bd, 0.55);
-    for (const s of [-1, 1]) {
-      const lu = facingV ? u + s * 0.78 : u;
-      const lv = facingV ? v : v + s * 0.78;
-      const [lw, ld] = facingV ? [0.08, 0.46] : [0.46, 0.08];
-      this.box(green, lu, lv, lw, 0.42, ld, 0);
-    }
+  /** Giro en Y que alinea +X con la dirección local (du, dv). */
+  private yaw(du: number, dv: number): number {
+    const a = toWorld(this.f, 0, 0);
+    const b = toWorld(this.f, du, dv);
+    return Math.atan2(-(b.z - a.z), b.x - a.x);
   }
 
-  // -------------------------------------------------------------------- suelo
+  // ================================================================== terreno
 
-  /** Solados del campus: explanada, hall, patio y huerta. */
-  private grounds(): void {
-    const S = SCHOOL;
-    // Un único solado claro para todo lo transitable dentro de la reja. Mide
-    // 5 cm: la multitud y el jugador lo pisan a esa altura (CityIndex).
-    this.box(this.m.paver, 0, -2.5, 40.4, 0.05, 35.4, 0);
-    // Franja de ladrillo que marca el eje de ingreso: portón → hall → patio.
-    this.box(this.m.brick, 0, (S.fenceV + S.frontBackV) / 2, S.lobbyHalf * 2 - 0.8, 0.02, S.frontBackV - S.fenceV, 0.05);
-    // Huerta: tierra en vez de solado.
-    this.box(this.mats.surface(PALETTE.soil, 0.95, 0, null), 0, 16.3, 40.4, 0.07, 7.4, 0);
-  }
-
-  // ------------------------------------------------------------ bloque frente
-
-  private frontBlock(): void {
-    const S = SCHOOL;
-    const { wall, slab, brick, green, timber, glass, glow } = this.m;
-    const vc = (S.frontV + S.frontBackV) / 2;
-    const depth = S.frontBackV - S.frontV;
-    const W = S.halfWidth * 2;
-    const H = S.frontFloors * S.floorH;
-    const sideW = S.halfWidth - S.lobbyHalf;
-    const sideU = (S.halfWidth + S.lobbyHalf) / 2;
-
-    // Planta baja partida por el hall pasante; pisos altos corridos encima.
-    for (const s of [-1, 1]) {
-      this.box(wall, s * sideU, vc, sideW, S.floorH, depth, 0);
-      // Zócalo de ladrillo, apenas saliente.
-      this.box(brick, s * sideU, vc, sideW + 0.12, 0.75, depth + 0.12, 0);
-      // Vidrio de los locales que dan al hall.
-      this.box(glass, s * (S.lobbyHalf - 0.03), vc, 0.08, 2.4, depth - 3, 0.5);
-    }
-    this.box(wall, 0, vc, W, H - S.floorH, depth, S.floorH);
-    // Losas salientes: leen los pisos desde lejos.
-    for (let f = 1; f < S.frontFloors; f++) {
-      this.box(slab, 0, vc, W + 0.5, 0.3, depth + 0.5, f * S.floorH - 0.15);
-    }
-    // Pretil de azotea.
-    this.box(slab, 0, vc, W + 0.5, 0.75, depth + 0.5, H);
-    // Techo del hall con luminarias.
-    this.box(slab, 0, vc, S.lobbyHalf * 2, 0.12, depth, S.floorH - 0.12);
-    this.box(glow, 0, vc, 1, 0.04, depth - 2.4, S.floorH - 0.16);
-
-    // Fachada principal: ventanas en serie, salvo el panel institucional.
-    const bays = 11;
-    const step = 3.4;
-    for (let f = 0; f < S.frontFloors; f++) {
-      const y = f * S.floorH + 0.9;
-      for (let k = 0; k < bays; k++) {
-        const u = (k - (bays - 1) / 2) * step;
-        const skip = f === 0 ? Math.abs(u) < S.lobbyHalf + 1.5 : Math.abs(u) < 3.4;
-        if (skip) continue;
-        this.window(u, S.frontV, y, 0, -1);
-        // Fachada del patio: sólo donde no la tapan las alas.
-        const hiddenByWing = f < S.wingFloors && Math.abs(u) > S.wingInner - 1.3;
-        // En planta baja, del lado izquierdo del hall, va el mural del patio.
-        const mural = f === 0 && u < 0;
-        if (!hiddenByWing && !mural) this.window(u, S.frontBackV, y, 0, 1);
-      }
-      // Alero de madera sobre cada fila de ventanas, cortado por el panel.
-      for (const s of [-1, 1]) {
-        this.box(timber, s * 11.35, S.frontV - 0.55, 15.9, 0.1, 0.9, f * S.floorH + 3.05);
-      }
-    }
-    // Parasoles verticales en los pisos altos: ritmo de fachada escolar.
-    for (let k = 0; k < bays - 1; k++) {
-      const u = (k - (bays - 2) / 2) * step;
-      if (Math.abs(u) < 3.5) continue;
-      this.box(timber, u, S.frontV - 0.42, 0.14, H - S.floorH - 0.2, 0.6, S.floorH + 0.1);
-    }
-
-    // Portal gris grafito del acceso, como el volumen central de la fachada real.
-    const portalW = 13.2;
-    const portalFront = S.frontV - 0.34;
-    this.box(green, 0, portalFront, portalW, 4.55, 0.42, 3.55);
-    // Franjas horizontales institucionales que coronan el portal.
-    this.box(this.mats.surface(Color3.FromHexString('#b74b58'), 0.65, 0, null), 0, portalFront - 0.025, portalW, 0.18, 0.06, 7.54);
-    this.box(this.mats.surface(Color3.FromHexString('#e5e7e8'), 0.75, 0, null), 0, portalFront - 0.03, portalW, 0.12, 0.06, 7.69);
-    this.box(this.mats.surface(Color3.FromHexString('#243b67'), 0.65, 0, null), 0, portalFront - 0.035, portalW, 0.18, 0.06, 7.84);
-    // Tres ventanas protegidas sobre el acceso, embutidas en el volumen oscuro.
-    for (const u of [-4.35, 0, 4.35]) this.window(u, portalFront - 0.18, 4.58, 0, -1, 2.05);
-
-    // Marquesina roja con líneas celeste y azul; la tipografía la pinta el atlas.
-    this.box(this.mats.surface(Color3.FromHexString('#b74b58'), 0.68, 0, null), 0, S.frontV - 0.6, 13.2, 2.45, 0.36, 3.12);
-    this.box(this.mats.surface(Color3.FromHexString('#e5e7e8'), 0.75, 0, null), 0, S.frontV - 0.8, 13.2, 0.13, 0.04, 4.28);
-    this.box(this.mats.surface(Color3.FromHexString('#243b67'), 0.65, 0, null), 0, S.frontV - 0.82, 13.2, 0.14, 0.04, 4.12);
-
-    // Entrada vidriada con laterales azules y marcos rojos.
-    for (const side of [-1, 1]) {
-      this.box(glass, side * 1.28, S.frontV - 0.13, 2.12, 2.75, 0.1, 0.1);
-      this.box(this.m.gold, side * 2.4, S.frontV - 0.22, 0.14, 3.05, 0.18, 0.05);
-    }
-    this.box(this.m.gold, 0, S.frontV - 0.22, 4.9, 0.16, 0.18, 3.0);
-    this.box(this.m.gold, 0, S.frontV - 0.24, 0.12, 2.75, 0.18, 0.1);
-    for (const side of [-1, 1]) {
-      for (const y of [1.1, 2.05]) {
-        this.box(this.m.gold, side * 1.28, S.frontV - 0.23, 1.98, 0.09, 0.15, y);
-      }
-      this.box(this.m.metal, side * 0.19, S.frontV - 0.34, 0.035, 0.34, 0.045, 1.18);
-    }
-    for (const side of [-1, 1]) {
-      this.box(this.mats.surface(Color3.FromHexString('#243b67'), 0.65, 0, null), side * 3.55, S.frontV - 0.49, 0.28, 3.55, 0.35, 0.02);
-      this.box(this.mats.surface(Color3.FromHexString('#b74b58'), 0.68, 0, null), side * 2.55, S.frontV - 0.39, 0.12, 2.75, 0.18, 0.1);
-    }
-
-    // Escalinata ancha de acceso: tres huellas bajas de hormigón, como en la
-    // entrada de Laprida. La explanada conserva paso libre a ambos lados.
-    for (let i = 0; i < 3; i++) {
-      this.box(slab, 0, S.frontV - 1.02 - i * 0.58, 8.2, 0.18, 0.68, i * 0.18);
-    }
-
-    // Aires acondicionados exteriores entre ventanas, con rejilla y cañería.
-    for (const u of [-15.3, -8.5, 8.5, 15.3]) {
-      this.frontAirConditioner(u, S.frontV - 0.37, 6.38);
-    }
-    for (const u of [-15.3, 15.3]) this.frontAirConditioner(u, S.frontV - 0.37, 2.9);
-  }
-
-  private frontAirConditioner(u: number, v: number, y: number): void {
-    const { white, green } = this.m;
-    this.box(white, u, v, 0.92, 0.58, 0.42, y);
-    this.box(green, u, v - 0.225, 0.63, 0.37, 0.045, y + 0.015);
-    for (let i = -2; i <= 2; i++) {
-      this.box(white, u + i * 0.115, v - 0.254, 0.035, 0.31, 0.018, y + 0.015);
-    }
-    // Soportes y desagote fino bajo la unidad.
-    for (const side of [-1, 1]) this.box(green, u + side * 0.31, v - 0.05, 0.12, 0.045, 0.56, y - 0.32);
-    this.box(white, u + 0.52, v - 0.04, 0.045, 0.72, 0.045, y - 0.22);
-  }
-
-  // --------------------------------------------------------------------- alas
-
-  private wings(): void {
-    const S = SCHOOL;
-    const { wall, slab, brick, roof } = this.m;
-    const w = S.halfWidth - S.wingInner;
-    const uc = (S.halfWidth + S.wingInner) / 2;
-    const d = S.wingEndV - S.frontBackV;
-    const vc = (S.wingEndV + S.frontBackV) / 2;
-    const H = S.wingFloors * S.floorH;
-
-    for (const s of [-1, 1]) {
-      this.box(wall, s * uc, vc, w, H, d, 0);
-      this.box(brick, s * uc, vc, w + 0.12, 0.75, d + 0.12, 0);
-      this.box(slab, s * uc, vc, w + 0.5, 0.3, d + 0.5, S.floorH - 0.15);
-      this.box(slab, s * uc, vc, w + 0.5, 0.22, d + 0.5, H);
-      // Techo de chapa acanalada gris, característico de las alas que se ven
-      // en Street View y en la toma aérea. El patio conserva la vegetación.
-      this.box(roof, s * uc, vc, w - 0.45, 0.12, d - 0.45, H + 0.22);
-      const ribCount = Math.floor((w - 0.8) / 0.34);
-      for (let i = 0; i <= ribCount; i++) {
-        const ru = s * uc - (w - 0.8) / 2 + i * 0.34;
-        this.box(slab, ru, vc, 0.055, 0.055, d - 0.9, H + 0.34);
-      }
-      this.box(roof, s * uc, S.wingEndV - 0.2, w + 0.08, 0.16, 0.12, H + 0.22);
-
-      for (let f = 0; f < S.wingFloors; f++) {
-        const y = f * S.floorH + 0.9;
-        for (let k = 0; k < 4; k++) {
-          const v = S.frontBackV + 2.2 + k * 3.45;
-          this.window(s * S.wingInner, v, y, -s, 0); // al patio
-          this.window(s * S.halfWidth, v, y, s, 0); // a la calle lateral
-        }
-        this.window(s * (uc - 2), S.wingEndV, y, 0, 1, 2);
-        this.window(s * (uc + 2), S.wingEndV, y, 0, 1, 2);
-      }
-      // Equipos y cañerías sobre la fachada lateral que da a la vereda.
-      for (const v of [0, 6.8]) {
-        for (const y of [2.9, 6.35]) {
-          this.box(this.m.white, s * (S.halfWidth + 0.22), v, 0.42, 0.58, 0.92, y);
-          this.box(this.m.green, s * (S.halfWidth + 0.445), v, 0.045, 0.37, 0.63, y + 0.015);
-          for (let i = -2; i <= 2; i++) {
-            this.box(this.m.white, s * (S.halfWidth + 0.47), v + i * 0.115, 0.018, 0.31, 0.035, y + 0.015);
-          }
-        }
-      }
-    }
-  }
-
-  // -------------------------------------------------------------------- patio
-
-  private courtyard(): void {
-    const { metal, white } = this.m;
-    // Aros de básquet en los dos extremos de la cancha (pintada en SchoolIdentity).
-    for (const s of [-1, 1]) {
-      this.cyl(metal, s * 9.95, 4.6, 0.16, 3.25, 0.05);
-      this.box(metal, s * 9.6, 4.6, 0.7, 0.1, 0.1, 3.05);
-      this.box(white, s * 9.25, 4.6, 0.06, 1.05, 1.8, 2.7);
-      this.cyl(this.mats.surface(PALETTE.signal, 0.6, 0, null), s * 8.98, 4.6, 0.46, 0.03, 3.05);
-    }
-    // Bancos contra las alas, mirando la cancha.
-    for (const s of [-1, 1]) {
-      for (const v of [0.6, 8.6]) this.bench(s * 10.35, v, false, s);
-    }
-  }
-
-  /** Patio de juegos visible y separado de la cancha para los más chicos. */
-  private playground(): void {
-    const { green, gold, timber, metal } = this.m;
-    const safety = this.mats.surface(PALETTE.signal, 0.6, 0, null);
-    const centerU = -10;
-    const centerV = 16.1;
-
-    // Piso blando terracota y borde de madera bajo: el patio se distingue
-    // desde arriba y queda separado de los canteros sin cerrar el recorrido.
-    this.box(safety, centerU, centerV, 8.6, 0.08, 6.2, 0.04);
-    // Rayuela pintada para que el área se lea como patio infantil incluso
-    // desde la vista aérea y sin depender de que haya alumnos justo ahí.
-    for (let i = 0; i < 6; i++) {
-      this.box(this.m.white, -13.45 + i * 0.5, 13.85, 0.38, 0.035, 0.38, 0.085);
-    }
-    for (const side of [-1, 1]) {
-      const u = centerU + side * 4.25;
-      for (const v of [centerV - 2.85, centerV, centerV + 2.85]) {
-        this.box(green, u, v, 0.12, 0.82, 0.12, 0.08);
-      }
-      this.box(timber, u, centerV, 0.12, 0.1, 5.7, 0.76);
-    }
-    this.box(timber, centerU - 4.25, centerV + 2.85, 8.5, 0.1, 0.12, 0.76);
-
-    // Torre de trepa con techo, escalones bajos y un tobogán inclinado.
-    const towerU = -11.1;
-    const towerV = 16.7;
-    for (const du of [-0.72, 0.72]) {
-      for (const dv of [-0.65, 0.65]) this.box(metal, towerU + du, towerV + dv, 0.1, 2.05, 0.1, 0.08);
-    }
-    this.box(timber, towerU, towerV, 1.7, 0.16, 1.55, 1.22);
-    this.box(green, towerU, towerV, 1.9, 0.13, 1.75, 2.03);
-    this.box(green, towerU + 1.35, towerV - 0.18, 1.65, 0.14, 0.46, 0.82);
-    for (let i = 0; i < 4; i++) {
-      this.box(timber, towerU + 0.85 + i * 0.24, towerV - 1.0, 0.34, 0.12, 0.72, 0.17 + i * 0.2);
-    }
-    const slide = toWorld(this.f, towerU + 1.75, towerV + 0.05);
-    this.farm.add(
-      'box',
-      gold,
-      new Vector3(slide.x, 0.78, slide.z),
-      new Vector3(1.15, 0.1, 2.05),
-      this.f.rot,
-      0.38,
+  private grounds(plan: CityPlan): void {
+    const f = this.f;
+    const top = f.site.z0 - f.oz;
+    const west = f.site.x0 - f.ox;
+    const front = SCHOOL.front;
+    // Franja de frente y ochavo de Miguel Cané: solado exterior.
+    this.prisms.plan(
+      this.m.paving,
+      [
+        [miguelCaneU(front), front],
+        [miguelCaneU(0), 0],
+        [U.e + SCHOOL.eastGap, 0],
+        [U.e + SCHOOL.eastGap, front],
+      ],
+      0,
+      0.06,
+      { bottom: false },
     );
-
-    // Hamaca doble con asientos rojos; perfiles y piezas compartidas por la granja.
-    const swingU = -7.25;
-    const swingV = 16.5;
-    for (const u of [swingU - 1.05, swingU + 1.05]) this.cyl(metal, u, swingV, 0.12, 2.05, 0.08);
-    this.box(green, swingU, swingV, 2.3, 0.12, 0.14, 2.08);
-    for (const u of [swingU - 0.48, swingU + 0.48]) {
-      for (const v of [swingV - 0.24, swingV + 0.24]) this.box(metal, u, v, 0.04, 0.9, 0.04, 1.12);
-      this.box(safety, u, swingV, 0.62, 0.12, 0.48, 0.62);
-    }
-  }
-
-  private garden(): void {
-    // Canteros elevados de la huerta escolar.
+    this.prisms.plan(
+      this.m.paving,
+      [
+        [miguelCaneU(0), 0],
+        [U.w, 0],
+        [U.w, V.classTop],
+        [miguelCaneU(V.corrS), V.corrS],
+      ],
+      0,
+      0.06,
+      { bottom: false },
+    );
+    // Fondos de los vecinos detrás de la medianera: pasto y algún árbol.
+    this.prisms.plan(this.m.grass, [APEX, [miguelCaneU(top), top], [U.teaE, top], [U.teaE, rearV(U.teaE)]], 0, 0.05, {
+      bottom: false,
+    });
     for (const [u, v] of [
-      [5.5, 14.6],
-      [12.5, 14.6],
-      [5.5, 18.2],
+      [27, -38.6],
+      [38, -36.8],
+      [49, -34.4],
     ] as const) {
-      const c = toWorld(this.f, u, v);
-      const [w, d] = this.dims(5, 2);
-      this.nature.planter(c.x, c.z, w, d, 0.07, 1.4);
+      const p = toWorld(f, u, v);
+      this.nature.broadleaf(p.x, p.z, 0.9 + this.rng.range(0, 0.3), 0.05);
     }
-    // Invernadero chico: vidrio con estructura de madera.
-    this.box(this.m.glass, 16.4, 17.6, 3.4, 2.5, 3.4, 0.07);
-    this.box(this.m.timber, 16.4, 17.6, 3.6, 0.14, 3.6, 2.57);
-    // Tanque de agua de lluvia.
-    this.cyl(this.m.green, -18.2, 13.4, 1.3, 2.2, 0.07);
-    // Se mantiene libre la línea de visión entre patio, huerta y zona de juegos.
-  }
 
-  // --------------------------------------------------------------- explanada
-
-  private forecourt(): void {
-    const S = SCHOOL;
-    const { metal, slab } = this.m;
-    // Mástil con la bandera (el paño está en SchoolIdentity).
-    this.cyl(slab, FLAG.u, FLAG.v, 1.3, 0.35, 0.05);
-    this.cyl(metal, FLAG.u, FLAG.v, 0.14, 9.6, 0.4);
-    this.cyl(this.m.gold, FLAG.u, FLAG.v, 0.28, 0.22, 10);
-
-    // Tótem con el nombre, junto al portón.
-    this.box(this.m.green, -5.9, S.fenceV + 0.95, 1.5, 3.2, 0.42, 0.05);
-    this.box(this.m.gold, -5.9, S.fenceV + 0.95, 1.55, 0.1, 0.46, 3.25);
-
-    // Directorio del Aula Maker: panel visible desde la explanada de entrada.
-    this.box(this.m.green, 6.8, -20.45, 3.18, 2.5, 0.16, 0.05);
-    this.box(this.m.gold, 6.8, -20.45, 3.3, 0.12, 0.2, 2.5);
-    for (const u of [5.65, 7.95]) this.box(metal, u, -20.45, 0.1, 0.45, 0.14, 0.05);
-
-    // Jardineras bajas a los lados: mantienen despejada la vista del acceso.
+    // Calle Miguel Cané: calzada en diagonal y cordones, de Laprida a la calle
+    // del norte. La vereda es el solado base de la ciudad.
+    const w = plan.streetWidth;
+    const lane = w * 0.42;
+    const offU = w / 2 / MC_COS;
+    const vS = front + w / 2 - lane / 2;
+    const vN = top - w / 2 + lane / 2;
+    const a: P = [miguelCaneU(vS) - offU, vS];
+    const b: P = [miguelCaneU(vN) - offU, vN];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const mid = toWorld(f, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+    const rot = this.yaw(b[0] - a[0], b[1] - a[1]);
+    // Un pelo más baja que las calles de la grilla: en el cruce no pelean.
+    this.farm.add('box', this.m.lane, new Vector3(mid.x, 0.038, mid.z), new Vector3(len, 0.075, lane), rot);
     for (const s of [-1, 1]) {
-      this.box(this.m.brick, s * 11.6, -16.25, 9.2, 0.46, 1.15, 0.05);
-      this.box(this.m.green, s * 11.6, -16.25, 9.25, 0.12, 1.2, 0.48);
-      for (const u of [9.1, 11.6, 14.1]) {
-        const p = toWorld(this.f, s * u, -16.25);
-        this.nature.shrub(p.x, p.z, 0.48, 0.6);
-      }
-      this.bench(s > 0 ? 15.8 : -11.6, -15.2, true);
+      this.piece(this.m.kerb, a, b, 0.32, 0, 0.165, s * (lane / 2 + 0.16));
     }
-    // Bicicletero de alumnos.
-    const r = toWorld(this.f, 15.8, S.fenceV + 1.3);
-    this.street.bikeRack(r.x, r.z, this.f.rot);
-  }
-
-  // --------------------------------------------------------------------- reja
-
-  private fence(): void {
-    const S = SCHOOL;
-    const { brick, green, hedge, gold } = this.m;
-    const v = S.fenceV;
-    const from = S.gateHalf + 0.4;
-    const to = S.half;
-    const len = to - from;
-    for (const s of [-1, 1]) {
-      const uc = s * (from + to) / 2;
-      this.box(brick, uc, v, len, 0.55, 0.36, 0);
-      this.box(green, uc, v, len, 0.07, 0.07, 2.2);
-      this.box(green, uc, v, len, 0.06, 0.06, 0.95);
-      // Barrotes cada 26 cm: la reja clásica de escuela.
-      const bars = Math.floor(len / 0.26);
-      for (let i = 0; i < bars; i++) {
-        const u = s * (from + (i + 0.5) * (len / bars));
-        this.box(green, u, v, 0.035, 1.68, 0.035, 0.55);
-      }
-      // Pilares del portón, de ladrillo con remate dorado.
-      this.box(brick, s * S.gateHalf, v, 0.7, 2.6, 0.7, 0);
-      this.box(gold, s * S.gateHalf, v, 0.8, 0.14, 0.8, 2.6);
-      // Cercos vivos laterales.
-      this.box(hedge, s * (S.half - 0.4), 0, 0.8, 1.3, S.half * 2 - 1, 0);
+    // Plazoleta al oeste de Miguel Cané, en lo que sobra de la manzana doble.
+    const parkEdge = (v: number) => miguelCaneU(v) - w / MC_COS;
+    const park: P[] = [
+      [west, front],
+      [parkEdge(front), front],
+      [parkEdge(top), top],
+      [west, top],
+    ];
+    this.prisms.plan(this.m.grass, park, 0, 0.06, { bottom: false });
+    for (let v = -4; v > top + 3; v -= 7.5) {
+      const u = (west + parkEdge(v)) / 2 + this.rng.range(-1.5, 1.5);
+      if (u > parkEdge(v) - 2.5 || u < west + 2.5) continue;
+      const p = toWorld(f, u, v);
+      this.nature.broadleaf(p.x, p.z, this.rng.range(0.8, 1.15), 0.06);
     }
-    this.box(hedge, 0, S.half - 0.4, S.half * 2, 1.3, 0.8, 0);
-  }
-
-  /** Postes y cableado aéreo que aparecen en las vistas reales de Laprida. */
-  private utilityLines(): void {
-    const poleV = SCHOOL.fenceV - 1.55;
-    for (const u of [-20.2, 20.2]) {
-      this.cyl(this.m.green, u, poleV, 0.17, 10.4, 0);
-      this.box(this.m.green, u, poleV, 1.45, 0.11, 0.11, 9.15);
-      for (let i = -1; i <= 1; i++) {
-        this.box(this.m.white, u + i * 0.43, poleV, 0.08, 0.34, 0.08, 9.2);
-      }
-    }
-    const span = 40.4;
-    const segments = 24;
-    for (const [line, height] of [
-      [0, 9.48],
-      [1, 9.05],
-      [2, 8.64],
-    ] as const) {
-      for (let i = 0; i < segments; i++) {
-        const u = -span / 2 + (i + 0.5) * (span / segments);
-        const sag = 0.15 * (1 - Math.pow((2 * u) / span, 2));
-        this.box(this.m.green, u, poleV, span / segments + 0.035, 0.025, 0.025, height - sag - 0.0125 - line * 0.005);
-      }
+    // Arbolado de la vereda oeste de Miguel Cané.
+    for (let v = -2; v > top + 2; v -= 11) {
+      const u = miguelCaneU(v) - (w - 2.1) / MC_COS;
+      const p = toWorld(f, u, v);
+      this.street.treePit(p.x, p.z);
+      this.nature.broadleaf(p.x, p.z, this.rng.range(0.7, 1.0), 0.1);
     }
   }
 
-  /** Mesas, portátiles y sillas azules frente al mural del aula maker. */
-  private makerClassroom(): void {
-    const chair = this.mats.surface(Color3.FromHexString('#2858a4'), 0.68, 0.02, 'metal');
-    const screen = this.mats.surface(Color3.FromHexString('#161a20'), 0.35, 0.04, null);
-    const device = this.mats.surface(Color3.FromHexString('#d8ddd9'), 0.58, 0.08, 'metal');
-    const accent = this.mats.surface(Color3.FromHexString('#dd743d'), 0.62, 0.02, null);
-    const places = [-6.3, -2.8];
+  private floors(): void {
+    const mat: Record<Room['floor'], Material> = {
+      tile: this.m.tile,
+      wood: this.m.wood,
+      gym: this.m.gymFloor,
+      green: this.m.green,
+      patio: this.m.patio,
+      dark: this.m.tileDark,
+    };
+    for (const r of ROOMS) this.prisms.plan(mat[r.floor], r.poly, 0, FY, { bottom: false });
+  }
 
-    for (const u of places) {
-      const v = -2.65;
-      // Mesas de madera con patas metálicas sencillas, en escala de aula.
-      this.box(this.m.timber, u, v, 2.25, 0.09, 1.35, 0.72);
-      for (const du of [-0.96, 0.96]) {
-        for (const dv of [-0.52, 0.52]) this.box(this.m.green, u + du, v + dv, 0.075, 0.68, 0.075, 0.04);
-      }
-      // Portátil abierto, teclado y pequeño prototipo de robótica en cada mesa.
-      this.box(device, u - 0.35, v + 0.03, 0.56, 0.035, 0.38, 0.815);
-      const p = toWorld(this.f, u - 0.35, v - 0.12);
-      this.farm.add(
-        'box',
-        screen,
-        new Vector3(p.x, 1.02, p.z),
-        new Vector3(0.56, 0.39, 0.045),
-        this.f.rot,
-        0,
-        -0.08,
-      );
-      this.box(device, u + 0.42, v + 0.05, 0.4, 0.23, 0.34, 0.815);
-      this.box(accent, u + 0.42, v - 0.13, 0.46, 0.05, 0.12, 1.05);
-      this.box(screen, u + 0.42, v + 0.05, 0.12, 0.1, 0.1, 1.07);
+  // =================================================================== muros
 
-      // Cuatro sillas por mesa, con respaldo; las piezas se instancian en lote.
-      for (const side of [-1, 1]) {
-        for (const du of [-0.55, 0.55]) {
-          const su = u + du;
-          const sv = v + side * 1.02;
-          this.box(chair, su, sv, 0.48, 0.1, 0.44, 0.47);
-          this.box(chair, su, sv + side * 0.2, 0.48, 0.62, 0.08, 0.55);
-          for (const legU of [-0.17, 0.17]) {
-            for (const legV of [-0.15, 0.15]) this.box(this.m.green, su + legU, sv + legV, 0.045, 0.45, 0.045, 0.04);
+  private side(w: Wall, room: Room | null): Side {
+    if (w.kind === 'medianera' || !room) {
+      return { bands: [[0, w.h, this.m.facade]], stripe: false, exterior: true, room };
+    }
+    const mat = room.id === 'gimnasio' ? this.m.gymWall : room.id === 'jardin' ? this.m.yellow : this.m.white;
+    const stripe = mat === this.m.white;
+    // Muro alto del gimnasio visto desde un ambiente bajo: por encima del
+    // techo vecino ya es fachada.
+    if (w.h > 3.8 && room.id !== 'gimnasio') {
+      return { bands: [[0, H, mat], [H, w.h, this.m.facade]], stripe, exterior: false, room };
+    }
+    return { bands: [[0, w.h, mat]], stripe, exterior: false, room };
+  }
+
+  private wall(w: Wall): void {
+    const [au, av] = w.a;
+    const len = Math.hypot(w.b[0] - au, w.b[1] - av);
+    const du = (w.b[0] - au) / len;
+    const dv = (w.b[1] - av) / len;
+    const nu = -dv;
+    const nv = du;
+    const mu = au + (du * len) / 2;
+    const mv = av + (dv * len) / 2;
+    const t = w.kind === 'int' ? SCHOOL.wallT : SCHOOL.extT;
+    const pos = this.side(w, roomAt(mu + nu * 0.45, mv + nv * 0.45));
+    const neg = this.side(w, roomAt(mu - nu * 0.45, mv - nv * 0.45));
+    const same =
+      pos.bands.length === neg.bands.length &&
+      pos.bands.every((b, k) => b[2] === neg.bands[k][2] && b[0] === neg.bands[k][0] && b[1] === neg.bands[k][1]);
+    const layers: Layer[] = same
+      ? [{ off: 0, t, side: pos }]
+      : [
+          { off: t / 4, t: t / 2, side: pos },
+          { off: -t / 4, t: t / 2, side: neg },
+        ];
+    const at = (d: number): P => [au + du * d, av + dv * d];
+
+    // Tramos: llenos y vanos, en orden.
+    const spans: Array<{ t0: number; t1: number; hole: [number, number] | null }> = [];
+    let cur = 0;
+    for (const o of w.openings) {
+      if (o.t0 > cur + 0.005) spans.push({ t0: cur, t1: o.t0, hole: null });
+      const [hb, ht] = HOLE[o.type];
+      spans.push({ t0: o.t0, t1: o.t1, hole: [hb, Math.min(ht, w.h - 0.15)] });
+      cur = o.t1;
+    }
+    if (cur < len - 0.005) spans.push({ t0: cur, t1: len, hole: null });
+
+    for (const L of layers) {
+      for (const [y0, y1, mat] of L.side.bands) {
+        for (const s of spans) {
+          const a = at(s.t0);
+          const b = at(s.t1);
+          if (!s.hole) {
+            this.piece(mat, a, b, L.t, y0, y1, L.off);
+            continue;
           }
+          const [hb, ht] = s.hole;
+          if (hb > y0 + 0.005) this.piece(mat, a, b, L.t, y0, Math.min(y1, hb), L.off);
+          if (ht < y1 - 0.005) this.piece(mat, a, b, L.t, Math.max(y0, ht), y1, L.off);
+        }
+      }
+      // Guarda roja a la altura de la mano, como en todos los pasillos del
+      // recorrido. Se interrumpe en puertas y ventanas.
+      if (L.side.stripe) {
+        for (const s of spans) {
+          if (s.hole && s.hole[0] < 1.08 && s.hole[1] > 0.98) continue;
+          this.piece(this.m.stripe, at(s.t0), at(s.t1), L.t + 0.02, 0.98, 1.1, L.off);
+        }
+      }
+    }
+
+    const extSign = pos.exterior && !neg.exterior ? 1 : neg.exterior && !pos.exterior ? -1 : 0;
+    for (const o of w.openings) {
+      this.opening(w, o.type, at(o.t0), at(o.t1), o.t1 - o.t0, t, [nu, nv], extSign, pos.room, neg.room);
+    }
+  }
+
+  /** Carpintería y herrería de un vano. */
+  private opening(
+    w: Wall,
+    type: OpeningType,
+    a: P,
+    b: P,
+    len: number,
+    t: number,
+    n: P,
+    extSign: number,
+    roomPos: Room | null,
+    roomNeg: Room | null,
+  ): void {
+    const [hb, htRaw] = HOLE[type];
+    const ht = Math.min(htRaw, w.h - 0.15);
+    const du = (b[0] - a[0]) / len;
+    const dv = (b[1] - a[1]) / len;
+    const along = (d: number): P => [a[0] + du * d, a[1] + dv * d];
+    const m = this.m;
+
+    if (type === 'window' || type === 'high') {
+      this.piece(m.glass, along(0.03), along(len - 0.03), 0.02, hb + 0.03, ht - 0.03);
+      this.piece(m.frame, a, b, 0.1, hb, hb + 0.06);
+      this.piece(m.frame, a, b, 0.1, ht - 0.06, ht);
+      this.piece(m.frame, a, along(0.06), 0.1, hb, ht);
+      this.piece(m.frame, along(len - 0.06), b, 0.1, hb, ht);
+      this.piece(m.frame, along(len / 2 - 0.025), along(len / 2 + 0.025), 0.08, hb, ht);
+      if (extSign !== 0 && type === 'window') {
+        // Rejas negras de planta baja, como en todas las ventanas de la calle.
+        const off = extSign * (t / 2 + 0.06);
+        this.piece(m.slab, along(-0.05), along(len + 0.05), 0.16, hb - 0.06, hb, extSign * (t / 2 + 0.02));
+        for (let k = 1; k < 7; k++) {
+          const d = (k * len) / 7;
+          this.piece(m.bars, along(d - 0.012), along(d + 0.012), 0.025, hb + 0.02, ht - 0.02, off);
+        }
+        for (const y of [hb + 0.45, ht - 0.45]) this.piece(m.bars, a, b, 0.025, y, y + 0.03, off);
+      }
+      // Cortinas en aulas y en el jardín (azules en las aulas del recorrido).
+      const inner = extSign !== 0 ? (extSign > 0 ? roomNeg : roomPos) : null;
+      if (type === 'window' && inner && (inner.id.startsWith('aula') || inner.id === 'jardin')) {
+        const off = -extSign * (t / 2 + 0.06);
+        this.piece(m.curtainBlue, along(-0.2), along(len + 0.2), 0.05, ht + 0.02, ht + 0.3, off);
+        this.piece(m.curtainBlue, along(-0.3), along(0.12), 0.06, hb - 0.05, ht + 0.02, off);
+        this.piece(m.curtainBlue, along(len - 0.12), along(len + 0.3), 0.06, hb - 0.05, ht + 0.02, off);
+      }
+      return;
+    }
+
+    if (type === 'counter') {
+      this.piece(m.timber, a, b, t + 0.36, hb - 0.05, hb);
+      return;
+    }
+    if (type === 'pass') return;
+
+    // Puertas: marco rojo y hojas abiertas contra el muro.
+    const frameMat = type === 'exit' ? m.metalDark : m.red;
+    this.piece(frameMat, a, along(0.07), t + 0.05, 0, ht);
+    this.piece(frameMat, along(len - 0.07), b, t + 0.05, 0, ht);
+    this.piece(frameMat, a, b, t + 0.05, ht, ht + 0.08);
+
+    // Las hojas abren hacia el ambiente (no hacia el pasillo); las de
+    // emergencia, hacia la calle.
+    const isHall = (r: Room | null) => !r || r.name === 'Pasillo' || !r.roofed;
+    let s = !isHall(roomPos) ? 1 : !isHall(roomNeg) ? -1 : 1;
+    if (type === 'exit' && extSign !== 0) s = extSign;
+    const leafMat = type === 'exit' ? m.metalDark : type === 'entrance' ? m.glass : m.leaf;
+    const hinges = type === 'door' ? [0.08] : [0.08, len - 0.08];
+    const leafW = type === 'door' ? len - 0.16 : (len - 0.16) / 2;
+    for (const h of hinges) {
+      const p = along(h);
+      const q0: P = [p[0] + n[0] * s * (t / 2 + 0.02), p[1] + n[1] * s * (t / 2 + 0.02)];
+      const q1: P = [q0[0] + n[0] * s * leafW, q0[1] + n[1] * s * leafW];
+      this.piece(leafMat, q0, q1, 0.045, 0.03, ht - 0.04);
+      if (type === 'entrance') {
+        for (const y of [0.03, ht - 0.12]) this.piece(m.red, q0, q1, 0.06, y, y + 0.1);
+      }
+    }
+    if (type === 'exit') {
+      const inside = extSign !== 0 ? -extSign : 1;
+      this.piece(
+        m.exitSign,
+        along(len / 2 - 0.2),
+        along(len / 2 + 0.2),
+        0.05,
+        ht + 0.14,
+        ht + 0.34,
+        inside * (t / 2 + 0.04),
+      );
+    }
+  }
+
+  // ======================================================== losas y volúmenes
+
+  private ceilings(): void {
+    for (const r of ROOMS) {
+      if (!r.roofed || r.id === 'gimnasio') continue;
+      this.prisms.plan(this.m.ceiling, r.poly, 3.22, 3.28, { top: false, sides: false });
+    }
+  }
+
+  /** Planta alta: volumen cerrado con cornisa, pretil, azotea y ventanas. */
+  private upperFloors(): void {
+    const top = SCHOOL.upperTop;
+    for (const poly of UPPER) {
+      const body = offsetPolygon(poly, 0.15);
+      this.prisms.plan(this.m.facade, body, H, top, { top: false, bottom: false });
+      // Cornisa entre plantas. Arranca en la losa (no debajo): si bajara del
+      // cielorraso, su cara inferior taparía el techo blanco de las aulas.
+      this.prisms.plan(this.m.facade, offsetPolygon(poly, 0.34), H, H + 0.22);
+      this.prisms.plan(this.m.roof, body, top, top + 0.04, { bottom: false, sides: false });
+      this.parapet(body, top, 0.55);
+      this.upperWindows(poly);
+    }
+  }
+
+  private parapet(poly: readonly P[], y: number, h: number): void {
+    const inward = polygonArea(poly) > 0 ? 1 : -1;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      this.piece(this.m.slab, a, b, 0.2, y, y + h, inward * 0.1);
+    }
+  }
+
+  private upperWindows(poly: readonly P[]): void {
+    const inward = polygonArea(poly) > 0 ? 1 : -1;
+    const spacing = 3.25;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const count = Math.floor((len - 0.8) / spacing);
+      if (count < 1) continue;
+      const du = (b[0] - a[0]) / len;
+      const dv = (b[1] - a[1]) / len;
+      const ou = inward * dv; // normal exterior (opuesta a la izquierda si es interior)
+      const ov = -inward * du;
+      const start = (len - (count - 1) * spacing) / 2;
+      for (let k = 0; k < count; k++) {
+        const d = start + k * spacing;
+        const c: P = [a[0] + du * d, a[1] + dv * d];
+        const probe: P = [c[0] + ou * 0.9, c[1] + ov * 0.9];
+        // No se abren ventanas contra otro volumen alto ni contra el gimnasio.
+        if (UPPER.some((p) => p !== poly && inPoly(p, probe[0], probe[1]))) continue;
+        if (roomAt(probe[0], probe[1])?.id === 'gimnasio') continue;
+        // El portal del acceso lleva su propia composición.
+        if (Math.abs(c[1]) < 0.05 && c[0] > 32.4 && c[0] < 42.4) continue;
+        const street = !inLot(probe[0], probe[1]);
+        this.upperWindow(c, [du, dv], -inward, street);
+      }
+    }
+  }
+
+  /** Ventana de planta alta sobre la cara del volumen. `side` es el signo de la normal exterior. */
+  private upperWindow(c: P, d: P, side: number, street: boolean): void {
+    const m = this.m;
+    const hw = 0.78;
+    const a: P = [c[0] - d[0] * hw, c[1] - d[1] * hw];
+    const b: P = [c[0] + d[0] * hw, c[1] + d[1] * hw];
+    const y0 = 4.35;
+    const y1 = 5.65;
+    this.piece(m.glassDark, a, b, 0.03, y0, y1, side * 0.165);
+    if (this.rng.chance(0.55)) this.piece(m.lit, a, b, 0.01, y0 + 0.05, y1 - 0.05, side * 0.185);
+    const fa: P = [a[0] - d[0] * 0.06, a[1] - d[1] * 0.06];
+    const fb: P = [b[0] + d[0] * 0.06, b[1] + d[1] * 0.06];
+    this.piece(m.frame, fa, fb, 0.08, y0 - 0.06, y0, side * 0.18);
+    this.piece(m.frame, fa, fb, 0.08, y1, y1 + 0.06, side * 0.18);
+    this.piece(m.frame, fa, a, 0.08, y0, y1, side * 0.18);
+    this.piece(m.frame, b, fb, 0.08, y0, y1, side * 0.18);
+    this.piece(m.slab, fa, fb, 0.2, y0 - 0.12, y0 - 0.06, side * 0.22);
+    if (!street) return;
+    for (let k = 1; k < 7; k++) {
+      const t = -hw + (k * 2 * hw) / 7;
+      const p: P = [c[0] + d[0] * t, c[1] + d[1] * t];
+      const q: P = [p[0] + d[0] * 0.025, p[1] + d[1] * 0.025];
+      this.piece(m.bars, p, q, 0.025, y0, y1, side * 0.26);
+    }
+    // Equipos de aire acondicionado junto a varias ventanas de la calle.
+    if (this.rng.chance(0.5)) {
+      const e: P = [c[0] + d[0] * 1.35, c[1] + d[1] * 1.35];
+      const f: P = [c[0] + d[0] * 2.25, c[1] + d[1] * 2.25];
+      this.piece(m.appliance, e, f, 0.4, 5.15, 5.75, side * 0.35);
+      this.piece(m.bars, e, f, 0.02, 5.2, 5.6, side * 0.56);
+    }
+  }
+
+  /** Cubiertas de una planta: losa, membrana y pretil. */
+  private roofs(): void {
+    for (const r of ROOFS) {
+      const body = offsetPolygon(r.poly, 0.15);
+      this.prisms.plan(this.m.facade, body, r.y, r.y + 0.22, { bottom: false, top: false });
+      this.prisms.plan(this.m.roof, body, r.y + 0.22, r.y + 0.24, { bottom: false, sides: false });
+      this.parapet(body, r.y + 0.22, 0.35);
+    }
+  }
+
+  // ================================================================ gimnasio
+
+  /**
+   * Gimnasio / SUM: muros de 7,2 m y bóveda de chapa (la cubierta curva que se
+   * ve en la toma aérea), con cabriadas, tímpanos, luminarias, bandas rojas y
+   * azules como en el video y la cancha pintada (en SchoolIdentity).
+   */
+  private gym(): void {
+    const m = this.m;
+    const wallTop = SCHOOL.gymWall;
+    const rise = SCHOOL.gymRise;
+    const chord = -V.gymTop;
+    const r = (chord * chord) / 4 / (2 * rise) + rise / 2;
+    const vc = V.gymTop / 2;
+    const yc = wallTop + rise - r;
+    const arcV = (phi: number, rr = r) => vc + rr * Math.sin(phi);
+    const arcY = (phi: number, rr = r) => yc + rr * Math.cos(phi);
+    const half = Math.asin(chord / 2 / r);
+    const over = Math.asin(Math.min(0.99, (chord / 2 + 0.45) / r));
+    const segs = 14;
+    const uMid = (U.gymW + U.e) / 2;
+    const uLen = U.e - U.gymW + 0.7;
+    for (let i = 0; i < segs; i++) {
+      const p0 = -over + ((2 * over) / segs) * i;
+      const p1 = p0 + (2 * over) / segs;
+      const pm = (p0 + p1) / 2;
+      const w = 2 * r * Math.sin((p1 - p0) / 2) + 0.04;
+      const pos = toWorld(this.f, uMid, arcV(pm));
+      this.farm.add('box', m.gymRoof, new Vector3(pos.x, arcY(pm), pos.z), new Vector3(uLen, 0.1, w), 0, pm);
+    }
+    // Cabriadas curvas bajo la chapa.
+    for (let u = U.gymW + 2.1; u < U.e - 1; u += 3.4) {
+      for (let i = 0; i < 10; i++) {
+        const p0 = -half + ((2 * half) / 10) * i;
+        const p1 = p0 + (2 * half) / 10;
+        const pm = (p0 + p1) / 2;
+        const rr = r - 0.35;
+        const w = 2 * rr * Math.sin((p1 - p0) / 2) + 0.04;
+        const pos = toWorld(this.f, u, arcV(pm, rr));
+        this.farm.add('box', m.metalDark, new Vector3(pos.x, arcY(pm, rr), pos.z), new Vector3(0.14, 0.3, w), 0, pm);
+      }
+      // Tensor horizontal.
+      this.box(m.metalDark, u, vc, 0.08, 0.08, chord - 0.4, wallTop - 0.2);
+      // Luminarias colgadas.
+      for (const v of [vc - 5.5, vc, vc + 5.5]) this.box(m.light, u, v, 0.5, 0.12, 0.5, wallTop - 0.6);
+    }
+    // Tímpanos curvos en los extremos este y oeste.
+    // El arco cierra solo contra la cuerda que apoya sobre los muros.
+    const gable: P[] = [];
+    for (let i = 0; i <= 16; i++) {
+      const phi = -half + ((2 * half) / 16) * i;
+      gable.push([arcV(phi), arcY(phi)]);
+    }
+    this.prisms.alongU(m.facade, gable, U.gymW - 0.15, U.gymW + 0.15);
+    this.prisms.alongU(m.facade, gable, U.e - 0.15, U.e + 0.15);
+    // Bandas verticales rojas y azules, como en los muros del video.
+    for (const u of [53.2, 56.8, 60.9, 64.5]) {
+      for (const v of [V.gymTop + 0.12, -0.165]) {
+        this.box(m.red, u - 0.12, v, 0.18, 5.4, 0.03, 0.6);
+        this.box(m.navy, u + 0.1, v, 0.14, 5.4, 0.03, 0.6);
+      }
+    }
+    // Zócalo gris oscuro y portón de chapa de la salida a Laprida.
+    this.box(m.metalDark, 52.9, 0.05, 3.9, 0.16, 0.1, 3.5);
+  }
+
+  // ================================================================ escaleras
+
+  private stair(s: Stair): void {
+    const m = this.m;
+    const n = Math.max(4, Math.round((s.y1 - s.y0) / 0.175));
+    const alongU = s.dir === 'u+' || s.dir === 'u-';
+    const from = s.dir === 'u+' ? s.u0 : s.dir === 'u-' ? s.u1 : s.dir === 'v+' ? s.v0 : s.v1;
+    const to = s.dir === 'u+' ? s.u1 : s.dir === 'u-' ? s.u0 : s.dir === 'v+' ? s.v1 : s.v0;
+    const run = (to - from) / n;
+    for (let i = 0; i < n; i++) {
+      const c = from + run * (i + 0.5);
+      const top = FY + s.y0 + ((i + 1) * (s.y1 - s.y0)) / n;
+      if (alongU) this.box(m.stair, c, (s.v0 + s.v1) / 2, Math.abs(run) + 0.01, top, s.v1 - s.v0, 0);
+      else this.box(m.stair, (s.u0 + s.u1) / 2, c, s.u1 - s.u0, top, Math.abs(run) + 0.01, 0);
+      // Nariz de escalón clara (las del acceso llevan una franja amarilla).
+      if (alongU) this.box(m.slab, c - run * 0.45, (s.v0 + s.v1) / 2, 0.05, 0.02, s.v1 - s.v0, top);
+      else this.box(m.slab, (s.u0 + s.u1) / 2, c - run * 0.45, s.u1 - s.u0, 0.02, 0.05, top);
+    }
+    // Baranda roja inclinada sobre los dos lados largos.
+    const rise = s.y1 - s.y0;
+    const length = Math.abs(to - from);
+    const ang = Math.atan2(rise, length);
+    const hyp = Math.hypot(rise, length);
+    const yMid = FY + (s.y0 + s.y1) / 2 + 0.9;
+    for (const side of [0, 1]) {
+      if (alongU) {
+        const v = side ? s.v1 - 0.04 : s.v0 + 0.04;
+        const p = toWorld(this.f, (s.u0 + s.u1) / 2, v);
+        // +u es −x en el mundo: subir hacia +u levanta el extremo −X.
+        const east = toWorld(this.f, 1, 0).x < toWorld(this.f, 0, 0).x;
+        const up = s.dir === 'u+' ? ang : -ang;
+        const tilt = east ? -up : up;
+        this.farm.add('box', m.red, new Vector3(p.x, yMid, p.z), new Vector3(hyp, 0.05, 0.05), 0, 0, tilt);
+      } else {
+        const u = side ? s.u1 - 0.04 : s.u0 + 0.04;
+        const p = toWorld(this.f, u, (s.v0 + s.v1) / 2);
+        const tilt = s.dir === 'v+' ? -ang : ang;
+        this.farm.add('box', m.red, new Vector3(p.x, yMid, p.z), new Vector3(0.05, 0.05, hyp), 0, tilt, 0);
+      }
+    }
+  }
+
+  /** Núcleo gris del plano, descanso de la escalera exterior y descanso principal. */
+  private cores(): void {
+    const g = GRAY_CORE;
+    this.box(this.m.metalDark, (g.u0 + g.u1) / 2, (g.v0 + g.v1) / 2, g.u1 - g.u0, H, g.v1 - g.v0, 0);
+    const l = LANDINGS[0];
+    this.box(this.m.stair, (l.u0 + l.u1) / 2, (l.v0 + l.v1) / 2, l.u1 - l.u0, FY + 0.3, l.v1 - l.v0, 0);
+    // Descanso entre los dos tramos de la escalera principal.
+    this.box(this.m.stair, 26.5, -27.47, 0.8, FY + 1.65, 4.35, 0);
+    // Tabique entre tramos.
+    this.box(this.m.white, 23.2, -27.47, 5.8, 3.2, 0.12, 0);
+  }
+
+  // ============================================================ equipamiento
+
+  private item(it: Item): void {
+    const m = this.m;
+    const { u, v, w, d } = it;
+    const room = roomAt(u, v);
+    const alongV = it.face === 'e' || it.face === 'w';
+    switch (it.kind) {
+      case 'desk': {
+        // Tapa de madera sobre cuatro patas finas y un travesaño.
+        this.box(m.timber, u, v, w, 0.04, d, FY + 0.7);
+        for (const su of [-1, 1]) {
+          for (const sv of [-1, 1]) this.box(m.metalDark, u + su * (w / 2 - 0.05), v + sv * (d / 2 - 0.05), 0.035, 0.7, 0.035, FY);
+        }
+        if (alongV) this.box(m.metalDark, u + w / 2 - 0.05, v, 0.03, 0.03, d - 0.1, FY + 0.25);
+        else this.box(m.metalDark, u, v + d / 2 - 0.05, w - 0.1, 0.03, 0.03, FY + 0.25);
+        break;
+      }
+      case 'chair': {
+        const mat = room?.id === 'tecnologia' ? m.chairBlue : room?.id === 'teatro' ? m.black : m.chairGreen;
+        this.chair(mat, u, v, it.face);
+        break;
+      }
+      case 'table': {
+        this.box(m.timber, u, v, w, 0.05, d, FY + 0.72);
+        for (const su of [-1, 1]) {
+          for (const sv of [-1, 1]) this.box(m.metalDark, u + su * (w / 2 - 0.08), v + sv * (d / 2 - 0.08), 0.05, 0.72, 0.05, FY);
+        }
+        break;
+      }
+      case 'teacherDesk': {
+        this.box(m.timberDark, u, v, w, 0.05, d, FY + 0.73);
+        if (alongV) {
+          for (const s of [-1, 1]) this.box(m.timberDark, u, v + s * (d / 2 - 0.03), w, 0.73, 0.05, FY);
+        } else {
+          for (const s of [-1, 1]) this.box(m.timberDark, u + s * (w / 2 - 0.03), v, 0.05, 0.73, d, FY);
+        }
+        break;
+      }
+      case 'hexTable':
+      case 'roundTable': {
+        const top = it.kind === 'hexTable' ? m.timber : m.blue;
+        const hgt = it.kind === 'hexTable' ? 0.74 : 0.55;
+        this.cyl(top, u, v, w, 0.05, FY + hgt);
+        this.box(m.metalDark, u, v, 0.1, hgt, 0.1, FY);
+        const chairMat = it.kind === 'hexTable' ? m.chairBlue : m.red;
+        for (let k = 0; k < 4; k++) {
+          const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
+          const cu = u + Math.cos(a) * (w / 2 + 0.3);
+          const cv = v + Math.sin(a) * (w / 2 + 0.3);
+          const face: Item['face'] = Math.abs(Math.cos(a)) > 0.5 ? (Math.cos(a) > 0 ? 'w' : 'e') : Math.sin(a) > 0 ? 'n' : 's';
+          this.chair(chairMat, cu, cv, face, it.kind === 'roundTable' ? 0.75 : 1);
+        }
+        break;
+      }
+      case 'board': {
+        const [bw, bd] = alongV ? [0.03, d] : [w, 0.03];
+        this.box(m.metalDark, u, v, alongV ? 0.04 : w + 0.08, 1.3, alongV ? d + 0.08 : 0.04, FY + 0.85);
+        this.box(m.board, u + (alongV ? 0.02 : 0), v + (alongV ? 0 : 0.02), bw, 1.2, bd, FY + 0.9);
+        break;
+      }
+      case 'shelf': {
+        const mat = room?.id === 'jardin' ? m.appliance : m.timberDark;
+        this.box(mat, u, v, w, 1.85, d, FY);
+        for (const y of [0.5, 0.95, 1.4]) {
+          const books = this.rng.pick([m.red, m.navy, m.chairGreen, m.timber]);
+          if (alongV) this.box(books, u, v, w + 0.02, 0.28, d - 0.2, FY + y);
+          else this.box(books, u, v, w - 0.2, 0.28, d + 0.02, FY + y);
+        }
+        break;
+      }
+      case 'counter': {
+        const body = room?.id === 'buffet' ? m.black : m.appliance;
+        this.box(body, u, v, w, 0.92, d, FY);
+        this.box(room?.id === 'buffet' ? m.timberDark : m.frame, u, v, w + 0.04, 0.05, d + 0.04, FY + 0.92);
+        break;
+      }
+      case 'fridge': {
+        this.box(m.appliance, u, v, w, 1.9, d, FY);
+        this.box(m.glass, u - 0.36, v, 0.02, 1.6, d - 0.1, FY + 0.15);
+        break;
+      }
+      case 'planter': {
+        this.box(m.blue, u, v, w, 0.6, d, FY);
+        this.box(m.soil, u, v, w - 0.12, 0.04, d - 0.12, FY + 0.58);
+        const n = Math.max(1, Math.round(Math.max(w, d) / 1.1));
+        for (let k = 0; k < n; k++) {
+          const t = (k + 0.5) / n - 0.5;
+          const p = toWorld(this.f, u + (w >= d ? t * (w - 0.5) : 0), v + (w >= d ? 0 : t * (d - 0.5)));
+          this.nature.shrub(p.x, p.z, this.rng.range(0.55, 0.8), FY + 0.6);
+        }
+        break;
+      }
+      case 'bench': {
+        const mat = room?.id === 'buffet' ? m.timberDark : m.red;
+        this.box(mat, u, v, w, 0.06, d, FY + 0.42);
+        for (const s of [-1, 1]) {
+          if (w >= d) this.box(m.metalDark, u + s * (w / 2 - 0.12), v, 0.06, 0.42, d - 0.06, FY);
+          else this.box(m.metalDark, u, v + s * (d / 2 - 0.12), w - 0.06, 0.42, 0.06, FY);
+        }
+        break;
+      }
+      case 'tree': {
+        this.box(m.soil, u, v, 1.1, 0.04, 1.1, FY);
+        this.box(m.slab, u, v, 1.3, 0.12, 1.3, FY - 0.08);
+        const p = toWorld(this.f, u, v);
+        this.nature.broadleaf(p.x, p.z, this.rng.range(0.75, 0.95), FY);
+        break;
+      }
+      case 'column': {
+        // Columnas de sección cuadrada: comparten malla con el resto de las
+        // cajas de su color (un cilindro por color sería un draw call más).
+        const mat = room?.id === 'salon' ? m.red : room?.id === 'tecnologia' ? m.blue : m.chairGreen;
+        this.box(mat, u, v, w, 3.22 - FY, d, FY);
+        break;
+      }
+      case 'mirror':
+        this.box(m.mirror, u, v, w, 1.9, d, FY + 0.25);
+        break;
+      case 'barre': {
+        this.box(m.timber, u, v, w, 0.05, d * 0.5, FY + 1.0);
+        const n = Math.max(2, Math.round(Math.max(w, d) / 2));
+        for (let k = 0; k <= n; k++) {
+          const t = k / n - 0.5;
+          this.box(m.metalDark, u + (alongV ? 0 : t * w), v + (alongV ? t * d : 0), 0.04, 1.02, 0.04, FY);
+        }
+        break;
+      }
+      case 'stall': {
+        // Cubículo: dos tabiques, frente con puerta entornada e inodoro.
+        for (const s of [-1, 1]) this.box(m.frame, u, v + s * (d / 2), w, 1.9, 0.04, FY + 0.12);
+        this.box(m.leaf, u - w / 2, v - 0.18, 0.04, 1.8, d - 0.45, FY + 0.12);
+        this.box(m.appliance, u + w / 2 - 0.35, v, 0.55, 0.42, 0.38, FY);
+        break;
+      }
+      case 'stage': {
+        this.box(m.black, u, v, w, 0.62, d, FY);
+        this.box(m.black, u, v - d / 2 - 0.05, w, 0.6, 0.02, FY);
+        // Fondo negro contra el muro del fondo.
+        this.box(m.black, u, v - d / 2 + 0.06, w - 0.1, 2.6, 0.04, FY + 0.62);
+        break;
+      }
+      case 'curtain': {
+        // Telón rojo recogido a los costados y bambalina superior.
+        for (const s of [-1, 1]) this.box(m.curtainRed, u + s * (w / 2 - 0.35), v, 0.7, 2.45, 0.16, FY + 0.62);
+        this.box(m.curtainRed, u, v, w, 0.45, 0.18, H - 0.55);
+        break;
+      }
+      case 'goal': {
+        // Arco de handball: postes y travesaño a franjas, red al fondo.
+        const back = it.face === 's' ? -d / 2 : d / 2;
+        for (const s of [-1, 1]) this.box(m.red, u + s * (w / 2), v + back * 0.9, 0.08, 2.0, 0.08, FY);
+        this.box(m.red, u, v + back * 0.9, w + 0.08, 0.08, 0.08, FY + 2.0);
+        this.box(m.bars, u, v - back * 0.9, w, 2.0, 0.02, FY);
+        for (const s of [-1, 1]) this.box(m.bars, u + s * (w / 2), v, 0.02, 2.0, d * 0.9, FY);
+        this.box(m.bars, u, v, w, 0.02, d * 0.9, FY + 2.0);
+        break;
+      }
+      case 'bleachers': {
+        // Tres gradas de chapa con baranda roja, contra el muro este.
+        for (let k = 0; k < 3; k++) {
+          const du = (k - 1) * (w / 3);
+          this.box(m.metalDark, u + du, v, w / 3, 0.45 * (k + 1), d, FY);
+          this.box(m.timber, u + du, v, w / 3, 0.04, d, FY + 0.45 * (k + 1));
+        }
+        this.box(m.red, u + w / 2 - 0.1, v, 0.05, 0.05, d, FY + 2.35);
+        for (const s of [-1, 1]) this.box(m.red, u + w / 2 - 0.1, v + s * (d / 2), 0.05, 1.0, 0.05, FY + 1.35);
+        break;
+      }
+      case 'seats': {
+        const n = Math.max(2, Math.round(Math.max(w, d) / 0.55));
+        for (let k = 0; k < n; k++) {
+          const t = (k + 0.5) / n - 0.5;
+          this.chair(m.black, u + (alongV ? 0 : t * w), v + (alongV ? t * d : 0), it.face);
+        }
+        break;
+      }
+      case 'booth': {
+        // Recepción roja con reja, como la del hall en el recorrido.
+        this.box(m.red, u, v + d / 2 - 0.35, w, 1.0, 0.5, FY);
+        this.box(m.timber, u, v + d / 2 - 0.35, w + 0.05, 0.04, 0.55, FY + 1.0);
+        break;
+      }
+      case 'playhouse': {
+        const jardin = room?.id === 'jardin';
+        const body = jardin ? m.yellow : m.timber;
+        this.box(body, u, v, w, 1.3, d, FY);
+        this.box(m.bars, u, v - d / 2, w * 0.35, 0.9, 0.02, FY + 0.1);
+        const p = toWorld(this.f, u, v);
+        for (const s of [-1, 1]) {
+          this.farm.add(
+            'box',
+            jardin ? m.red : m.timberDark,
+            new Vector3(p.x, FY + 1.62, p.z + s * (d / 4 + 0.02)),
+            new Vector3(w + 0.2, 0.06, d / 2 + 0.25),
+            0,
+            s * 0.62,
+          );
+        }
+        break;
+      }
+      case 'banner': {
+        // Banner de pie: base y parante; la lona la pinta SchoolIdentity.
+        this.box(m.metalDark, u, v, 0.25, 0.08, w, FY);
+        this.box(m.metalDark, u, v, 0.03, 2.2, 0.03, FY);
+        break;
+      }
+      case 'lockers': {
+        this.box(m.navy, u, v, w, 1.8, d, FY);
+        for (let k = 1; k < 4; k++) this.box(m.bars, u - w / 2 + (k * w) / 4, v, 0.02, 1.7, d + 0.02, FY + 0.05);
+        break;
+      }
+    }
+  }
+
+  /** Silla escolar: asiento, respaldo y dos patines. `face` es hacia dónde mira. */
+  private chair(mat: Material, u: number, v: number, face: Item['face'], scale = 1): void {
+    const s = scale;
+    const back: P = face === 'w' ? [0.2, 0] : face === 'e' ? [-0.2, 0] : face === 'n' ? [0, 0.2] : [0, -0.2];
+    this.box(mat, u, v, 0.42 * s, 0.04, 0.42 * s, FY + 0.44 * s);
+    const bw = back[0] !== 0 ? 0.03 : 0.42 * s;
+    const bd = back[0] !== 0 ? 0.42 * s : 0.03;
+    this.box(mat, u + back[0] * s, v + back[1] * s, bw, 0.36 * s, bd, FY + 0.5 * s);
+    for (const k of [-1, 1]) {
+      if (back[0] !== 0) this.box(this.m.metalDark, u, v + k * 0.17 * s, 0.38 * s, 0.44 * s, 0.03, FY);
+      else this.box(this.m.metalDark, u + k * 0.17 * s, v, 0.03, 0.44 * s, 0.38 * s, FY);
+    }
+  }
+
+  /** Tubos fluorescentes en todos los ambientes cubiertos. */
+  private lights(): void {
+    for (const r of ROOMS) {
+      if (!r.roofed || r.id === 'gimnasio' || r.id === 'escalera' || r.id === 'nicho') continue;
+      const y = 3.17;
+      let u0 = Infinity;
+      let u1 = -Infinity;
+      let v0 = Infinity;
+      let v1 = -Infinity;
+      for (const [u, v] of r.poly) {
+        u0 = Math.min(u0, u);
+        u1 = Math.max(u1, u);
+        v0 = Math.min(v0, v);
+        v1 = Math.max(v1, v);
+      }
+      const step = 2.9;
+      const nu = Math.max(1, Math.round((u1 - u0) / step));
+      const nv = Math.max(1, Math.round((v1 - v0) / step));
+      const long = u1 - u0 >= v1 - v0;
+      for (let i = 0; i < nu; i++) {
+        for (let j = 0; j < nv; j++) {
+          const u = u0 + ((i + 0.5) * (u1 - u0)) / nu;
+          const v = v0 + ((j + 0.5) * (v1 - v0)) / nv;
+          if (!inPoly(r.poly, u, v)) continue;
+          this.box(this.m.light, u, v, long ? 1.2 : 0.16, 0.05, long ? 0.16 : 1.2, y);
+        }
+      }
+    }
+  }
+
+  // ================================================================ fachada
+
+  /**
+   * Portal del acceso sobre Laprida: volumen gris grafito con tres ventanas,
+   * franjas rojo-blanco-azul, marquesina roja con el nombre, pilares de piedra
+   * y columnas azules junto a las puertas rojas (la tipografía y el escudo los
+   * dibuja SchoolIdentity).
+   */
+  private portal(): void {
+    const m = this.m;
+    const u0 = 32.95;
+    const u1 = 41.9;
+    const uc = (u0 + u1) / 2;
+    const w = u1 - u0;
+    this.box(m.portal, uc, 0.3, w, 7.75 - 4.25, 0.36, 4.25);
+    for (const [y, mat] of [
+      [7.2, m.red],
+      [7.36, m.slab],
+      [7.5, m.navy],
+    ] as const) {
+      this.box(mat, uc, 0.5, w, 0.14, 0.04, y);
+    }
+    // Tres ventanas enrejadas del primer piso.
+    for (const u of [uc - 2.75, uc, uc + 2.75]) {
+      this.box(m.frame, u, 0.49, 1.7, 1.45, 0.04, 4.9);
+      this.box(m.glassDark, u, 0.52, 1.55, 1.3, 0.02, 4.97);
+      for (let k = -2; k <= 2; k++) this.box(m.bars, u + k * 0.28, 0.56, 0.025, 1.3, 0.025, 4.97);
+    }
+    // Marquesina roja con filetes; el texto va en el atlas.
+    this.box(m.red, uc, 0.42, w - 0.4, 1.5, 0.3, 2.75);
+    this.box(m.slab, uc, 0.58, w - 0.4, 0.07, 0.02, 4.1);
+    this.box(m.navy, uc, 0.58, w - 0.4, 0.07, 0.02, 2.8);
+    // Pilares revestidos en piedra y columnas azules del acceso.
+    for (const [pu, pw] of [
+      [33.15, 0.5],
+      [41.4, 1.0],
+    ] as const) {
+      this.box(m.stone, pu, 0.18, pw, 2.75, 0.4, 0);
+    }
+    for (const u of [33.62, 40.62]) this.box(m.navy, u, 0.3, 0.28, 2.75, 0.28, 0.12);
+    // Escalinata de tres huellas hasta el nivel del vestíbulo.
+    for (const [v0, v1, h] of [
+      [1.4, 2.0, 0.08],
+      [0.8, 1.4, 0.1],
+      [0, 0.8, FY],
+    ] as const) {
+      this.box(m.slab, (33.4 + 40.85) / 2, (v0 + v1) / 2, 40.85 - 33.4, h, v1 - v0, 0);
+    }
+    // Mástil inclinado con la bandera, a la izquierda del portal.
+    const p = toWorld(this.f, 33.35, 0.7);
+    this.farm.add('box', m.metal, new Vector3(p.x, 5.35, p.z + 0.35), new Vector3(0.06, 0.06, 1.9), 0, -0.6);
+  }
+
+  /**
+   * Franja de frente: canteros rojos con cubos azules, palmeras de la vereda
+   * y zócalo de las aulas, como en las tomas de Street View.
+   */
+  private frontage(): void {
+    const m = this.m;
+    for (const r of FRONT_PLANTERS) {
+      const uc = (r.u0 + r.u1) / 2;
+      const vc = (r.v0 + r.v1) / 2;
+      this.box(m.red, uc, vc, r.u1 - r.u0, 0.55, r.v1 - r.v0, 0.06);
+      this.box(m.soil, uc, vc, r.u1 - r.u0 - 0.2, 0.03, r.v1 - r.v0 - 0.2, 0.6);
+      for (let u = r.u0 + 1.2; u < r.u1 - 0.6; u += 1.6) {
+        const pt = toWorld(this.f, u, vc);
+        this.nature.shrub(pt.x, pt.z, this.rng.range(0.45, 0.75), 0.62);
+      }
+      for (let u = r.u0 + 2.4; u < r.u1 - 1; u += 4.6) this.box(m.blue, u, vc + 0.15, 0.95, 0.75, 0.95, 0.06);
+    }
+    // Palmeras: esquina de Miguel Cané y vereda de Laprida.
+    for (const [u, v, h] of [
+      [-2.6, 0.6, 7.5],
+      [15.8, 3.3, 8.6],
+      [27.2, 3.3, 7.8],
+      [45.9, 3.3, 7.2],
+    ] as const) {
+      this.palm(u, v, h);
+    }
+    // Cartel de salida de emergencia sobre el ochavo.
+    this.box(m.exitSign, 0.2, -8.2, 0.05, 0.22, 0.45, 2.45);
+    // Poste de los carteles de calle (Laprida y Miguel Cané) y del punto de
+    // encuentro; las chapas las pinta SchoolIdentity.
+    this.cyl(m.metalDark, -6.3, 3.3, 0.07, 3.35, 0);
+    this.cyl(m.metalDark, MEETING_POINT[0], MEETING_POINT[1] - 0.02, 0.06, 2.35, 0);
+
+    // Remate en zigzag de la fachada sobre Laprida: el perfil "de sierra" de
+    // chapa que se ve en todas las tomas de la calle. Cada diente es una caja
+    // girada 45°: media queda dentro del pretil y asoma el triángulo.
+    const top = SCHOOL.upperTop + 0.55;
+    for (const [u0, u1] of [
+      [U.w + 0.3, U.east1 - 0.2],
+      [U.salonW + 0.3, U.gymW - 0.3],
+    ] as const) {
+      for (let u = u0; u <= u1; u += 0.9) {
+        const p = toWorld(this.f, u, 0.05);
+        this.farm.add('box', m.slab, new Vector3(p.x, top, p.z), new Vector3(0.6, 0.6, 0.12), 0, 0, Math.PI / 4);
+      }
+    }
+  }
+
+  private palm(u: number, v: number, h: number): void {
+    const trunk = this.mats.surface(PALETTE.barkLight, 0.95, 0, 'timber');
+    this.cyl(trunk, u, v, 0.34, h * 0.55, 0);
+    this.cyl(trunk, u, v, 0.26, h * 0.45, h * 0.55);
+    const frond = this.mats.foliage(PALETTE.leafMid);
+    const p = toWorld(this.f, u, v);
+    for (let k = 0; k < 9; k++) {
+      const a = (k / 9) * Math.PI * 2 + this.rng.range(-0.15, 0.15);
+      const len = this.rng.range(2.1, 2.7);
+      const droop = this.rng.range(0.35, 0.6);
+      const cx = p.x + Math.sin(a) * len * 0.45;
+      const cz = p.z + Math.cos(a) * len * 0.45;
+      // Hoja: caja chata girada hacia afuera y caída en la punta.
+      this.farm.add('box', frond, new Vector3(cx, h - 0.25, cz), new Vector3(0.45, 0.05, len), a, droop);
+    }
+  }
+
+  private fences(): void {
+    const m = this.m;
+    for (const [a, b] of FENCES) {
+      this.piece(m.stone, a, b, 0.3, 0, 0.45);
+      this.piece(m.bars, a, b, 0.06, 1.95, 2.02);
+      this.piece(m.bars, a, b, 0.05, 0.95, 1.0);
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const du = (b[0] - a[0]) / len;
+      const dv = (b[1] - a[1]) / len;
+      const n = Math.floor(len / 0.16);
+      for (let k = 0; k <= n; k++) {
+        const d = (k * len) / n;
+        const p: P = [a[0] + du * d, a[1] + dv * d];
+        const q: P = [p[0] + du * 0.025, p[1] + dv * 0.025];
+        this.piece(m.bars, p, q, 0.025, 0.45, 2.02);
+      }
+    }
+  }
+
+  /** Postes y cableado aéreo sobre la vereda de Laprida, como en las fotos. */
+  private utilityLines(): void {
+    const m = this.m;
+    const poleV = SCHOOL.front + 3.2;
+    const poles = [-4, 20, 44, 66];
+    for (const u of poles) {
+      this.cyl(m.metalDark, u, poleV, 0.2, 9.6, 0);
+      this.box(m.metalDark, u, poleV, 1.4, 0.1, 0.1, 8.5);
+    }
+    for (let i = 0; i < poles.length - 1; i++) {
+      const u0 = poles[i];
+      const u1 = poles[i + 1];
+      for (const [y, off] of [
+        [8.9, 0],
+        [8.45, 0.4],
+        [8.45, -0.4],
+      ] as const) {
+        const segs = 8;
+        for (let k = 0; k < segs; k++) {
+          const t = (k + 0.5) / segs;
+          const sag = 0.35 * (1 - Math.pow(2 * t - 1, 2));
+          this.box(m.bars, u0 + (u1 - u0) * t + off, poleV, (u1 - u0) / segs + 0.03, 0.025, 0.025, y - sag);
         }
       }
     }

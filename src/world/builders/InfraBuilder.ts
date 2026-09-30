@@ -9,7 +9,7 @@ import type { StreetLevel } from './StreetLevel';
 import { PALETTE } from '../Palette';
 
 /**
- * Infraestructura urbana: suelo, calles, canal, plaza y energía.
+ * Infraestructura urbana: suelo, calles, canal y energía.
  *
  * Decisión de diseño: **no hay autos**. En 2050 esta ciudad resolvió la
  * movilidad con tranvía, bici y caminata, así que la calzada es angosta y la
@@ -52,17 +52,24 @@ export class InfraBuilder {
       // Calzada central angosta (la mitad del ancho de la calle).
       const lane = street.width * 0.42;
       const isX = street.axis === 'x';
-      this.farm.add(
-        'box',
-        street.tram ? tramMat : laneMat,
-        new Vector3(isX ? 0 : street.at, 0.04, isX ? street.at : 0),
-        isX ? new Vector3(length, 0.08, lane) : new Vector3(lane, 0.08, length),
-      );
+      // Tramos existentes: la calle entre las dos manzanas de la escuela se
+      // corta, porque el predio es uno solo.
+      for (const [s0, s1] of streetSpans(-length / 2, length / 2, street.gaps)) {
+        const c = (s0 + s1) / 2;
+        const l = s1 - s0;
+        this.farm.add(
+          'box',
+          street.tram ? tramMat : laneMat,
+          new Vector3(isX ? c : street.at, 0.04, isX ? street.at : c),
+          isX ? new Vector3(l, 0.08, lane) : new Vector3(lane, 0.08, l),
+        );
 
-      // Cordón: la línea que separa calzada de vereda. Es un detalle
-      // baratísimo (dos cajas por calle) y de los que más se notan al caminar:
-      // sin él, vereda y calzada son el mismo plano pintado de otro color.
-      this.street.kerb(street.axis, street.at, lane / 2 + 0.16, length);
+        // Cordón: la línea que separa calzada de vereda. Es un detalle
+        // baratísimo (dos cajas por calle) y de los que más se notan al
+        // caminar: sin él, vereda y calzada son el mismo plano pintado de otro
+        // color.
+        this.street.kerb(street.axis, street.at, lane / 2 + 0.16, l, c);
+      }
 
       // Rieles del tranvía: dos líneas finas y brillantes.
       if (street.tram) {
@@ -84,8 +91,8 @@ export class InfraBuilder {
         const pitch = (plan.blockSize + plan.streetWidth) * 3;
         const stops = Math.floor(plan.extent / pitch) * 2;
         for (let k = -stops / 2; k <= stops / 2; k++) {
-          // La parada central se corre del eje: en el cruce con el eje de la
-          // plaza caía justo delante del portón de la escuela y lo tapaba.
+          // La parada central se corre del eje: en el cruce con el eje central
+          // caía justo delante del portón de la escuela y lo tapaba.
           const along = k * pitch + (k === 0 ? 19 : 0);
           if (Math.abs(along) > plan.extent - 20) continue;
           const side = k % 2 === 0 ? 1 : -1;
@@ -110,6 +117,10 @@ export class InfraBuilder {
    */
   streetscape(block: Block, plan: CityPlan): void {
     if (block.kind === 'water') return;
+    if (block.landmark) {
+      this.schoolStreetscape(block, plan);
+      return;
+    }
     const half = plan.blockSize / 2;
     // Línea de arbolado sobre la vereda, justo detrás del cordón.
     //
@@ -168,6 +179,30 @@ export class InfraBuilder {
           this.bench(x + ax * 3.4, z + az * 3.4, streetRot);
         }
       }
+    }
+  }
+
+  /**
+   * Veredas del predio escolar: la manzana doble planta su lado norte entero
+   * (la principal) y su lado oeste (el anexo). Laprida, al sur, queda con las
+   * palmeras y los postes que levanta la propia escuela.
+   */
+  private schoolStreetscape(block: Block, plan: CityPlan): void {
+    const site = plan.schoolSite;
+    if (!site) return;
+    const lane = plan.streetWidth * 0.21;
+    const treeLine = plan.streetWidth / 2 - (lane + 0.32 + 1.0);
+    const north = block.landmark === 'school';
+    const from = north ? site.x0 : site.z0;
+    const to = north ? site.x1 : site.z1;
+    const count = Math.max(2, Math.floor(((to - from) / 12) * this.greenDensity));
+    for (let i = 0; i < count; i++) {
+      const along = from + ((i + 0.5) / count) * (to - from) + this.rng.range(-1.5, 1.5);
+      const x = north ? along : site.x0 - treeLine;
+      const z = north ? site.z0 - treeLine : along;
+      if (!this.rng.chance(0.72)) continue;
+      this.street.treePit(x, z);
+      this.nature.broadleaf(x, z, this.rng.range(0.62, 1.1), 0.1);
     }
   }
 
@@ -326,13 +361,12 @@ export class InfraBuilder {
     const lane = plan.streetWidth * 0.21 + 1.2;
     const street = (v: number) => (Math.round(v / pitch - 0.5) + 0.5) * pitch;
     if (Math.abs(x - street(x)) < lane || Math.abs(z - street(z)) < lane) return false;
-    const n = Math.round(Math.sqrt(plan.blocks.length));
-    const half = (n - 1) / 2;
+    const half = (plan.gridSize - 1) / 2;
     const gx = Math.round(x / pitch + half);
     const gz = Math.round(z / pitch + half);
     const b = plan.blocks.find((k) => k.gx === gx && k.gz === gz);
     if (!b || Math.abs(x - b.cx) > b.width / 2 || Math.abs(z - b.cz) > b.depth / 2) return true;
-    return b.kind === 'water' || b.kind === 'park' || b.kind === 'plaza' || b.kind === 'energy';
+    return b.kind === 'water' || b.kind === 'park' || b.kind === 'energy';
   }
 
   private bridge(x: number, z: number, axis: 'x' | 'z', span: number): void {
@@ -382,163 +416,6 @@ export class InfraBuilder {
         );
       }
     }
-  }
-
-  // -------------------------------------------------------------------- plaza
-
-  /**
-   * Plaza central: el corazón de la ciudad y el punto de aparición.
-   *
-   * Lleva el "Árbol Solar": una pérgola radial de paneles que da sombra y
-   * genera energía. Es el hito visual de la ciudad — lo primero que se ve
-   * al aparecer y la referencia para orientarse desde cualquier calle.
-   */
-  plaza(block: Block, plan: CityPlan): void {
-    const { cx, cz } = block;
-    const size = plan.blockSize;
-
-    // Solado en dos tonos, con un anillo.
-    this.farm.add(
-      'box',
-      this.mats.surface(PALETTE.concreteLight, 0.88, 0, 'pavement'),
-      new Vector3(cx, 0.06, cz),
-      new Vector3(size, 0.12, size),
-    );
-    this.farm.add(
-      'cylinder',
-      this.mats.surface(PALETTE.pavement, 0.85, 0, 'pavement'),
-      new Vector3(cx, 0.1, cz),
-      new Vector3(size * 0.78, 0.1, size * 0.78),
-    );
-    // Anillos concéntricos de despiece: rompen la mancha blanca uniforme y,
-    // sobre todo, dan referencia de escala al caminar.
-    for (let i = 1; i <= 3; i++) {
-      this.farm.add(
-        'cylinder',
-        this.mats.surface(PALETTE.pavementDark, 0.9, 0, 'pavement'),
-        new Vector3(cx, 0.12, cz),
-        new Vector3(size * (0.2 + i * 0.16), 0.06, size * (0.2 + i * 0.16)),
-      );
-      this.farm.add(
-        'cylinder',
-        this.mats.surface(PALETTE.concreteLight, 0.85, 0, 'pavement'),
-        new Vector3(cx, 0.13, cz),
-        new Vector3(size * (0.2 + i * 0.16) - 0.7, 0.06, size * (0.2 + i * 0.16) - 0.7),
-      );
-    }
-
-    this.solarTree(cx, cz);
-
-    // Espejo de agua en anillo, cortado en cuatro por los accesos.
-    const waterMat = this.mats.water();
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-      const r = size * 0.3;
-      this.farm.add(
-        'box',
-        waterMat,
-        new Vector3(cx + Math.cos(a) * r, 0.14, cz + Math.sin(a) * r),
-        new Vector3(size * 0.26, 0.16, size * 0.1),
-        a + Math.PI / 2,
-      );
-    }
-
-    // Arboles en el perimetro y bancos mirando al centro.
-    // Se deja un hueco deliberado en el sector sur (donde aparece el jugador):
-    // aparecer con la cara contra un tronco arruina el primer momento.
-    const ring = 12;
-    for (let i = 0; i < ring; i++) {
-      const a = (i / ring) * Math.PI * 2;
-      const facingSouth = Math.sin(a) < -0.72;
-      const r = size * 0.44;
-      if (!facingSouth) {
-        this.nature.broadleaf(
-          cx + Math.cos(a) * r,
-          cz + Math.sin(a) * r,
-          this.rng.range(0.78, 1.05),
-        );
-      }
-      if (i % 2 === 0) {
-        // Entre el espejo de agua (que termina a 0,36 del lado) y la fila de
-        // árboles. A 0,32 los bancos de las diagonales quedaban DENTRO del agua.
-        // El giro es −a − π/2 porque en Babylon rotar θ lleva +X a
-        // (cos θ, −sin θ): así el banco queda tangente al anillo.
-        const br = size * 0.4;
-        this.bench(cx + Math.cos(a) * br, cz + Math.sin(a) * br, -a - Math.PI / 2);
-      }
-    }
-  }
-
-  /** El Árbol Solar: pérgola radial de paneles sobre un mástil central. */
-  private solarTree(x: number, z: number): void {
-    const trunkH = 10.5;
-    const trunkMat = this.mats.metal(PALETTE.solarFrame, 0.35);
-    const panelMat = this.mats.solar();
-
-    // Mástil que se abre en tres tramos.
-    this.farm.add('cylinder', trunkMat, new Vector3(x, trunkH / 2, z), new Vector3(1.05, trunkH, 1.05));
-    this.farm.add(
-      'cylinder',
-      trunkMat,
-      new Vector3(x, trunkH * 0.92, z),
-      new Vector3(2.4, 0.9, 2.4),
-    );
-
-    // Dos coronas de "hojas" fotovoltaicas, giradas entre sí.
-    // 7 palas en vez de 9 y más cortas: si se tocan entre sí, la copa se
-    // fusiona en un disco negro y parece un tejado. Separadas, se lee como una
-    // pérgola técnica y deja pasar luz al piso de la plaza.
-    const petals = 7;
-    for (let layer = 0; layer < 2; layer++) {
-      // Radio contenido: con 9,5 m las palas medían 8 m y el árbol tapaba la
-      // ciudad entera desde la plaza. Una pérgola de ~12 m de diámetro da
-      // sombra y sigue dejando ver el horizonte.
-      const r = layer === 0 ? 6.2 : 4.1;
-      const y = trunkH + layer * 2.3;
-      const tilt = layer === 0 ? -0.26 : -0.34;
-      for (let i = 0; i < petals; i++) {
-        const a = (i / petals) * Math.PI * 2 + layer * 0.35;
-        // El soporte es una VIGA angosta por debajo, no una bandeja: cuando el
-        // marco era casi tan grande como el panel, desde abajo se veía sólo
-        // marco claro y la pérgola perdía el azul de los paneles.
-        this.farm.add(
-          'box',
-          trunkMat,
-          new Vector3(x + Math.cos(a) * r * 0.55, y - 0.18, z + Math.sin(a) * r * 0.55),
-          new Vector3(r * 0.98, 0.14, 0.34),
-          a,
-          0,
-          tilt,
-        );
-        this.farm.add(
-          'box',
-          panelMat,
-          new Vector3(x + Math.cos(a) * r * 0.55, y, z + Math.sin(a) * r * 0.55),
-          new Vector3(r * 0.88, 0.11, 2.3),
-          a,
-          0,
-          tilt,
-        );
-        // Tensor.
-        this.farm.add(
-          'cylinder',
-          trunkMat,
-          new Vector3(x + Math.cos(a) * r * 0.3, y - 1.1, z + Math.sin(a) * r * 0.3),
-          new Vector3(0.1, 2.2, 0.1),
-          0,
-          0,
-          0,
-        );
-      }
-    }
-
-    // Luz cálida bajo la copa: hace que la plaza funcione también de noche.
-    this.farm.add(
-      'cylinder',
-      this.mats.glow(PALETTE.sun, 0.5),
-      new Vector3(x, trunkH - 0.6, z),
-      new Vector3(2.6, 0.18, 2.6),
-    );
   }
 
   // ------------------------------------------------------------------ energía
@@ -643,4 +520,17 @@ export class InfraBuilder {
       );
     }
   }
+}
+
+/** Tramos de [from, to] que quedan fuera de los huecos indicados. */
+function streetSpans(from: number, to: number, gaps?: Array<[number, number]>): Array<[number, number]> {
+  if (!gaps || gaps.length === 0) return [[from, to]];
+  const out: Array<[number, number]> = [];
+  let cur = from;
+  for (const [g0, g1] of gaps.slice().sort((a, b) => a[0] - b[0])) {
+    if (g0 > cur) out.push([cur, Math.min(g0, to)]);
+    cur = Math.max(cur, g1);
+  }
+  if (cur < to) out.push([cur, to]);
+  return out;
 }

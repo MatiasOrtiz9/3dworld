@@ -33,7 +33,12 @@ export interface XRResult {
  *    sería carísimo. Un plano invisible a nivel de calle resuelve el 95 % de los
  *    casos por una fracción del costo.
  */
-export async function setupXR(scene: Scene, worldExtent: number): Promise<XRResult> {
+export async function setupXR(
+  scene: Scene,
+  worldExtent: number,
+  /** Dónde pararse al entrar: se consulta en cada entrada (la ciudad puede haberse regenerado). */
+  spawn: () => { eye: Vector3; look: Vector3 },
+): Promise<XRResult> {
   // Suelo invisible para validar los destinos de teletransporte.
   const teleportFloor = CreateGround(
     'teleportFloor',
@@ -113,13 +118,16 @@ export async function setupXR(scene: Scene, worldExtent: number): Promise<XRResu
     });
   });
 
-  // Al entrar en VR, poner al jugador de pie en la plaza mirando al Árbol Solar.
+  // Al entrar en VR, poner al jugador de pie frente a la escuela, sobre
+  // Laprida, mirando el portal: el mismo primer cuadro que en escritorio.
   const stateObservable = experience.baseExperience.onStateChangedObservable;
   const enterObserver = stateObservable.add((state) => {
     if (state !== WebXRState.IN_XR) return;
     const cam = experience.baseExperience.camera;
-    cam.position = new Vector3(0, 0, -20);
-    cam.setTarget(new Vector3(0, 9, 0));
+    const { eye, look } = spawn();
+    // Con referencia 'local-floor' la altura de los ojos la pone el visor.
+    cam.position = new Vector3(eye.x, 0, eye.z);
+    cam.setTarget(look);
     cam.minZ = 0.1;
   });
 

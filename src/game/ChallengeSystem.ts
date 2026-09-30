@@ -8,7 +8,7 @@ import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
 import type { Observer } from '@babylonjs/core/Misc/observable';
-import { STATION_SPOTS, toWorld, type SchoolFrame } from '../world/SchoolLayout';
+import { SCHOOL, STATION_SPOTS, toWorld, type SchoolFrame } from '../world/SchoolLayout';
 
 type StationId = 'tech' | 'robotics' | 'science' | 'sport' | 'environment';
 
@@ -185,9 +185,9 @@ export class ChallengeSystem {
   }
 
   private createStations(school: SchoolFrame): void {
-    // Las estaciones están DENTRO del campus (ver SchoolLayout): explanada,
-    // patio y huerta. Antes se derivaban de fracciones de la manzana y dos
-    // quedaban en medio de la calle y otra del otro lado, junto a la plaza.
+    // Las estaciones están DENTRO de la escuela (ver SchoolLayout): Tecnología,
+    // un aula de Laprida, el gimnasio y el patio oeste. Antes se derivaban de
+    // fracciones de la manzana y dos quedaban en medio de la calle.
     //
     // Un único diamante instanciado marca a los cinco docentes.
     this.beaconMaterial = new StandardMaterial('npc-marker', this.scene);
@@ -203,7 +203,7 @@ export class ChallengeSystem {
       const definition = DEFINITIONS[index];
       const spot = STATION_SPOTS[definition.id];
       const w = toWorld(school, spot.u, spot.v);
-      const position = new Vector3(w.x, 0, w.z);
+      const position = new Vector3(w.x, SCHOOL.floorY, w.z);
       const color = Color3.FromHexString(definition.color);
       const markerColor = color.scale(this.completed.has(definition.id) ? 0.95 : 0.68);
       this.beaconColors.set([markerColor.r, markerColor.g, markerColor.b, 1], index * 4);
@@ -291,7 +291,8 @@ export class ChallengeSystem {
     const colors = new Float32Array(this.stations.length * 4);
     for (let i = 0; i < this.stations.length; i++) {
       const station = this.stations[i];
-      const rotation = Quaternion.RotationYawPitchRoll(school.rot + Math.PI, 0, 0);
+      // Cada docente mira hacia la puerta por la que se llega a su estación.
+      const rotation = Quaternion.RotationYawPitchRoll(school.rot + STATION_SPOTS[station.id].yaw, 0, 0);
       const transform = Matrix.Compose(Vector3.One(), rotation, station.position);
       matrices.set(transform.m, i * 16);
       const color = Color3.FromHexString(GUIDE_COLORS[colorKey][i]);

@@ -64,11 +64,29 @@ vegetación y peatones. El botón **Calidad** permite pasar por Baja, Media y Al
 
 ## Qué hay
 
-Traza de 9×9 manzanas (~510 m de lado), determinista por semilla.
+Traza de 5×5 manzanas (~285 m de lado), determinista por semilla. El mundo se
+achicó a propósito para centrar la experiencia en la escuela, que ocupa el
+centro de la ciudad (la manzana central y la de su oeste, donde antes estaba la
+plaza). Su fachada mira al sur, a Laprida, con manzanas enfrente; el canal
+corre siempre a sus espaldas, al norte.
 
-**Ocho tipos de manzana** con criterio urbano, no al azar: plaza central con el
-*Árbol Solar* (pérgola fotovoltaica radial), torres con jardines en altura,
-vivienda perimetral con patio, mercado de madera laminada, equipamiento cívico,
+**Escuela CIMDIP & Miguel Cané, réplica del plano de evacuación.** La planta
+baja se midió sobre el "Plano de evacuación — planta baja" de la sede y se
+levantó en 3D respetando distribución y proporciones (0,07 m por píxel del
+plano): cinco aulas sobre Laprida, pasillos, los dos patios aire libre,
+Tecnología, E.P, escalera principal, ADM, Prof., Dir. Prim, buffet, hall de
+acceso, Salón de los espejos, gimnasio/SUM con bóveda, Arte, Teatro, V. Damas
+y el Jardín de infantes CIMPID. La orientación es la real: Laprida al sur y
+Miguel Cané en diagonal al oeste. Se recorre por dentro (puertas, pasillos,
+escaleras dibujadas) y un indicador "Estás en" muestra el ambiente del plano.
+Los colores y el equipamiento siguen el recorrido virtual de 2020 (guarda
+roja, gimnasio gris, aula de danzas con espejos y columnas rojas, Tecnología
+con piso verde). La planta alta no figura en el plano: se levanta como
+volumen cerrado, sin inventar ambientes.
+
+**Siete tipos de manzana** con criterio urbano, no al azar: torres con jardines
+en altura, vivienda perimetral con patio, mercado de madera laminada,
+equipamiento cívico,
 parques, canal diagonal con puentes, y huertas solares con turbinas de eje
 vertical. **Sin autos**: calzada angosta, vereda ancha, tranvía.
 
@@ -83,8 +101,9 @@ vertical. **Sin autos**: calzada angosta, vereda ancha, tranvía.
   habitantes estimados, superficie de paneles y generación en kWh/día.
 - **Panel de energía**: totales de la ciudad y qué porcentaje de la demanda
   cubre el sol.
-- **Gente**: 230 peatones y ciclistas caminando por las veredas, con más
-  densidad en la plaza, los parques y los mercados. Cada figura son cuatro
+- **Gente**: hasta 180 peatones y ciclistas caminando por las veredas, con más
+  densidad en los parques y los mercados, y alumnos en los patios y
+  el gimnasio de la escuela. Cada figura son cuatro
   cajas con las piernas pivotando en la cadera; todas van en *thin instances*
   agrupadas por color de ropa, así 230 personas cuestan 20 draw calls.
 - **Vida**: tranvías que recorren las avenidas y paran en las esquinas, y
@@ -217,7 +236,7 @@ src/
 │       ├── NatureBuilder.ts    # árboles, jardineras, bosque urbano
 │       ├── BuildingBuilder.ts  # volúmenes escalonados, torres, mercado
 │       ├── StreetLevel.ts      # planta baja, toldos, balcones, mobiliario
-│       └── InfraBuilder.ts     # calles, canal, puentes, plaza, energía
+│       └── InfraBuilder.ts     # calles, canal, puentes, energía
 ├── player/
 │   ├── FlyCamera.ts
 │   └── PlayerController.ts # caminar/volar, gravedad, colisión

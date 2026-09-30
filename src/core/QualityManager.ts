@@ -13,7 +13,10 @@ export interface QualityProfile {
   shadowResolution: number;
   /** Multiplicador de densidad de vegetación. */
   greenDensity: number;
-  /** Manzanas por lado. */
+  /**
+   * Manzanas por lado. Todos los perfiles usan 5: la experiencia se centra en
+   * la escuela y el barrio inmediato (25 manzanas en vez de 49-81).
+   */
   gridSize: number;
   /** Distancia de recorte. */
   maxZ: number;
@@ -37,7 +40,7 @@ export const QUALITY: Record<QualityTier, QualityProfile> = {
     shadows: false,
     shadowResolution: 0,
     greenDensity: 0.55,
-    gridSize: 7,
+    gridSize: 5,
     maxZ: 700,
     highDetailFoliage: false,
     highDetailStreet: false,
@@ -54,7 +57,7 @@ export const QUALITY: Record<QualityTier, QualityProfile> = {
     shadows: false,
     shadowResolution: 0,
     greenDensity: 0.55,
-    gridSize: 7,
+    gridSize: 5,
     maxZ: 700,
     highDetailFoliage: false,
     highDetailStreet: false,
@@ -73,11 +76,11 @@ export const QUALITY: Record<QualityTier, QualityProfile> = {
     shadows: true,
     shadowResolution: 1024,
     greenDensity: 0.85,
-    gridSize: 9,
+    gridSize: 5,
     maxZ: 1200,
     highDetailFoliage: true,
     highDetailStreet: true,
-    crowdSize: 170,
+    crowdSize: 140,
     post: 'balanced',
   },
   high: {
@@ -86,11 +89,11 @@ export const QUALITY: Record<QualityTier, QualityProfile> = {
     shadows: true,
     shadowResolution: 2048,
     greenDensity: 1.15,
-    gridSize: 9,
+    gridSize: 5,
     maxZ: 2000,
     highDetailFoliage: true,
     highDetailStreet: true,
-    crowdSize: 230,
+    crowdSize: 180,
     post: 'high',
   },
 };

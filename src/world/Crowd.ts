@@ -20,7 +20,7 @@ import {
   buildPeopleParts,
   type PartName,
 } from './PeopleGeometry';
-import { COURT, FORECOURT, PLAYGROUND, toWorld, type Rect, type SchoolFrame } from './SchoolLayout';
+import { STUDENT_ZONES, toWorld, type Rect, type SchoolFrame } from './SchoolLayout';
 
 type Mode = 'street' | 'wander' | 'group' | 'cycle';
 type RGB = [number, number, number];
@@ -264,16 +264,15 @@ export class Crowd {
    * Coloca a la gente donde tiene sentido que haya gente.
    *
    * No se reparte de manera uniforme: la mayoría circula por las veredas con
-   * más densidad cerca del centro; un grupo grande se queda en plaza, parques
+   * más densidad cerca del centro; un grupo grande se queda en los parques
    * y mercados; y el campus tiene sus alumnos, con mochila y uniforme.
    */
   private spawn(plan: CityPlan, count: number): void {
     const rng = this.rng;
     const blocks = plan.blocks;
-    // Plaza y parques: espacios de estancia. El mercado queda afuera porque su
-    // nave ocupa casi toda la manzana y la gente terminaba apretada en el borde.
-    const gathering = blocks.filter((b) => b.kind === 'plaza' || b.kind === 'park');
-    const plaza = blocks.find((b) => b.kind === 'plaza');
+    // Parques: espacios de estancia. El mercado queda afuera porque su nave
+    // ocupa casi toda la manzana y la gente terminaba apretada en el borde.
+    const gathering = blocks.filter((b) => b.kind === 'park');
     const school = this.index.school;
 
     const nStudents = school ? Math.round(count * 0.2) : 0;
@@ -286,10 +285,10 @@ export class Crowd {
       let placed = 0;
       let guard = 0;
       while (placed < nStudents && guard++ < 400) {
-        // Inicial juega en su sector protegido; primaria usa la cancha y
-        // secundaria circula por la explanada de acceso.
+        // Inicial en el patio este, primaria en el patio oeste ("espacio
+        // recreativo") y secundaria en el gimnasio / SUM.
         const level = (['initial', 'primary', 'secondary'] as const)[placed % 3];
-        const rect = level === 'initial' ? PLAYGROUND : level === 'primary' ? COURT : FORECOURT;
+        const rect = STUDENT_ZONES[level];
         const zone = schoolZone(school, rect);
         if (rng.chance(0.6)) {
           placed += this.spawnGroup(zone, rng.int(2, 4), true, level);
@@ -302,11 +301,11 @@ export class Crowd {
       }
     }
 
-    // --- grupos charlando: la plaza pesa el doble que un parque cualquiera.
+    // --- grupos charlando en los parques.
     let groupPeople = 0;
     let guard = 0;
     while (groupPeople < nGroups && gathering.length > 0 && guard++ < 300) {
-      const b = plaza && rng.chance(0.5) ? plaza : rng.pick(gathering);
+      const b = rng.pick(gathering);
       groupPeople += this.spawnGroup(blockZone(b), rng.int(2, 4), false);
     }
 
@@ -314,7 +313,7 @@ export class Crowd {
     guard = 0;
     let wanderers = 0;
     while (wanderers < nWander && gathering.length > 0 && guard++ < nWander * 20) {
-      const b = plaza && rng.chance(0.4) ? plaza : rng.pick(gathering);
+      const b = rng.pick(gathering);
       const zone = blockZone(b);
       const p = this.randomIn(zone);
       if (!p) continue;
@@ -324,7 +323,7 @@ export class Crowd {
 
     // --- veredas y calzada.
     const pitch = plan.blockSize + plan.streetWidth;
-    const half = (Math.sqrt(blocks.length) - 1) / 2;
+    const half = (plan.gridSize - 1) / 2;
     let cyclists = 0;
     guard = 0;
     while (this.people.length < count && guard++ < count * 40) {
@@ -347,7 +346,9 @@ export class Crowd {
       const rz = -Math.sin(heading);
       const x = onZ ? axis + rx * side * off : along;
       const z = onZ ? along : axis + rz * side * off;
-      if (this.index.isPedestrianBlocked(x, z)) continue;
+      // Nada de veredas dentro de una manzana (el tramo de calle que ocupa la
+      // escuela ya no existe).
+      if (this.index.isPedestrianBlocked(x, z) || this.index.blockAt(x, z)) continue;
 
       const p = this.makePerson(cyclist ? 'cycle' : 'street', x, z, {});
       p.heading = p.targetHeading = heading;
@@ -593,7 +594,10 @@ export class Crowd {
     const step = p.speed * dt;
     const nx = p.x + Math.sin(p.heading) * step;
     const nz = p.z + Math.cos(p.heading) * step;
-    if (this.index.isPedestrianBlocked(nx, nz)) {
+    // Quien va por la vereda no se mete en una manzana: en el tramo de calle
+    // que absorbió el predio escolar, da media vuelta como en un callejón.
+    const offStreet = (p.mode === 'street' || p.mode === 'cycle') && this.index.blockAt(nx, nz) !== null;
+    if (offStreet || this.index.isPedestrianBlocked(nx, nz)) {
       // Obstáculo: media vuelta (calle) o destino nuevo (deambular).
       if (p.mode === 'wander') this.pickTarget(p);
       else p.targetHeading = p.heading + Math.PI;

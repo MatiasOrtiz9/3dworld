@@ -322,13 +322,14 @@ export class StreetLevel {
     at: number,
     laneHalf: number,
     length: number,
+    center = 0,
   ): void {
     const mat = this.mats.surface(PALETTE.concreteShade, 0.9, 0, 'pavement');
     for (const s of [-1, 1]) {
       const pos =
         axis === 'x'
-          ? new Vector3(0, 0.08, at + s * laneHalf)
-          : new Vector3(at + s * laneHalf, 0.08, 0);
+          ? new Vector3(center, 0.08, at + s * laneHalf)
+          : new Vector3(at + s * laneHalf, 0.08, center);
       this.farm.add(
         'box',
         mat,

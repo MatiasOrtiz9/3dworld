@@ -129,6 +129,15 @@
         font-size: 0.78rem; white-space: nowrap; box-shadow: 0 8px 28px rgba(0,0,0,0.24);
       }
       #station-prompt kbd { border: 1px solid rgba(238,246,242,0.35); border-radius: 4px; padding: 0.12rem 0.38rem; color: var(--sun); }
+      /* Ambiente del plano donde está el jugador ("usted está aquí"). */
+      #room-label {
+        position: fixed; z-index: 21; left: 50%; top: calc(7.4rem + env(safe-area-inset-top, 0px));
+        transform: translateX(-50%); padding: 0.28rem 0.7rem; border-radius: 999px;
+        background: rgba(13, 27, 24, 0.7); border: 1px solid rgba(208, 38, 45, 0.55);
+        font-size: 0.72rem; white-space: nowrap; pointer-events: none;
+      }
+      #room-label b { color: #ff8a8f; font-weight: 700; }
+      #room-label.hidden { display: none; }
 
       /* ---------- desafíos ---------- */
       #challenge {
@@ -292,6 +301,7 @@
       <p id="mission-title"></p>
       <div id="mission-progress"></div>
     </div>
+    <div id="room-label" class="hidden" aria-live="polite"></div>
     <div id="station-prompt" class="hidden"><span id="station-name"></span><kbd>E · hablar</kbd></div>
     <div id="challenge" class="hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="challenge-title" aria-describedby="challenge-body">
       <h2 id="challenge-title"></h2>

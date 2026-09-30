@@ -4,10 +4,25 @@ import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
-import { COURT, FLAG, SCHOOL, toWorld, type SchoolFrame } from './SchoolLayout';
+import {
+  FLAG,
+  ITEMS,
+  MEETING_POINT,
+  ROOMS,
+  SCHOOL,
+  STAIRS,
+  U,
+  V,
+  WALLS,
+  WALKABLE,
+  rearV,
+  toWorld,
+  type SchoolFrame,
+} from './SchoolLayout';
 
-/** Tamaño del atlas: todas las superficies pintadas del campus en una textura. */
-const ATLAS = 1024;
+/** Atlas: todas las superficies pintadas del campus en una textura. */
+const AW = 1024;
+const AH = 2048;
 
 /** Regiones del atlas, en píxeles del canvas: [x0, y0, x1, y1]. */
 const R = {
@@ -19,20 +34,51 @@ const R = {
   mural: [0, 636, 560, 860],
   maker: [572, 704, 764, 1016],
   crest: [768, 568, 1024, 824],
+  lapr: [0, 1544, 508, 1640],
+  mcane: [516, 1544, 1024, 1640],
+  plan: [0, 1648, 640, 2040],
+  meet: [648, 1648, 904, 1944],
 } as const;
 
 type Region = readonly [number, number, number, number];
 
+/** Carteles de los ambientes, con el texto tal como figura en el plano. */
+const PLATES = [
+  'TECNOLOGÍA',
+  'E.P',
+  'ADM',
+  'PROF.',
+  'DIR. PRIM',
+  'BUFFET',
+  'SALÓN DE LOS ESPEJOS',
+  'GIMNASIO · SUM',
+  'ARTE',
+  'TEATRO',
+  'V. DAMAS',
+  'JARDÍN DE INFANTES CIMPID',
+  'PATIO AIRE LIBRE',
+  'HALL DE ACCESO',
+] as const;
+type PlateName = (typeof PLATES)[number];
+
+function plateRegion(name: PlateName): Region {
+  const i = PLATES.indexOf(name);
+  const col = i % 2;
+  const row = Math.floor(i / 2);
+  return [col * 512 + 4, 1032 + row * 72, col * 512 + 508, 1032 + row * 72 + 64];
+}
+
+const FY = SCHOOL.floorY;
+
 /**
  * Señalética y superficies pintadas del campus CIMDIP & Miguel Cané.
  *
- * Cartel institucional, reloj, tótem de ingreso, bandera argentina, cancha
- * demarcada y mural del patio comparten UNA textura (un atlas dibujado en
- * canvas al cargar) y UNA malla. Seis elementos de identidad cuestan un solo
- * draw call, que en VR es lo que importa.
- *
- * El escudo se dibuja en el atlas a partir del blasón publicado y la fachada
- * sigue las fotos de referencia. Así no se carga una imagen remota en ejecución.
+ * Marquesina del portal, escudo, bandera, banner del hall, mural de
+ * Tecnología, cancha del gimnasio, carteles de cada ambiente con los nombres
+ * del plano, carteles de calle, punto de encuentro y un plano de evacuación
+ * dibujado desde los MISMOS datos con los que se levanta la escuela. Todo
+ * comparte UNA textura y UNA malla: un solo draw call, que en VR es lo que
+ * importa.
  */
 export class SchoolIdentity {
   private readonly mesh: Mesh;
@@ -40,7 +86,7 @@ export class SchoolIdentity {
   private readonly texture: DynamicTexture;
 
   constructor(scene: Scene, frame: SchoolFrame) {
-    this.texture = new DynamicTexture('schoolAtlas', { width: ATLAS, height: ATLAS }, scene, true);
+    this.texture = new DynamicTexture('schoolAtlas', { width: AW, height: AH }, scene, true);
     const ctx = this.texture.getContext() as unknown as CanvasRenderingContext2D;
     drawAtlas(ctx);
     this.texture.update(true);
@@ -50,29 +96,77 @@ export class SchoolIdentity {
     this.material.diffuseTexture = this.texture;
     this.material.diffuseColor = new Color3(0.5, 0.5, 0.5);
     this.material.specularColor = Color3.Black();
-    // Luz propia moderada: el cartel se lee aunque la fachada quede en sombra.
-    this.material.emissiveColor = new Color3(0.3, 0.3, 0.3);
+    // Luz propia moderada: los carteles se leen aunque queden en sombra.
+    this.material.emissiveColor = new Color3(0.46, 0.46, 0.46);
     // La bandera se ve de los dos lados.
     this.material.backFaceCulling = false;
 
-    const S = SCHOOL;
     const q = new QuadBatch(frame);
-    const signFront = S.frontV - 0.86;
-    const crestFront = S.frontV - 0.63;
-    q.vertical(0, signFront, 3.22, 12.8, 2.4, -1, R.sign);
-    q.vertical(0, crestFront, 7.43, 1.55, 1.3, -1, R.crest);
-    // Tótem: el cartel en las dos caras.
-    const tv = S.fenceV + 0.95;
-    q.vertical(-5.9, tv - 0.22, 1.72, 1.3, 2.9, -1, R.totem);
-    q.vertical(-5.9, tv + 0.22, 1.72, 1.3, 2.9, 1, R.totem);
-    // Señal clara del espacio tecnológico junto al acceso del campus.
-    q.vertical(6.8, -20.54, 1.45, 3.05, 2.35, -1, R.maker);
-    // Bandera izada, pegada al mástil.
-    q.vertical(FLAG.u + 0.98, FLAG.v, 9.15, 1.8, 1.14, -1, R.flag);
-    // Cancha pintada sobre el solado del patio.
-    q.horizontal(COURT.u0, COURT.v0, COURT.u1, COURT.v1, 0.075, R.court);
-    // Mural en la cara del bloque del frente que da al patio.
-    q.vertical(-7.1, S.frontBackV + 0.02, 1.85, 6.8, 2.7, 1, R.mural);
+    const S = 1; // mira al sur (+v)
+    const N = -1; // mira al norte (−v)
+    const portalU = (32.95 + 41.9) / 2;
+    // Portal sobre Laprida: marquesina y escudo.
+    q.wall(portalU, 0.585, 3.5, 8.3, 1.4, 0, S, R.sign);
+    q.wall(portalU, 0.525, 6.78, 0.72, 0.62, 0, S, R.crest);
+    q.wall(FLAG.u, FLAG.v, FLAG.y, 1.6, 1.0, 0, S, R.flag);
+
+    // Hall de acceso: banner de pie, reloj sobre las puertas y plano de evacuación.
+    const banner = ITEMS.find((it) => it.kind === 'banner');
+    if (banner) q.wall(banner.u + 0.03, banner.v, FY + 1.3, 0.84, 1.9, 1, 0, R.totem);
+    q.wall(37.45, V.hallDoors - 0.13, 3.0, 0.42, 0.42, 0, N, R.clock);
+    q.wall(U.east1 + 0.12, -4.4, 1.65, 1.3, 0.8, 1, 0, R.plan);
+
+    // Tecnología: mural "imagina · diseña · crea" y cartel del aula maker.
+    q.wall(25.0, V.nBlockN - 0.115, 1.95, 3.7, 1.48, 0, N, R.mural);
+    q.wall(15.7, V.nBlockN - 0.115, 1.8, 0.9, 1.46, 0, N, R.maker);
+
+    // Gimnasio: la cancha ocupa todo el piso; escudo en el muro norte.
+    q.floorAlongV(U.gymW + 0.1, V.gymTop + 0.1, U.e - 0.15, -0.15, FY + 0.006, R.court);
+    q.wall(57.8, V.gymTop + 0.14, 5.1, 1.6, 1.6, 0, S, R.crest);
+
+    // Carteles de los ambientes sobre sus puertas.
+    const plate = (name: PlateName, u: number, v: number, nu: number, nv: number, w = 1.15, y = 2.42) =>
+      q.wall(u, v, y, w, w * (64 / 504), nu, nv, plateRegion(name));
+    plate('E.P', 18.7, V.nBlockS + 0.115, 0, S);
+    plate('TECNOLOGÍA', 18.7, V.nBlockN + 0.115, 0, S);
+    plate('TECNOLOGÍA', 28.05, V.nBlockN + 0.115, 0, S);
+    plate('ADM', 10.7, V.corrN - 0.115, 0, N, 0.8);
+    plate('PROF.', 12.4, V.profB + 0.115, 0, S, 0.8);
+    plate('DIR. PRIM', 5.5, V.dirTop - 0.115, 0, N, 0.9);
+    plate('BUFFET', 29.4, V.corrS + 0.115, 0, S);
+    plate('SALÓN DE LOS ESPEJOS', U.salonW - 0.115, -12.1, -1, 0, 1.5);
+    plate('GIMNASIO · SUM', U.gymW - 0.115, -10.1, -1, 0, 1.5, 2.5);
+    plate('GIMNASIO · SUM', 59.3, V.gymTop - 0.115, 0, N, 1.6, 2.55);
+    plate('ARTE', 52.35, V.artB + 0.115, 0, S, 0.8);
+    plate('TEATRO', 55.05, V.artB + 0.115, 0, S, 0.9);
+    plate('V. DAMAS', U.vdW - 0.115, -25.95, -1, 0, 0.9);
+    {
+      // Puerta del jardín sobre la medianera vieja (diagonal).
+      const k = 0.2496;
+      const l = Math.hypot(1, k);
+      const nu = -k / l;
+      const nv = 1 / l;
+      plate('JARDÍN DE INFANTES CIMPID', 60.75 + nu * 0.115, rearV(60.75) + nv * 0.115, nu, nv, 1.6);
+    }
+    plate('PATIO AIRE LIBRE', 24.45, V.corrS + 0.115, 0, S, 1.3, 2.78);
+    plate('PATIO AIRE LIBRE', 37.2, V.hallTop + 0.115, 0, S, 1.3, 2.78);
+    plate('HALL DE ACCESO', 37.45, V.hallDoors - 0.115, 0, N, 1.3, 3.35);
+
+    // Esquina de Laprida y Miguel Cané: carteles de calle y punto de encuentro.
+    const pole = { u: -6.3, v: 3.3 };
+    for (const s of [S, N]) {
+      q.wall(pole.u + 0.5, pole.v + s * 0.035, 2.95, 0.9, 0.17, 0, s, R.lapr);
+    }
+    {
+      const du = 0.5382;
+      const dv = -0.8428;
+      for (const s of [1, -1]) {
+        const nu = -dv * s;
+        const nv = du * s;
+        q.wall(pole.u + du * 0.5 + nu * 0.035, pole.v + dv * 0.5 + nv * 0.035, 3.2, 0.9, 0.17, nu, nv, R.mcane);
+      }
+    }
+    q.wall(MEETING_POINT[0], MEETING_POINT[1] + 0.03, 2.0, 0.55, 0.64, 0, S, R.meet);
 
     this.mesh = q.toMesh('schoolIdentity', scene);
     this.mesh.material = this.material;
@@ -92,6 +186,8 @@ export class SchoolIdentity {
 
 // ------------------------------------------------------------------ geometría
 
+type L = [number, number, number];
+
 /** Acumula quads texturizados en coordenadas locales del campus. */
 class QuadBatch {
   private readonly positions: number[] = [];
@@ -102,51 +198,49 @@ class QuadBatch {
   constructor(private readonly f: SchoolFrame) {}
 
   /**
-   * Cartel vertical centrado en (u, v) a la altura `y`.
-   * `facing` = −1 mira hacia −v (la calle), +1 hacia +v (el patio).
+   * Cartel vertical centrado en (u, v) a la altura `y`, con normal horizontal
+   * (nu, nv). Para quien lo mira de frente, la derecha es (−nv, nu).
    */
-  vertical(u: number, v: number, y: number, w: number, h: number, facing: -1 | 1, r: Region): void {
-    // Para quien mira el cartel, "derecha" es +u si mira hacia +v (cartel
-    // orientado a −v) y −u en el caso contrario.
-    const right = -facing;
+  wall(u: number, v: number, y: number, w: number, h: number, nu: number, nv: number, r: Region): void {
+    // Todo en mundo: +u es −x, así que la derecha del lector se calcula con
+    // la normal ya transformada. En local el texto salía espejado.
+    const c = toWorld(this.f, u, v);
+    const o = toWorld(this.f, 0, 0);
+    const n = toWorld(this.f, nu, nv);
+    const nx = n.x - o.x;
+    const nz = n.z - o.z;
+    const rx = -nz;
+    const rz = nx;
     const hw = w / 2;
     const hh = h / 2;
-    const bl: L = [u - right * hw, y - hh, v];
-    const br: L = [u + right * hw, y - hh, v];
-    const tr: L = [u + right * hw, y + hh, v];
-    const tl: L = [u - right * hw, y + hh, v];
-    this.push([bl, br, tr, tl], [0, 0, facing], r);
+    const bl: L = [c.x - rx * hw, y - hh, c.z - rz * hw];
+    const br: L = [c.x + rx * hw, y - hh, c.z + rz * hw];
+    const tr: L = [c.x + rx * hw, y + hh, c.z + rz * hw];
+    const tl: L = [c.x - rx * hw, y + hh, c.z - rz * hw];
+    this.push([bl, br, tr, tl], [nx, 0, nz], r);
   }
 
-  /** Superficie horizontal (cancha), vista desde arriba con +v "hacia arriba". */
-  horizontal(u0: number, v0: number, u1: number, v1: number, y: number, r: Region): void {
-    this.push(
-      [
-        [u0, y, v0],
-        [u1, y, v0],
-        [u1, y, v1],
-        [u0, y, v1],
-      ],
-      [0, 1, 0],
-      r,
-    );
+  /** Superficie horizontal con el eje largo del dibujo a lo largo de v. */
+  floorAlongV(u0: number, v0: number, u1: number, v1: number, y: number, r: Region): void {
+    const w = (u: number, v: number): L => {
+      const p = toWorld(this.f, u, v);
+      return [p.x, y, p.z];
+    };
+    this.push([w(u1, v0), w(u1, v1), w(u0, v1), w(u0, v0)], [0, 1, 0], r);
   }
 
+  /** Esquinas ya en mundo: inferior-izq, inferior-der, superior-der, superior-izq. */
   private push(c: [L, L, L, L], nLocal: [number, number, number], r: Region): void {
     const base = this.positions.length / 3;
-    const n = this.world(nLocal[0], nLocal[2]);
-    const nx = n.x - this.f.cx;
-    const nz = n.z - this.f.cz;
     for (const p of c) {
-      const w = this.world(p[0], p[2]);
-      this.positions.push(w.x, p[1], w.z);
-      this.normals.push(nx, nLocal[1], nz);
+      this.positions.push(p[0], p[1], p[2]);
+      this.normals.push(nLocal[0], nLocal[1], nLocal[2]);
     }
     // Con invertY (el valor por defecto) la fila 0 del canvas es v = 1.
-    const u0 = r[0] / ATLAS;
-    const u1 = r[2] / ATLAS;
-    const vb = 1 - r[3] / ATLAS;
-    const vt = 1 - r[1] / ATLAS;
+    const u0 = r[0] / AW;
+    const u1 = r[2] / AW;
+    const vb = 1 - r[3] / AH;
+    const vt = 1 - r[1] / AH;
     this.uvs.push(u0, vb, u1, vb, u1, vt, u0, vt);
 
     // Orden de índices que Babylon considera cara frontal para esta normal:
@@ -158,15 +252,11 @@ class QuadBatch {
     const fx = (a[1] - b[1]) * (cc[2] - b[2]) - (a[2] - b[2]) * (cc[1] - b[1]);
     const fy = (a[2] - b[2]) * (cc[0] - b[0]) - (a[0] - b[0]) * (cc[2] - b[2]);
     const fz = (a[0] - b[0]) * (cc[1] - b[1]) - (a[1] - b[1]) * (cc[0] - b[0]);
-    if (fx * nx + fy * nLocal[1] + fz * nz >= 0) {
+    if (fx * nLocal[0] + fy * nLocal[1] + fz * nLocal[2] >= 0) {
       this.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
     } else {
       this.indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
     }
-  }
-
-  private world(u: number, v: number): { x: number; z: number } {
-    return toWorld(this.f, u, v);
   }
 
   toMesh(name: string, scene: Scene): Mesh {
@@ -182,18 +272,17 @@ class QuadBatch {
   }
 }
 
-type L = [number, number, number];
-
 // -------------------------------------------------------------------- dibujo
 
 const GREEN = '#173b35';
 const GREEN_2 = '#1f5147';
 const GOLD = '#e0b049';
 const CREAM = '#f7f2e8';
+const RED = '#b8353c';
 
 function drawAtlas(ctx: CanvasRenderingContext2D): void {
   ctx.fillStyle = '#808080';
-  ctx.fillRect(0, 0, ATLAS, ATLAS);
+  ctx.fillRect(0, 0, AW, AH);
   drawSign(ctx, R.sign);
   drawCourt(ctx, R.court);
   drawTotem(ctx, R.totem);
@@ -202,6 +291,11 @@ function drawAtlas(ctx: CanvasRenderingContext2D): void {
   drawMural(ctx, R.mural);
   drawMaker(ctx, R.maker);
   drawCrest(ctx, R.crest);
+  for (const name of PLATES) drawPlate(ctx, plateRegion(name), name);
+  drawStreetSign(ctx, R.lapr, 'LAPRIDA');
+  drawStreetSign(ctx, R.mcane, 'MIGUEL CANÉ');
+  drawPlan(ctx, R.plan);
+  drawMeetingPoint(ctx, R.meet);
 }
 
 /** Escudo institucional según el blasón publicado por la escuela. */
@@ -330,92 +424,6 @@ function drawSign(ctx: CanvasRenderingContext2D, r: Region): void {
   ctx.fillText('C.I.M.D.I.P. & M. CANÉ', x0 + w / 2, y0 + 94);
   ctx.font = '30px Arial, Helvetica, sans-serif';
   ctx.fillText('Educación Inicial, Primaria y Secundaria', x0 + w / 2, y0 + 154);
-}
-
-function drawCourt(ctx: CanvasRenderingContext2D, r: Region): void {
-  const [x0, y0, x1, y1] = r;
-  const w = x1 - x0;
-  const h = y1 - y0;
-  // Borde exterior verde y campo azul petróleo.
-  ctx.fillStyle = '#3f7a5c';
-  ctx.fillRect(x0, y0, w, h);
-  const m = 16;
-  ctx.fillStyle = '#3d7f8f';
-  ctx.fillRect(x0 + m, y0 + m, w - m * 2, h - m * 2);
-  // Zonas pintadas bajo los aros.
-  ctx.fillStyle = '#c8643b';
-  const keyW = w * 0.2;
-  const keyH = h * 0.34;
-  ctx.fillRect(x0 + m, y0 + h / 2 - keyH / 2, keyW, keyH);
-  ctx.fillRect(x1 - m - keyW, y0 + h / 2 - keyH / 2, keyW, keyH);
-  ctx.strokeStyle = '#f4f2ee';
-  ctx.lineWidth = 5;
-  ctx.strokeRect(x0 + m, y0 + m, w - m * 2, h - m * 2);
-  ctx.strokeRect(x0 + m, y0 + h / 2 - keyH / 2, keyW, keyH);
-  ctx.strokeRect(x1 - m - keyW, y0 + h / 2 - keyH / 2, keyW, keyH);
-  ctx.beginPath();
-  ctx.moveTo(x0 + w / 2, y0 + m);
-  ctx.lineTo(x0 + w / 2, y1 - m);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(x0 + w / 2, y0 + h / 2, h * 0.14, 0, Math.PI * 2);
-  ctx.stroke();
-  // Líneas de triple.
-  for (const [cx, a0, a1] of [
-    [x0 + m, -Math.PI / 2, Math.PI / 2],
-    [x1 - m, Math.PI / 2, Math.PI * 1.5],
-  ] as const) {
-    ctx.beginPath();
-    ctx.arc(cx, y0 + h / 2, h * 0.36, a0, a1);
-    ctx.stroke();
-  }
-  // Segunda demarcación en dorado: cancha de 18 x 9 para vóley, compatible
-  // con el uso multideporte que describe la escuela. Convive con las líneas
-  // blancas de básquet sin sumar otra malla ni otra textura.
-  const volleyballInset = h * 0.12;
-  ctx.strokeStyle = '#f0c75e';
-  ctx.lineWidth = 3.5;
-  ctx.strokeRect(x0 + m * 1.15, y0 + volleyballInset, w - m * 2.3, h - volleyballInset * 2);
-  ctx.beginPath();
-  ctx.moveTo(x0 + w / 2, y0 + volleyballInset);
-  ctx.lineTo(x0 + w / 2, y1 - volleyballInset);
-  for (const side of [-1, 1]) {
-    const u = x0 + w / 2 + side * (w - m * 2.3) / 6;
-    ctx.moveTo(u, y0 + volleyballInset);
-    ctx.lineTo(u, y1 - volleyballInset);
-  }
-  ctx.stroke();
-  // Emblema en el círculo central.
-  emblem(ctx, x0 + w / 2, y0 + h / 2, h * 0.1);
-}
-
-function drawTotem(ctx: CanvasRenderingContext2D, r: Region): void {
-  const [x0, y0, x1, y1] = r;
-  const w = x1 - x0;
-  const h = y1 - y0;
-  ctx.fillStyle = GREEN_2;
-  ctx.fillRect(x0, y0, w, h);
-  ctx.fillStyle = GOLD;
-  ctx.fillRect(x0, y0, w, 10);
-  ctx.fillRect(x0, y1 - 10, w, 10);
-  emblem(ctx, x0 + w / 2, y0 + 86, 58);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = CREAM;
-  ctx.font = '700 44px Arial, Helvetica, sans-serif';
-  ctx.fillText('CIMDIP', x0 + w / 2, y0 + 200);
-  ctx.fillStyle = GOLD;
-  ctx.font = '700 30px Arial, Helvetica, sans-serif';
-  ctx.fillText('&', x0 + w / 2, y0 + 240);
-  ctx.fillStyle = CREAM;
-  ctx.font = '700 34px Arial, Helvetica, sans-serif';
-  ctx.fillText('MIGUEL', x0 + w / 2, y0 + 284);
-  ctx.fillText('CANÉ', x0 + w / 2, y0 + 322);
-  ctx.fillStyle = GOLD;
-  ctx.fillRect(x0 + 40, y0 + 346, w - 80, 3);
-  ctx.fillStyle = '#b7d4ca';
-  ctx.font = '400 22px Arial, Helvetica, sans-serif';
-  ctx.fillText('Bienvenidos', x0 + w / 2, y0 + 386);
 }
 
 function drawFlag(ctx: CanvasRenderingContext2D, r: Region): void {
@@ -670,4 +678,270 @@ function drawMaker(ctx: CanvasRenderingContext2D, r: Region): void {
   ctx.font = '400 17px Arial, Helvetica, sans-serif';
   ctx.fillText('TECNOLOGÍA · ROBÓTICA', cx, y1 - 48);
   ctx.fillText('PROGRAMACIÓN', cx, y1 - 25);
+}
+
+/**
+ * Cancha del gimnasio / SUM: piso completo con demarcación de handball en
+ * escala reducida (el eje largo del dibujo corre de norte a sur). Se dibuja
+ * en metros, así los círculos salen redondos aunque la región no tenga la
+ * proporción del piso.
+ */
+function drawCourt(ctx: CanvasRenderingContext2D, r: Region): void {
+  const [x0, y0, x1, y1] = r;
+  const L = -V.gymTop - 0.25; // largo (v)
+  const W = U.e - U.gymW - 0.25; // ancho (u)
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x0, y0, x1 - x0, y1 - y0);
+  ctx.clip();
+  ctx.translate(x0, y0);
+  ctx.scale((x1 - x0) / L, (y1 - y0) / W);
+  ctx.fillStyle = '#bcb8ad';
+  ctx.fillRect(0, 0, L, W);
+  // Cancha: deja libre la franja de las gradas (lado este = arriba del dibujo).
+  const m = 0.7;
+  const cw = W - 3.2;
+  const cy0 = W - m - cw;
+  ctx.fillStyle = '#b1ada2';
+  ctx.fillRect(m, cy0, L - m * 2, cw);
+  ctx.strokeStyle = '#f4f3ef';
+  ctx.lineWidth = 0.08;
+  ctx.strokeRect(m, cy0, L - m * 2, cw);
+  ctx.beginPath();
+  ctx.moveTo(L / 2, cy0);
+  ctx.lineTo(L / 2, cy0 + cw);
+  ctx.stroke();
+  const cyc = cy0 + cw / 2;
+  // Áreas de 4 m y líneas de tiro libre punteadas a 6 m, en los dos arcos.
+  for (const [gx, dir] of [
+    [m, 1],
+    [L - m, -1],
+  ] as const) {
+    ctx.strokeStyle = '#2f5aa8';
+    ctx.lineWidth = 0.08;
+    ctx.beginPath();
+    ctx.arc(gx, cyc, 4, dir > 0 ? -Math.PI / 2 : Math.PI / 2, dir > 0 ? Math.PI / 2 : Math.PI * 1.5);
+    ctx.stroke();
+    ctx.strokeStyle = '#c0393f';
+    ctx.setLineDash([0.3, 0.3]);
+    ctx.beginPath();
+    ctx.arc(gx, cyc, 6, dir > 0 ? -Math.PI / 2 : Math.PI / 2, dir > 0 ? Math.PI / 2 : Math.PI * 1.5);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#f4f3ef';
+    ctx.fillRect(gx + dir * 7 - 0.05, cyc - 0.5, 0.1, 1);
+  }
+  ctx.strokeStyle = '#f4f3ef';
+  ctx.beginPath();
+  ctx.arc(L / 2, cyc, 1.8, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+  // Emblema en el círculo central (en píxeles, fuera de la escala).
+  const px = x0 + ((x1 - x0) * (L / 2)) / L;
+  const py = y0 + ((y1 - y0) * cyc) / W;
+  emblem(ctx, px, py, 26);
+}
+
+/** Banner de pie del hall: el que aparece al entrar en el recorrido virtual. */
+function drawTotem(ctx: CanvasRenderingContext2D, r: Region): void {
+  const [x0, y0, x1, y1] = r;
+  const w = x1 - x0;
+  const h = y1 - y0;
+  ctx.fillStyle = '#fbfaf7';
+  ctx.fillRect(x0, y0, w, h);
+  ctx.strokeStyle = RED;
+  ctx.lineWidth = 8;
+  ctx.strokeRect(x0 + 4, y0 + 4, w - 8, h - 8);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#7a1f25';
+  ctx.font = '700 26px Georgia, "Times New Roman", serif';
+  ctx.fillText('ESCUELA', x0 + w / 2, y0 + 48);
+  ctx.font = '700 21px Georgia, "Times New Roman", serif';
+  ctx.fillText('CIMDIP &', x0 + w / 2, y0 + 80);
+  ctx.fillText('MIGUEL CANÉ', x0 + w / 2, y0 + 106);
+  ctx.fillStyle = RED;
+  ctx.font = '700 15px Arial, Helvetica, sans-serif';
+  ctx.fillText('MATERNAL · JARDÍN', x0 + w / 2, y0 + 142);
+  ctx.fillText('PRIMARIA · SECUNDARIA', x0 + w / 2, y0 + 164);
+  emblem(ctx, x0 + w / 2, y0 + 262, 62);
+  ctx.fillStyle = '#7a1f25';
+  ctx.font = 'italic 15px Georgia, "Times New Roman", serif';
+  ctx.fillText('Desde 1981', x0 + w / 2, y0 + 366);
+  ctx.fillStyle = RED;
+  ctx.fillRect(x0 + 18, y1 - 34, w - 36, 12);
+}
+
+/** Cartel de ambiente: fondo blanco, filete rojo, texto del plano. */
+function drawPlate(ctx: CanvasRenderingContext2D, r: Region, text: string): void {
+  const [x0, y0, x1, y1] = r;
+  const w = x1 - x0;
+  const h = y1 - y0;
+  ctx.fillStyle = '#fbfbf8';
+  ctx.fillRect(x0, y0, w, h);
+  ctx.fillStyle = RED;
+  ctx.fillRect(x0, y0, 16, h);
+  ctx.fillRect(x0, y1 - 6, w, 6);
+  ctx.fillStyle = '#1f2430';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '700 32px Arial, Helvetica, sans-serif';
+  ctx.fillText(text, x0 + 8 + w / 2, y0 + h / 2 - 2, w - 40);
+}
+
+/** Cartel de calle azul con letras blancas. */
+function drawStreetSign(ctx: CanvasRenderingContext2D, r: Region, text: string): void {
+  const [x0, y0, x1, y1] = r;
+  const w = x1 - x0;
+  const h = y1 - y0;
+  ctx.fillStyle = '#1d4f91';
+  ctx.fillRect(x0, y0, w, h);
+  ctx.strokeStyle = '#f5f7fa';
+  ctx.lineWidth = 5;
+  ctx.strokeRect(x0 + 7, y0 + 7, w - 14, h - 14);
+  ctx.fillStyle = '#f5f7fa';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '700 52px Arial, Helvetica, sans-serif';
+  ctx.fillText(text, x0 + w / 2, y0 + h / 2 + 2, w - 40);
+}
+
+/** Señal de punto de encuentro: cuatro flechas hacia un grupo de personas. */
+function drawMeetingPoint(ctx: CanvasRenderingContext2D, r: Region): void {
+  const [x0, y0, x1, y1] = r;
+  const w = x1 - x0;
+  ctx.fillStyle = '#f5f7f5';
+  ctx.fillRect(x0, y0, w, y1 - y0);
+  const s = w - 24;
+  const sx = x0 + 12;
+  const sy = y0 + 12;
+  ctx.fillStyle = '#16884a';
+  ctx.fillRect(sx, sy, s, s);
+  ctx.fillStyle = '#f5f7f5';
+  const cx = sx + s / 2;
+  const cy = sy + s / 2;
+  // Flechas desde las esquinas hacia el centro.
+  for (let k = 0; k < 4; k++) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(Math.PI / 4 + (k * Math.PI) / 2);
+    ctx.fillRect(-7, -s * 0.46, 14, s * 0.16);
+    ctx.beginPath();
+    ctx.moveTo(-20, -s * 0.3);
+    ctx.lineTo(20, -s * 0.3);
+    ctx.lineTo(0, -s * 0.22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  // Cuatro personas en el centro.
+  for (const [dx, sc] of [
+    [-30, 0.8],
+    [-10, 1],
+    [10, 1],
+    [30, 0.8],
+  ] as const) {
+    ctx.beginPath();
+    ctx.arc(cx + dx, cy - 18 * sc, 7 * sc, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(cx + dx - 7 * sc, cy - 9 * sc, 14 * sc, 30 * sc);
+  }
+  ctx.fillStyle = '#16884a';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '700 25px Arial, Helvetica, sans-serif';
+  ctx.fillText('PUNTO DE', x0 + w / 2, y1 - 44);
+  ctx.fillText('ENCUENTRO', x0 + w / 2, y1 - 17);
+}
+
+/**
+ * Plano de evacuación de planta baja, dibujado desde `SchoolLayout`. Si un
+ * muro se corre en los datos, el plano colgado en el hall se corre con él.
+ */
+function drawPlan(ctx: CanvasRenderingContext2D, r: Region): void {
+  const [x0, y0, x1, y1] = r;
+  const w = x1 - x0;
+  ctx.fillStyle = '#fbfbf9';
+  ctx.fillRect(x0, y0, w, y1 - y0);
+  ctx.fillStyle = '#1f2430';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '700 20px Arial, Helvetica, sans-serif';
+  ctx.fillText('PLANO DE EVACUACIÓN — PLANTA BAJA', x0 + w / 2, y0 + 20);
+  const scale = 7.9;
+  const ox = x0 + 44;
+  const oy = y0 + 48 + 40 * scale; // v = 0 (Laprida)
+  const at = (u: number, v: number): [number, number] => [ox + u * scale, oy + v * scale];
+  // Ambientes con nombre.
+  ctx.font = '600 9px Arial, Helvetica, sans-serif';
+  ctx.fillStyle = '#3a4150';
+  for (const room of ROOMS) {
+    if (!room.name || room.name === 'Pasillo' || room.name === 'Aula') continue;
+    let cu = 0;
+    let cv = 0;
+    for (const [u, v] of room.poly) {
+      cu += u;
+      cv += v;
+    }
+    const [px, py] = at(cu / room.poly.length, cv / room.poly.length);
+    ctx.fillText(room.name.toUpperCase(), px, py, 90);
+  }
+  // Escaleras en gris.
+  ctx.fillStyle = '#b9bcc2';
+  for (const s of STAIRS) {
+    const [a, b] = [at(s.u0, s.v0), at(s.u1, s.v1)];
+    ctx.fillRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
+  }
+  // Muros, con los vanos transitables abiertos.
+  ctx.strokeStyle = '#15171c';
+  ctx.lineCap = 'butt';
+  for (const wl of WALLS) {
+    const len = Math.hypot(wl.b[0] - wl.a[0], wl.b[1] - wl.a[1]);
+    const du = (wl.b[0] - wl.a[0]) / len;
+    const dv = (wl.b[1] - wl.a[1]) / len;
+    ctx.lineWidth = wl.kind === 'int' ? 1.6 : 2.4;
+    let t = 0;
+    const cuts = wl.openings.filter((o) => WALKABLE.has(o.type));
+    for (const o of [...cuts, { t0: len, t1: len }]) {
+      if (o.t0 > t) {
+        const a = at(wl.a[0] + du * t, wl.a[1] + dv * t);
+        const b = at(wl.a[0] + du * o.t0, wl.a[1] + dv * o.t0);
+        ctx.beginPath();
+        ctx.moveTo(a[0], a[1]);
+        ctx.lineTo(b[0], b[1]);
+        ctx.stroke();
+      }
+      t = Math.max(t, o.t1);
+    }
+  }
+  // Salidas de emergencia en verde.
+  ctx.fillStyle = '#16884a';
+  for (const wl of WALLS) {
+    for (const o of wl.openings) {
+      if (o.type !== 'exit' && o.type !== 'entrance') continue;
+      const len = Math.hypot(wl.b[0] - wl.a[0], wl.b[1] - wl.a[1]);
+      const t = (o.t0 + o.t1) / 2;
+      const [px, py] = at(wl.a[0] + ((wl.b[0] - wl.a[0]) * t) / len, wl.a[1] + ((wl.b[1] - wl.a[1]) * t) / len);
+      ctx.fillRect(px - 5, py - 5, 10, 10);
+    }
+  }
+  // Usted está aquí: el plano cuelga en el hall.
+  const [hx, hy] = at(U.east1 + 1.2, -4.4);
+  ctx.fillStyle = '#d0262d';
+  ctx.beginPath();
+  ctx.arc(hx, hy, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.font = '700 10px Arial, Helvetica, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('USTED ESTÁ AQUÍ', hx + 8, hy - 8);
+  // Calles.
+  ctx.fillStyle = '#1f2430';
+  ctx.textAlign = 'center';
+  ctx.font = '700 12px Arial, Helvetica, sans-serif';
+  ctx.fillText('CALLE LAPRIDA', ox + 34 * scale, oy + 22);
+  ctx.save();
+  ctx.translate(ox - 22, oy - 20 * scale);
+  ctx.rotate(-Math.PI / 2 + 0.56);
+  ctx.fillText('CALLE MIGUEL CANÉ', 0, 0);
+  ctx.restore();
 }

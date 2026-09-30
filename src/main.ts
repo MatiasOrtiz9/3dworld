@@ -20,7 +20,7 @@ import { Soundscape } from './audio/Soundscape';
 import { isVrSupported } from './vr/isVrSupported';
 import { seedFromString } from './utils/rng';
 import { ChallengeSystem } from './game/ChallengeSystem';
-import { toWorld } from './world/SchoolLayout';
+import { SCHOOL, roomAt, toLocal, toWorld } from './world/SchoolLayout';
 
 // ---------------------------------------------------------------- referencias
 
@@ -41,6 +41,7 @@ const btnSound = document.getElementById('btn-sound') as HTMLButtonElement;
 const energyEl = document.getElementById('energy') as HTMLDivElement;
 const helpWalk = document.getElementById('help-walk') as HTMLDivElement;
 const helpFly = document.getElementById('help-fly') as HTMLDivElement;
+const roomLabel = document.getElementById('room-label') as HTMLDivElement;
 
 const progress = (pct: number, msg?: string) => {
   bootBar.style.width = `${pct}%`;
@@ -144,6 +145,13 @@ window.addEventListener('pagehide', (event) => {
   engine.dispose();
 }, { once: true });
 
+/** Primer cuadro, en escritorio y en VR: la fachada de la escuela desde Laprida. */
+function startView(c: City): { eye: Vector3; look: Vector3 } {
+  const eye = toWorld(c.schoolFrame, 31, SCHOOL.front + 11.8);
+  const look = toWorld(c.schoolFrame, 36.5, 0);
+  return { eye: new Vector3(eye.x, 1.7, eye.z), look: new Vector3(look.x, 3.6, look.z) };
+}
+
 /** Construye (o reconstruye) la ciudad completa. */
 async function buildCity(newSeed: number): Promise<void> {
   await progress(10, 'Trazando la ciudad…');
@@ -244,14 +252,13 @@ async function buildCity(newSeed: number): Promise<void> {
   updateEnergyPanel();
   quality.applyRuntime();
 
-  // La primera mirada debe explicar el lugar: entrada y señalética de la
-  // escuela, no una copa o una torre aleatoria de la ciudad circundante.
-  // Del otro lado de la calle, sobre la vereda de la plaza: desde ahí entran
-  // en cuadro la reja, el portón, el cartel y las letras de la azotea.
-  const eye = toWorld(city.schoolFrame, 0, -33);
-  const look = toWorld(city.schoolFrame, 0, -14);
-  camera.position = new Vector3(eye.x, 1.7, eye.z);
-  camera.setTarget(new Vector3(look.x, 3.8, look.z));
+  // La primera mirada debe explicar el lugar: la fachada de la escuela sobre
+  // Laprida, con el portal y su marquesina y la ciudad detrás. Del otro lado
+  // de la calle, un poco corrido hacia la esquina de Miguel Cané:
+  // entran en cuadro el portal, las aulas con sus rejas y las palmeras.
+  const start = startView(city);
+  camera.position = start.eye;
+  camera.setTarget(start.look);
   player.setMode('walk');
 
   await progress(100, 'Lista');
@@ -264,6 +271,25 @@ async function buildCity(newSeed: number): Promise<void> {
     // eslint-disable-next-line no-console
     console.log('COSTBREAKDOWN ' + JSON.stringify(city.breakdown().slice(0, 14)));
   }
+}
+
+/**
+ * "Usted está aquí": el nombre del ambiente del plano de evacuación en el que
+ * está el jugador. Se consulta el mismo trazado que levanta la escuela.
+ */
+let lastRoom = '';
+function updateRoomLabel(): void {
+  const cam = scene.activeCamera;
+  const school = city?.schoolFrame;
+  let name = '';
+  if (cam && school && cam.position.y < SCHOOL.upperTop) {
+    const { u, v } = toLocal(school, cam.position.x, cam.position.z);
+    name = roomAt(u, v)?.name ?? '';
+  }
+  if (name === lastRoom) return;
+  lastRoom = name;
+  roomLabel.classList.toggle('hidden', !name);
+  roomLabel.innerHTML = name ? `Estás en: <b>${name}</b>` : '';
 }
 
 /** Panel de métricas: es la herramienta de trabajo, no adorno. */
@@ -410,6 +436,7 @@ async function start(): Promise<void> {
   });
   window.addEventListener('resize', () => engine.resize());
   setInterval(updateStats, 500);
+  setInterval(updateRoomLabel, 250);
 
   boot.classList.add('hidden');
   setTimeout(() => helpEl.classList.remove('hidden'), 400);
@@ -422,7 +449,7 @@ async function start(): Promise<void> {
       // la enorme mayoría de visitantes —que entran desde una computadora— es
       // peso que ya no viaja por la red.
       const { setupXR } = await import('./vr/XRSetup');
-      const { experience, dispose } = await setupXR(scene, city!.plan.extent);
+      const { experience, dispose } = await setupXR(scene, city!.plan.extent, () => startView(city!));
       disposeXR = dispose;
       btnVr.disabled = false;
       btnVr.textContent = 'Entrar en VR';
