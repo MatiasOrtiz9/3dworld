@@ -9,10 +9,8 @@
  */
 export async function isVrSupported(): Promise<boolean> {
   const xr = (navigator as Navigator & { xr?: XRSystem }).xr;
-  if (!xr) return false;
-  try {
-    return (await xr.isSessionSupported('immersive-vr')) ?? false;
-  } catch {
-    return false;
-  }
+  // No ocultar la entrada solo porque el sondeo previo respondió false o
+  // rechazó la promesa: algunos navegadores Quest informan la disponibilidad
+  // real recién al intentar requestSession desde el toque del usuario.
+  return Boolean(xr);
 }

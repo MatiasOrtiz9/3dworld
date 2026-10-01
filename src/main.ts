@@ -32,6 +32,7 @@ const bootBar = document.getElementById('boot-bar') as HTMLElement;
 const statsEl = document.getElementById('stats') as HTMLDivElement;
 const helpEl = document.getElementById('help') as HTMLDivElement;
 const btnVr = document.getElementById('btn-vr') as HTMLButtonElement;
+const vrStatus = document.getElementById('vr-status') as HTMLDivElement;
 const btnQuality = document.getElementById('btn-quality') as HTMLButtonElement;
 const timeSlider = document.getElementById('time-slider') as HTMLInputElement;
 const timeLabel = document.getElementById('time-label') as HTMLSpanElement;
@@ -51,6 +52,11 @@ const progress = (pct: number, msg?: string) => {
   return new Promise((r) => requestAnimationFrame(() => r(undefined)));
 };
 
+const reportVrProblem = (message: string): void => {
+  vrStatus.hidden = false;
+  vrStatus.textContent = message;
+};
+
 // -------------------------------------------------------------------- estado
 
 let city: City | null = null;
@@ -61,6 +67,7 @@ let player: PlayerController | null = null;
 let inspector: Inspector | null = null;
 let challenge: ChallengeSystem | null = null;
 let xrExperience: WebXRDefaultExperience | null = null;
+let setXRMovementEnabled: ((enabled: boolean) => void) | null = null;
 let disposeXR: (() => void) | null = null;
 let hour = 13;
 // La semilla se puede fijar por URL (?seed=1234 o ?seed=cualquier-texto).
@@ -258,7 +265,7 @@ async function buildCity(newSeed: number): Promise<void> {
     (paused) => player?.setPaused(paused),
     () => player?.mode === 'walk',
   );
-  if (xrExperience) await challenge.connectXR(xrExperience);
+  if (xrExperience) await challenge.connectXR(xrExperience, setXRMovementEnabled ?? undefined);
 
   updateEnergyPanel();
   quality.applyRuntime();
@@ -460,20 +467,23 @@ async function start(): Promise<void> {
       // la enorme mayoría de visitantes —que entran desde una computadora— es
       // peso que ya no viaja por la red.
       const { setupXR } = await import('./vr/XRSetup');
-      const { experience, dispose } = await setupXR(
+      const { experience, dispose, setMovementEnabled } = await setupXR(
         scene,
         city!.plan.extent,
         () => startView(city!),
         (x, z) => Boolean(city && !city.index.isPedestrianBlocked(x, z)),
+        (ray) => challenge?.interactWithRay(ray) ?? false,
       );
       xrExperience = experience;
-      await challenge?.connectXR(experience);
+      setXRMovementEnabled = setMovementEnabled;
+      await challenge?.connectXR(experience, setXRMovementEnabled);
       // En VR los pies siguen el piso real: escalones y planta alta de la escuela.
       const { followFloors } = await import('./vr/XRFloorFollow');
       const stopFloors = followFloors(scene, experience, () => city?.index ?? null);
       disposeXR = () => {
         stopFloors();
         dispose();
+        setXRMovementEnabled = null;
       };
       btnVr.disabled = false;
       btnVr.textContent = 'Entrar en VR';
@@ -490,6 +500,12 @@ async function start(): Promise<void> {
             await rebuildFor('vr');
           }
           await experience.baseExperience.enterXRAsync('immersive-vr', 'local-floor');
+        } catch (err) {
+          const reason = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+          btnVr.textContent = 'Error al iniciar VR';
+          btnVr.title = reason;
+          reportVrProblem(`WebXR no pudo iniciar la sesión: ${reason}`);
+          console.error('[ciudad-2050] No se pudo iniciar la sesión WebXR:', err);
         } finally {
           boot.classList.add('hidden');
           btnVr.disabled = false;
@@ -497,12 +513,18 @@ async function start(): Promise<void> {
       });
     } catch (err) {
       console.warn('[ciudad-2050] No se pudo inicializar WebXR:', err);
-      btnVr.textContent = 'VR no disponible';
+      const reason = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+      btnVr.textContent = 'Error al preparar VR';
+      btnVr.title = reason;
+      reportVrProblem(`WebXR detectado, pero no se pudo preparar Babylon XR: ${reason}`);
     }
   } else {
-    btnVr.textContent = 'VR no disponible';
-    btnVr.title =
-      'WebXR necesita un visor y un contexto seguro (HTTPS o localhost). En escritorio podés recorrer la ciudad con WASD.';
+    btnVr.textContent = 'WebXR no detectado';
+    const reason = window.isSecureContext
+      ? 'navigator.xr no existe en esta pestaña de Meta Quest Browser.'
+      : 'window.isSecureContext es false; WebXR requiere HTTPS confiable o localhost.';
+    btnVr.title = reason;
+    reportVrProblem(`WebXR no detectado. ${reason} Origen: ${location.origin}`);
   }
 }
 

@@ -4,21 +4,22 @@ import { WebXRDefaultExperience } from '@babylonjs/core/XR/webXRDefaultExperienc
 import { WebXRFeatureName } from '@babylonjs/core/XR/webXRFeaturesManager';
 import { WebXRState } from '@babylonjs/core/XR/webXRTypes';
 import type { WebXRMotionControllerTeleportation } from '@babylonjs/core/XR/features/WebXRControllerTeleportation';
-import type { WebXRControllerMovementRegistrationConfiguration } from '@babylonjs/core/XR/features/WebXRControllerMovement';
 import { WebXRControllerComponent } from '@babylonjs/core/XR/motionController/webXRControllerComponent';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
+import { Ray } from '@babylonjs/core/Culling/ray';
+import type { PickingInfo } from '@babylonjs/core/Collisions/pickingInfo';
 import { CreateGround } from '@babylonjs/core/Meshes/Builders/groundBuilder';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 
 // Efectos secundarios que Babylon necesita para XR y para el gizmo de teleport.
 import '@babylonjs/core/Materials/Textures/Loaders/envTextureLoader';
 import '@babylonjs/core/Helpers/sceneHelpers';
-import '@babylonjs/core/XR/features/WebXRControllerMovement';
 
 export interface XRResult {
   experience: WebXRDefaultExperience;
   teleportFloor: Mesh;
+  setMovementEnabled(enabled: boolean): void;
   dispose(): void;
 }
 
@@ -43,6 +44,8 @@ export async function setupXR(
   spawn: () => { eye: Vector3; look: Vector3 },
   /** Rechaza destinos de teletransporte dentro de edificios, agua o fuera del barrio. */
   canTeleportTo: (x: number, z: number) => boolean,
+  /** Abre una conversación si el rayo del gatillo izquierdo apunta a un docente cercano. */
+  onTeacherInteract?: (ray: Ray) => boolean,
 ): Promise<XRResult> {
   // Suelo invisible para validar los destinos de teletransporte.
   const teleportFloor = CreateGround(
@@ -59,13 +62,25 @@ export async function setupXR(
 
   const experience = await WebXRDefaultExperience.CreateAsync(scene, {
     floorMeshes: [teleportFloor],
-    disableTeleportation: false,
-    optionalFeatures: true,
+    // La app configura sus propias características más abajo. Desactivar las
+    // automáticas evita que Babylon intente activar near-interaction, UI y
+    // otras capacidades opcionales antes de que sepamos cuáles admite Quest.
+    disableDefaultUI: true,
+    disablePointerSelection: true,
+    disableTeleportation: true,
+    disableNearInteraction: true,
+    disableHandTracking: true,
     uiOptions: {
       sessionMode: 'immersive-vr',
       referenceSpaceType: 'local-floor',
     },
   });
+
+  if (!experience.baseExperience || !experience.input) {
+    throw new Error(
+      'Babylon devolvió una experiencia XR incompleta (baseExperience/input ausentes). Revisá la consola del navegador para ver el error interno.',
+    );
+  }
 
   const features = experience.baseExperience.featuresManager;
 
@@ -100,28 +115,62 @@ export async function setupXR(
     if (target) target.isVisible = allowed;
   });
 
-  // Quest: stick izquierdo camina (adelante/atrás y lateral). El predeterminado
-  // de Babylon asigna estas acciones al revés, por eso se registra el mapeo
-  // explícitamente. El stick derecho sigue libre para apuntar el teletransporte.
-  const movementControls: WebXRControllerMovementRegistrationConfiguration[] = [
-    {
-      allowedComponentTypes: [WebXRControllerComponent.THUMBSTICK_TYPE],
-      forceHandedness: 'left',
-      axisChangedHandler: (axes, state, context) => {
-        state.moveX = Math.abs(axes.x) > context.movementThreshold ? axes.x : 0;
-        state.moveY = Math.abs(axes.y) > context.movementThreshold ? axes.y : 0;
-      },
-    },
-  ];
-  features.enableFeature(WebXRFeatureName.MOVEMENT, 'stable', {
-    xrInput: experience.input,
-    customRegistrationConfigurations: movementControls,
-    movementEnabled: true,
-    movementOrientationFollowsViewerPose: true,
-    movementOrientationFollowsController: false,
-    movementSpeed: 0.65,
-    movementThreshold: 0.18,
-    rotationEnabled: false,
+  // Quest: stick izquierdo para caminar. Esta ruta propia evita habilitar la
+  // característica MOVEMENT de Babylon, que es incompatible con TELEPORTATION.
+  const forwardAxis = new Vector3(0, 0, 1);
+  const rightAxis = new Vector3(1, 0, 0);
+  const forward = Vector3.Zero();
+  const right = Vector3.Zero();
+  let manualMovementEnabled = true;
+  const manualMove = scene.onBeforeRenderObservable.add(() => {
+    if (experience.baseExperience.state !== WebXRState.IN_XR || !manualMovementEnabled) return;
+    const left = experience.input.controllers.find((controller) => controller.inputSource.handedness === 'left');
+    const stick = left?.motionController?.getComponentOfType(WebXRControllerComponent.THUMBSTICK_TYPE);
+    const gamepadAxes = left?.inputSource.gamepad?.axes;
+    // El perfil del navegador puede no exponer el thumbstick como componente
+    // Babylon. En ese caso, tomar el par de ejes más activo del gamepad XR.
+    let rawX = stick?.axes.x ?? 0;
+    let rawY = stick?.axes.y ?? 0;
+    if (Math.hypot(rawX, rawY) < 0.16 && gamepadAxes) {
+      let strongest = 0;
+      for (let i = 0; i + 1 < gamepadAxes.length; i += 2) {
+        const x = gamepadAxes[i];
+        const y = gamepadAxes[i + 1];
+        const magnitude = Math.hypot(x, y);
+        if (magnitude > strongest) {
+          strongest = magnitude;
+          rawX = x;
+          rawY = y;
+        }
+      }
+    }
+    const x = Math.abs(rawX) > 0.16 ? rawX : 0;
+    const y = Math.abs(rawY) > 0.16 ? rawY : 0;
+    if (x === 0 && y === 0) return;
+
+    const cam = experience.baseExperience.camera;
+    cam.getDirectionToRef(forwardAxis, forward);
+    cam.getDirectionToRef(rightAxis, right);
+    forward.y = 0;
+    right.y = 0;
+    forward.normalize();
+    right.normalize();
+    let dx = right.x * x - forward.x * y;
+    let dz = right.z * x - forward.z * y;
+    const magnitude = Math.hypot(dx, dz);
+    if (magnitude > 1) {
+      dx /= magnitude;
+      dz /= magnitude;
+    }
+    // Un paso de velocidad por cuadro, como el movimiento nativo de Babylon.
+    const distance = cam._computeLocalCameraSpeed() * 0.65;
+    const nextX = cam.position.x + dx * distance;
+    const nextZ = cam.position.z + dz * distance;
+    // Mantener el índice urbano como colisión y deslizarse por las paredes.
+    if (canTeleportTo(nextX, cam.position.z)) cam.position.x = nextX;
+    if (canTeleportTo(cam.position.x, nextZ)) cam.position.z = nextZ;
+    // WebXRCamera detecta este cambio fuera del ciclo XR y desplaza su espacio
+    // de referencia en el siguiente cuadro; así la pose de la cabeza no lo pisa.
   });
 
   // Punteros: sirven para señalar e interactuar con paneles.
@@ -159,6 +208,54 @@ export async function setupXR(
       }
     });
   });
+
+  // Respaldo directo para conversar con docentes usando el gatillo izquierdo.
+  // Las thin instances no siempre entregan thinInstanceIndex de forma fiable
+  // en Quest Browser, por eso primero resolvemos la conversación por geometría.
+  // El puntero integrado queda encargado de los botones del panel.
+  const selectionCleanup: Array<() => void> = [];
+  let pointerId = 1000;
+  const bindManualSelection = (controller: (typeof experience.input.controllers)[number]): void => {
+    const bind = (motionController: NonNullable<typeof controller.motionController>): void => {
+      const trigger = motionController.getMainComponent();
+      if (!trigger) return;
+      const id = pointerId++;
+      const pointerEvent = { pointerId: id, pointerType: 'xr' };
+      let pressedPick: PickingInfo | null = null;
+      const observer = trigger.onButtonStateChangedObservable.add((component) => {
+        const pressed = component.changes.pressed?.current;
+        if (pressed === undefined || controller.inputSource.handedness !== 'left') return;
+        if (experience.baseExperience.state !== WebXRState.IN_XR) return;
+        if (pressed) {
+          const ray = new Ray(Vector3.Zero(), Vector3.Zero());
+          controller.getWorldPointerRayToRef(ray);
+          if (onTeacherInteract?.(ray)) {
+            motionController.pulse(0.45, 70).catch(() => undefined);
+            return;
+          }
+          const pick = scene.pickWithRay(ray, (mesh) =>
+            mesh.isPickable &&
+            mesh.name === 'stationPanel',
+          );
+          if (!pick?.hit) return;
+          pressedPick = pick;
+          scene.simulatePointerDown(pick, pointerEvent);
+        } else if (pressedPick) {
+          scene.simulatePointerUp(pressedPick, pointerEvent);
+          pressedPick = null;
+        }
+      });
+      selectionCleanup.push(() => trigger.onButtonStateChangedObservable.remove(observer));
+    };
+    if (controller.motionController) {
+      bind(controller.motionController);
+    } else {
+      const observer = controller.onMotionControllerInitObservable.addOnce(bind);
+      selectionCleanup.push(() => controller.onMotionControllerInitObservable.remove(observer));
+    }
+  };
+  for (const controller of experience.input.controllers) bindManualSelection(controller);
+  const selectionControllerObserver = experience.input.onControllerAddedObservable.add(bindManualSelection);
 
   // Al entrar en VR, poner al jugador de pie frente a la escuela, sobre
   // Laprida, mirando el portal: el mismo primer cuadro que en escritorio.
@@ -200,10 +297,13 @@ export async function setupXR(
     if (disposed) return;
     disposed = true;
     scene.onBeforeRenderObservable.remove(gridRenderObserver);
+    scene.onBeforeRenderObservable.remove(manualMove);
     teleport.onTargetMeshPositionUpdatedObservable.remove(teleportTargetObserver);
     stateObservable.remove(enterObserver);
     stateObservable.remove(gridStateObserver);
     experience.input.onControllerAddedObservable.remove(controllerAddedObserver);
+    experience.input.onControllerAddedObservable.remove(selectionControllerObserver);
+    for (const cleanup of selectionCleanup) cleanup();
     experience.dispose();
     grid.dispose();
     gridMat.dispose();
@@ -211,5 +311,12 @@ export async function setupXR(
     teleportFloor.dispose();
   };
 
-  return { experience, teleportFloor, dispose };
+  return {
+    experience,
+    teleportFloor,
+    setMovementEnabled: (enabled) => {
+      manualMovementEnabled = enabled;
+    },
+    dispose,
+  };
 }

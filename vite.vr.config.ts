@@ -7,5 +7,6 @@ import baseConfig from './vite.config';
 // autofirmado de desarrollo.
 export default mergeConfig(baseConfig, {
   plugins: [basicSsl()],
-  server: { host: true, port: 5181 },
+  // Evitar que Meta Quest Browser conserve módulos viejos entre sesiones XR.
+  server: { host: true, port: 5182, headers: { 'Cache-Control': 'no-store' } },
 });

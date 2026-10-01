@@ -8,10 +8,10 @@ import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { PointerEventTypes, type PointerInfo } from '@babylonjs/core/Events/pointerEvents';
+import type { Ray } from '@babylonjs/core/Culling/ray';
 import type { Observer } from '@babylonjs/core/Misc/observable';
 import type { WebXRDefaultExperience } from '@babylonjs/core/XR/webXRDefaultExperience';
 import { WebXRFeatureName } from '@babylonjs/core/XR/webXRFeaturesManager';
-import type { WebXRControllerMovement } from '@babylonjs/core/XR/features/WebXRControllerMovement';
 import type { WebXRMotionControllerTeleportation } from '@babylonjs/core/XR/features/WebXRControllerTeleportation';
 import { WebXRState } from '@babylonjs/core/XR/webXRTypes';
 import { SCHOOL, STATION_SPOTS, toWorld, type SchoolFrame } from '../world/SchoolLayout';
@@ -177,12 +177,12 @@ export class ChallengeSystem {
   private previousFocus: HTMLElement | null = null;
   private introPending = false;
   private xrExperience: WebXRDefaultExperience | null = null;
-  private xrMovement: WebXRControllerMovement | null = null;
+  private setXRMovementEnabled: ((enabled: boolean) => void) | null = null;
   private xrTeleportation: WebXRMotionControllerTeleportation | null = null;
   private xrStateObserver: Observer<WebXRState> | null = null;
   private xrPanel: StationPanel3D | null = null;
   private inXR = false;
-  private xrWelcomeOpen = false;
+  private xrWelcomeTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly scene: Scene,
@@ -201,12 +201,15 @@ export class ChallengeSystem {
   }
 
   /** Conecta las interacciones 3D al visor sin cargar sus texturas en escritorio. */
-  async connectXR(experience: WebXRDefaultExperience): Promise<void> {
+  async connectXR(
+    experience: WebXRDefaultExperience,
+    setMovementEnabled?: (enabled: boolean) => void,
+  ): Promise<void> {
     if (this.xrStateObserver && this.xrExperience) {
       this.xrExperience.baseExperience.onStateChangedObservable.remove(this.xrStateObserver);
     }
     this.xrExperience = experience;
-    this.xrMovement = experience.baseExperience.featuresManager.getEnabledFeature(WebXRFeatureName.MOVEMENT);
+    this.setXRMovementEnabled = setMovementEnabled ?? null;
     this.xrTeleportation = experience.baseExperience.featuresManager.getEnabledFeature(WebXRFeatureName.TELEPORTATION);
     const { StationPanel3D } = await import('./StationPanel3D');
     this.xrPanel ??= new StationPanel3D(this.scene);
@@ -316,7 +319,10 @@ export class ChallengeSystem {
   ): void {
     mesh.name = name;
     mesh.material = material;
-    mesh.isPickable = false;
+    // En escritorio estas figuras no se usan para raycast. En VR se habilitan
+    // junto con los marcadores para que el gatillo también funcione apuntando
+    // al docente, no solo al rombo flotante.
+    mesh.isPickable = this.inXR;
     mesh.useVertexColors = true;
     const matrices = new Float32Array(this.stations.length * 16);
     const colors = new Float32Array(this.stations.length * 4);
@@ -337,6 +343,12 @@ export class ChallengeSystem {
   }
 
   private update = (): void => {
+    // Reconciliar el estado además del observable: algunos navegadores XR pueden
+    // entregar el primer IN_XR antes de que se suscriba el panel de desafíos.
+    const xrState = this.xrExperience?.baseExperience.state;
+    if (xrState !== undefined && (xrState === WebXRState.IN_XR) !== this.inXR) {
+      this.onXRStateChanged(xrState);
+    }
     const dt = Math.min(this.scene.getEngine().getDeltaTime() / 1000, 0.1);
     this.elapsed += dt;
     this.updateBeaconMatrices();
@@ -345,7 +357,7 @@ export class ChallengeSystem {
     const nearby = this.findNearby();
     if (this.inXR) {
       const prompt = nearby
-        ? `${nearby.guide}\n${this.completed.has(nearby.id) ? 'Control izq. · conversar' : 'Control izq. · gatillo'}`
+        ? `${nearby.guide}\nA menos de 5 m: apuntá y apretá gatillo izquierdo`
         : null;
       this.xrPanel?.setLabel(prompt, nearby?.position);
       this.promptEl.classList.add('hidden');
@@ -363,11 +375,13 @@ export class ChallengeSystem {
     const leaving = state !== WebXRState.IN_XR && this.inXR;
     this.inXR = state === WebXRState.IN_XR;
     if (this.beaconMesh) this.beaconMesh.isPickable = this.inXR;
+    for (const guide of this.guideMeshes) guide.isPickable = this.inXR;
     if (entering) {
       if (this.active) this.close();
       this.showXRWelcome();
     } else if (leaving) {
-      this.xrWelcomeOpen = false;
+      if (this.xrWelcomeTimer !== null) clearTimeout(this.xrWelcomeTimer);
+      this.xrWelcomeTimer = null;
       this.xrPanel?.hide();
       this.xrPanel?.setLabel(null);
       this.setXRPanelActive(false);
@@ -379,8 +393,8 @@ export class ChallengeSystem {
     const panel = this.xrPanel;
     const camera = this.xrExperience?.baseExperience.camera;
     if (!panel || !camera) return;
-    this.xrWelcomeOpen = true;
-    this.setXRPanelActive(true);
+    // La bienvenida orienta, pero no debe bloquear el movimiento. Si el panel
+    // no aparece por una diferencia del navegador XR, el recorrido sigue usable.
     const viewer = camera.globalPosition;
     const forward = camera.getDirection(new Vector3(0, 0, 1));
     forward.y = 0;
@@ -389,29 +403,40 @@ export class ChallengeSystem {
     panel.showMessage(
       'RECORRIDO CIMDIP',
       'CONTROLES VR',
-      'Stick izquierdo para caminar. Control izquierdo: apuntá al rombo de un docente y presioná el gatillo para hablar y elegir respuestas. Control derecho: teletransporte.',
-      'Apuntá con el control izquierdo y presioná el gatillo para empezar.',
+      'Stick izquierdo: caminar. Gatillo izquierdo: apuntar al torso o la cabeza del docente y conversar; usalo también para elegir respuestas. Gatillo derecho: teletransportarte.',
+      'Cerca de un docente, apuntale y presioná el gatillo izquierdo.',
       'INICIO',
       () => {
-        this.xrWelcomeOpen = false;
+        if (this.xrWelcomeTimer !== null) clearTimeout(this.xrWelcomeTimer);
+        this.xrWelcomeTimer = null;
         panel.hide();
-        this.setXRPanelActive(false);
       },
     );
+    // La bienvenida se cierra sola para que nunca deje al usuario detenido si
+    // el botón 3D no recibe el puntero del visor.
+    if (this.xrWelcomeTimer !== null) clearTimeout(this.xrWelcomeTimer);
+    this.xrWelcomeTimer = setTimeout(() => {
+      panel.hide();
+      this.xrWelcomeTimer = null;
+    }, 10000);
   }
 
   private onXRPointer = (info: PointerInfo): void => {
     if (
       !this.inXR ||
-      this.xrWelcomeOpen ||
       this.active ||
-      !this.canTalk() ||
       info.type !== PointerEventTypes.POINTERDOWN
     ) {
       return;
     }
     const pick = info.pickInfo;
-    if (!pick?.hit || pick.pickedMesh !== this.beaconMesh || pick.thinInstanceIndex < 0) return;
+    const pickedMesh = pick?.pickedMesh;
+    if (
+      !pick?.hit ||
+      !pickedMesh ||
+      (pickedMesh !== this.beaconMesh && !this.guideMeshes.some((guide) => guide.uniqueId === pickedMesh.uniqueId)) ||
+      pick.thinInstanceIndex < 0
+    ) return;
     const station = this.stations[pick.thinInstanceIndex];
     if (station && this.findNearby()?.id === station.id) this.open(station);
   };
@@ -421,8 +446,46 @@ export class ChallengeSystem {
     return this.camera.globalPosition;
   }
 
+  /** Selección directa por rayo: no depende de que el navegador reporte bien el thin-instance pick. */
+  interactWithRay(ray: Ray): boolean {
+    if (!this.inXR || this.active) return false;
+
+    const viewer = this.viewerPosition();
+    const maxDistanceSquared = INTERACT_RANGE * INTERACT_RANGE;
+    let best: Station | null = null;
+    let bestRayDistanceSquared = 0.85 * 0.85;
+    const rayDirection = ray.direction;
+
+    for (const station of this.stations) {
+      const dx = viewer.x - station.position.x;
+      const dz = viewer.z - station.position.z;
+      if (dx * dx + dz * dz > maxDistanceSquared) continue;
+
+      // Probar torso y cabeza como blancos amplios hace que apuntar se sienta
+      // tolerante desde un mando, incluso si falla el raycast de thin instances.
+      for (const height of [0.9, 1.35, 1.8]) {
+        const toTargetX = station.position.x - ray.origin.x;
+        const toTargetY = station.position.y + height - ray.origin.y;
+        const toTargetZ = station.position.z - ray.origin.z;
+        const alongRay = toTargetX * rayDirection.x + toTargetY * rayDirection.y + toTargetZ * rayDirection.z;
+        if (alongRay < 0 || alongRay > 9) continue;
+        const offsetX = toTargetX - rayDirection.x * alongRay;
+        const offsetY = toTargetY - rayDirection.y * alongRay;
+        const offsetZ = toTargetZ - rayDirection.z * alongRay;
+        const rayDistanceSquared = offsetX * offsetX + offsetY * offsetY + offsetZ * offsetZ;
+        if (rayDistanceSquared >= bestRayDistanceSquared) continue;
+        best = station;
+        bestRayDistanceSquared = rayDistanceSquared;
+      }
+    }
+
+    if (!best) return false;
+    this.open(best);
+    return true;
+  }
+
   private setXRPanelActive(active: boolean): void {
-    if (this.xrMovement) this.xrMovement.movementEnabled = !active;
+    this.setXRMovementEnabled?.(!active);
     if (this.xrTeleportation) this.xrTeleportation.teleportationEnabled = !active;
   }
 
@@ -457,13 +520,14 @@ export class ChallengeSystem {
 
   private open(station: Station): void {
     this.active = station;
+    if (this.xrWelcomeTimer !== null) clearTimeout(this.xrWelcomeTimer);
+    this.xrWelcomeTimer = null;
     this.questionIndex = 0;
     this.introPending = true;
     this.nearbyId = station.id;
     if (this.inXR) {
       const panel = this.xrPanel;
       if (!panel) return;
-      this.xrWelcomeOpen = false;
       this.setXRPanelActive(true);
       this.xrPanel?.setLabel(null);
       this.onModalChange(true);
@@ -622,6 +686,8 @@ export class ChallengeSystem {
   }
 
   dispose(): void {
+    if (this.xrWelcomeTimer !== null) clearTimeout(this.xrWelcomeTimer);
+    this.xrWelcomeTimer = null;
     if (this.active) this.onModalChange(false);
     window.removeEventListener('keydown', this.onKeyDown);
     this.scene.onBeforeRenderObservable.remove(this.beforeRender);

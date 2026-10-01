@@ -308,12 +308,19 @@ Se documentan porque cada uno costó una iteración y son trampas reutilizables.
 ## VR
 
 Configurado pero **sin probar en visor**: teletransporte con arco parabólico,
-giro por pasos de 30°, punteros, seguimiento de manos, rejilla de confort. El
-post-procesado se desactiva en VR (son pasadas de pantalla completa por ojo).
+giro por pasos de 30°, caminata con joystick, selección de docentes con el gatillo
+izquierdo, seguimiento de manos y rejilla de confort. El post-procesado se
+desactiva en VR (son pasadas de pantalla completa por ojo).
+
+Para probar localmente, ejecutá `npm run dev:vr`. El servidor HTTPS escucha en
+el puerto `5182`. Con la PC y el Quest en la misma Wi-Fi, abrí en Meta Quest
+Browser `https://IP-DE-LA-PC:5182/` y pulsá **Entrar en VR**. El joystick
+izquierdo camina; el control derecho apunta el teletransporte; el gatillo
+izquierdo selecciona al docente o su rombo cuando estás cerca. La bienvenida de
+controles se cierra sola después de diez segundos.
 
 > **WebXR exige contexto seguro.** Desde un visor, `http://192.168.x.x` no
-> alcanza: hay que servir por HTTPS, o usar `adb reverse tcp:5173 tcp:5173` para
-> que el visor lo vea como `localhost`.
+> alcanza: en desarrollo usá `npm run dev:vr`, que sirve la página por HTTPS.
 
 ## Licencias
 
