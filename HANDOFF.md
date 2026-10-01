@@ -292,6 +292,31 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     fija sin consumir azar. En VR se aparece frente a la escuela, igual que en
     escritorio (`startView` en `main.ts`).
 
+27. **La escuela tiene pisos: la colisión y el piso dependen de la altura de
+    los pies.** `LEVEL_Y` da la cota de cada nivel (0,12 / 3,42 / 6,72) y
+    `levelOf(feetY)` el nivel en el que se está. Muros (`Wall.level`),
+    ambientes (`Room.level`) y equipamiento (`Item.level`) llevan su nivel;
+    la grilla de ocupación es una por nivel, y en los pisos altos arranca
+    llena (aire) y se abren sólo los ambientes de ese nivel. Las escaleras NO
+    están en la grilla: cada tramo es una rampa (`stairY`, que pasa por la
+    mitad de cada huella) y se resuelve por altura en `schoolSolidLocal`: un
+    escalón al alcance del pie se pisa, uno a la altura del cuerpo es pared
+    (el costado de un tramo o el hueco visto desde arriba). La multitud
+    (`pedestrian`) no usa escaleras. `CityIndex.isSolid/groundHeight` reciben
+    `feetY` opcional: sin él responden a nivel de suelo, como antes.
+
+28. **Lo que se pinta está en `SchoolAtlas` / `SchoolArt`, sin motor.** El
+    atlas es UNA textura de 2048 × 2048 (un draw call para todos los carteles,
+    murales y gráficas) con recorte por alfa para siluetas (el óvalo de PRO
+    FOOD). Para revisar un dibujo sin abrir la app: `node
+    tools/atlas-preview.mjs salida.png` (empaqueta `SchoolAtlas.ts` con esbuild
+    y lo pinta en Chrome sin ventana).
+
+29. **En VR los pies siguen el piso** (`vr/XRFloorFollow.ts`): cada cuadro
+    se consulta el mismo índice que en escritorio, se ajusta la altura de la
+    cámara al piso bajo los pies (escalón, descanso, primer piso) y si un
+    movimiento mete los pies en un muro se vuelve a la posición anterior.
+
 ---
 
 ## 6. Estado actual

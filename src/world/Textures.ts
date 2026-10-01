@@ -12,7 +12,17 @@ export type SurfaceKind =
   | 'pavementXL'
   | 'grass'
   | 'solar'
-  | 'metal';
+  | 'metal'
+  // Interiores de la escuela (recorrido 2020). Van sobre pisos y cielorrasos
+  // poligonales, cuyas UV están en metros: el dibujo mantiene su tamaño real.
+  | 'granite'
+  | 'checker'
+  | 'parquet'
+  | 'ceramic'
+  | 'lattice'
+  | 'panels'
+  | 'marble'
+  | 'block';
 
 /**
  * Texturas generadas por código.
@@ -53,6 +63,20 @@ const UV_SCALE: Record<SurfaceKind, number> = {
   grass: 12,
   solar: 2,
   metal: 1.5,
+  // La escuela usa 0,3 UV por metro en PrismBatch: período de la textura =
+  // 1 / (0,3 × escala). Granito, damero y parquet: 4 paños de 40 cm (1,6 m);
+  // cerámico: 2 de 33 cm; retícula de listones: 2 celdas de 25 cm; placas de
+  // cielorraso: una de 60 cm.
+  granite: 2.08,
+  checker: 2.08,
+  parquet: 2.08,
+  ceramic: 5.05,
+  lattice: 6.67,
+  panels: 5.56,
+  // Los muros son cajas: sus UV van de 0 a 1 por cara. Una repetición media
+  // da piezas de mármol de ~60 cm y bloques de ~40 × 20 cm en muros comunes.
+  marble: 3,
+  block: 5,
 };
 
 /** Textura base de la que deriva cada variante de escala. */
@@ -99,6 +123,30 @@ export class Textures {
         break;
       case 'metal':
         this.drawMetal(ctx, size, rng);
+        break;
+      case 'granite':
+        this.drawGranite(ctx, size, rng);
+        break;
+      case 'checker':
+        this.drawChecker(ctx, size, rng);
+        break;
+      case 'parquet':
+        this.drawParquet(ctx, size, rng);
+        break;
+      case 'ceramic':
+        this.drawCeramic(ctx, size, rng);
+        break;
+      case 'lattice':
+        this.drawLattice(ctx, size);
+        break;
+      case 'panels':
+        this.drawPanels(ctx, size, rng);
+        break;
+      case 'marble':
+        this.drawMarble(ctx, size, rng);
+        break;
+      case 'block':
+        this.drawBlock(ctx, size, rng);
         break;
     }
 
@@ -247,6 +295,200 @@ export class Textures {
       ctx.lineTo(size, y + rng.range(-1, 1));
       ctx.stroke();
     }
+  }
+
+  /**
+   * Granito reconstituido de pasillos y hall: 4 × 4 paños con grano mezclado
+   * claro y oscuro y junta fina, como el de los pisos del recorrido.
+   */
+  private drawGranite(ctx: CanvasRenderingContext2D, size: number, rng: Rng): void {
+    const tile = size / 4;
+    for (let x = 0; x < 4; x++) {
+      for (let y = 0; y < 4; y++) {
+        const v = rng.range(0.9, 1);
+        ctx.fillStyle = `rgba(${v * 255},${v * 255},${v * 252},1)`;
+        ctx.fillRect(x * tile, y * tile, tile, tile);
+      }
+    }
+    this.speckle(ctx, size, rng, 5200, 0.35, 0.35);
+    this.speckle(ctx, size, rng, 2600, 0.25, 0.85);
+    ctx.strokeStyle = 'rgba(95,95,92,0.45)';
+    ctx.lineWidth = 1.2;
+    for (let i = 0; i <= 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * tile, 0);
+      ctx.lineTo(i * tile, size);
+      ctx.moveTo(0, i * tile);
+      ctx.lineTo(size, i * tile);
+      ctx.stroke();
+    }
+  }
+
+  /** Damero gris oscuro y gris claro del comedor (4 × 4 baldosas). */
+  private drawChecker(ctx: CanvasRenderingContext2D, size: number, rng: Rng): void {
+    const tile = size / 4;
+    for (let x = 0; x < 4; x++) {
+      for (let y = 0; y < 4; y++) {
+        const dark = (x + y) % 2 === 0;
+        const v = dark ? rng.range(0.3, 0.34) : rng.range(0.82, 0.88);
+        ctx.fillStyle = `rgb(${v * 255},${v * 255},${v * 255})`;
+        ctx.fillRect(x * tile, y * tile, tile, tile);
+      }
+    }
+    this.speckle(ctx, size, rng, 1400, 0.06, 0.8);
+    ctx.strokeStyle = 'rgba(70,70,70,0.6)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * tile, 0);
+      ctx.lineTo(i * tile, size);
+      ctx.moveTo(0, i * tile);
+      ctx.lineTo(size, i * tile);
+      ctx.stroke();
+    }
+  }
+
+  /** Parquet de tablillas en cesta (aula de danzas). */
+  private drawParquet(ctx: CanvasRenderingContext2D, size: number, rng: Rng): void {
+    const cell = size / 4;
+    const slat = cell / 4;
+    for (let x = 0; x < 4; x++) {
+      for (let y = 0; y < 4; y++) {
+        const vertical = (x + y) % 2 === 0;
+        for (let k = 0; k < 4; k++) {
+          const v = rng.range(0.78, 1);
+          ctx.fillStyle = `rgb(${v * 255},${v * 236},${v * 212})`;
+          if (vertical) ctx.fillRect(x * cell + k * slat, y * cell, slat, cell);
+          else ctx.fillRect(x * cell, y * cell + k * slat, cell, slat);
+          ctx.strokeStyle = 'rgba(110,80,50,0.35)';
+          ctx.lineWidth = 1;
+          if (vertical) ctx.strokeRect(x * cell + k * slat + 0.5, y * cell + 0.5, slat - 1, cell - 1);
+          else ctx.strokeRect(x * cell + 0.5, y * cell + k * slat + 0.5, cell - 1, slat - 1);
+        }
+      }
+    }
+    this.speckle(ctx, size, rng, 900, 0.05, 0.8);
+  }
+
+  /** Cerámico claro de 33 cm con pastina (planta alta, jardín). */
+  private drawCeramic(ctx: CanvasRenderingContext2D, size: number, rng: Rng): void {
+    const tile = size / 2;
+    for (let x = 0; x < 2; x++) {
+      for (let y = 0; y < 2; y++) {
+        const v = rng.range(0.94, 1);
+        ctx.fillStyle = `rgb(${v * 255},${v * 255},${v * 252})`;
+        ctx.fillRect(x * tile, y * tile, tile, tile);
+      }
+    }
+    this.speckle(ctx, size, rng, 500, 0.04, 0.85);
+    ctx.strokeStyle = 'rgba(120,115,105,0.55)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * tile, 0);
+      ctx.lineTo(i * tile, size);
+      ctx.moveTo(0, i * tile);
+      ctx.lineTo(size, i * tile);
+      ctx.stroke();
+    }
+  }
+
+  /** Cielorraso de listones de madera en retícula (comedor). */
+  private drawLattice(ctx: CanvasRenderingContext2D, size: number): void {
+    ctx.fillStyle = 'rgb(40,32,26)';
+    ctx.fillRect(0, 0, size, size);
+    const cell = size / 2;
+    const bar = cell * 0.32;
+    ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < 2; i++) {
+      ctx.fillRect(i * cell, 0, bar, size);
+      ctx.fillRect(0, i * cell, size, bar);
+    }
+    ctx.fillStyle = 'rgba(200,170,140,0.5)';
+    for (let i = 0; i < 2; i++) {
+      ctx.fillRect(i * cell + bar * 0.15, 0, bar * 0.2, size);
+      ctx.fillRect(0, i * cell + bar * 0.15, size, bar * 0.2);
+    }
+  }
+
+  /** Cerámico símil mármol: placas apaisadas con vetas grises. */
+  private drawMarble(ctx: CanvasRenderingContext2D, size: number, rng: Rng): void {
+    const h = size / 4;
+    for (let r = 0; r < 4; r++) {
+      const v = rng.range(0.92, 1);
+      ctx.fillStyle = `rgb(${v * 255},${v * 250},${v * 244})`;
+      ctx.fillRect(0, r * h, size, h);
+    }
+    ctx.strokeStyle = 'rgba(110,100,92,0.45)';
+    for (let k = 0; k < 22; k++) {
+      ctx.lineWidth = rng.range(0.5, 1.8);
+      ctx.beginPath();
+      let x = rng.range(0, size);
+      let y = rng.range(0, size);
+      ctx.moveTo(x, y);
+      for (let j = 0; j < 6; j++) {
+        x += rng.range(-30, 40);
+        y += rng.range(-14, 14);
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(130,120,110,0.6)';
+    ctx.lineWidth = 1.5;
+    for (let r = 0; r <= 4; r++) {
+      ctx.beginPath();
+      ctx.moveTo(0, r * h);
+      ctx.lineTo(size, r * h);
+      ctx.stroke();
+    }
+    for (let r = 0; r < 4; r++) {
+      const x = (r % 2) * (size / 2);
+      ctx.beginPath();
+      ctx.moveTo(x, r * h);
+      ctx.lineTo(x, (r + 1) * h);
+      ctx.stroke();
+    }
+  }
+
+  /** Bloque de hormigón a la vista: hiladas trabadas con junta marcada. */
+  private drawBlock(ctx: CanvasRenderingContext2D, size: number, rng: Rng): void {
+    const rows = 4;
+    const h = size / rows;
+    const w = size / 2;
+    for (let r = 0; r < rows; r++) {
+      for (let c = -1; c < 3; c++) {
+        const x = c * w + (r % 2) * (w / 2);
+        const v = rng.range(0.86, 1);
+        ctx.fillStyle = `rgb(${v * 255},${v * 255},${v * 250})`;
+        ctx.fillRect(x + 2, r * h + 2, w - 4, h - 4);
+      }
+    }
+    this.speckle(ctx, size, rng, 2400, 0.12, 0.75);
+    ctx.strokeStyle = 'rgba(80,78,74,0.75)';
+    ctx.lineWidth = 3;
+    for (let r = 0; r <= rows; r++) {
+      ctx.beginPath();
+      ctx.moveTo(0, r * h);
+      ctx.lineTo(size, r * h);
+      ctx.stroke();
+    }
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < 3; c++) {
+        const x = c * w + (r % 2) * (w / 2);
+        ctx.beginPath();
+        ctx.moveTo(x, r * h);
+        ctx.lineTo(x, (r + 1) * h);
+        ctx.stroke();
+      }
+    }
+  }
+
+  /** Cielorraso de placas de 60 × 60 con perfilería. */
+  private drawPanels(ctx: CanvasRenderingContext2D, size: number, rng: Rng): void {
+    this.speckle(ctx, size, rng, 3000, 0.08, 0.86);
+    ctx.strokeStyle = 'rgba(160,160,160,0.9)';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(1.5, 1.5, size - 3, size - 3);
   }
 
   /** Grano fino, común a varias superficies. */

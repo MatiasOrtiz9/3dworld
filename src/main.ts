@@ -21,7 +21,7 @@ import { isVrSupported } from './vr/isVrSupported';
 import type { WebXRDefaultExperience } from '@babylonjs/core/XR/webXRDefaultExperience';
 import { seedFromString } from './utils/rng';
 import { ChallengeSystem } from './game/ChallengeSystem';
-import { SCHOOL, roomAt, toLocal, toWorld } from './world/SchoolLayout';
+import { LEVEL_Y, SCHOOL, levelOf, roomAt, roomLabel as roomTitle, toLocal, toWorld } from './world/SchoolLayout';
 
 // ---------------------------------------------------------------- referencias
 
@@ -118,6 +118,8 @@ Object.assign(window as unknown as Record<string, unknown>, {
   // El plano, para que las herramientas puedan encuadrar una manzana concreta
   // por tipo en vez de adivinar coordenadas a mano.
   __plan: () => city?.plan ?? null,
+  // Marco de la escuela: las capturas se encuadran en coordenadas del plano (u, v).
+  __schoolFrame: () => city?.schoolFrame ?? null,
   // Conmutadores para medir por ablación cuánto cuesta cada efecto. Sin esto,
   // atribuir el coste entre sombras, oclusión ambiental y bloom es adivinar.
   __setShadows: (on: boolean) => {
@@ -183,6 +185,11 @@ async function buildCity(newSeed: number): Promise<void> {
     highDetailFoliage: profile.highDetailFoliage,
     highDetailStreet: profile.highDetailStreet,
   });
+  // La fachada es la primera vista y también debe orientar el calentamiento
+  // selectivo de shaders que sigue más abajo.
+  const start = startView(city);
+  camera.position = start.eye;
+  camera.setTarget(start.look);
 
   await progress(55, 'Calculando el cielo…');
   environment = new Environment(scene, city.plan.extent);
@@ -208,8 +215,9 @@ async function buildCity(newSeed: number): Promise<void> {
   city.freezeMaterials();
   scene.blockMaterialDirtyMechanism = true;
 
-  // Precompilar acá mueve el congelamiento del primer cuadro a la barra de carga.
-  const warm = await city.precompile((done, total) => {
+  // Calienta las variantes de la fachada con espera limitada; el resto se
+  // compila cuando entra en cuadro, sin alargar la pantalla de carga.
+  const warm = await city.precompile(camera, (done, total) => {
     bootBar.style.width = `${78 + (done / total) * 20}%`;
     bootMsg.textContent = `Compilando materiales… ${done}/${total}`;
   });
@@ -259,9 +267,6 @@ async function buildCity(newSeed: number): Promise<void> {
   // Laprida, con el portal y su marquesina y la ciudad detrás. Del otro lado
   // de la calle, un poco corrido hacia la esquina de Miguel Cané:
   // entran en cuadro el portal, las aulas con sus rejas y las palmeras.
-  const start = startView(city);
-  camera.position = start.eye;
-  camera.setTarget(start.look);
   player.setMode('walk');
 
   await progress(100, 'Lista');
@@ -285,9 +290,12 @@ function updateRoomLabel(): void {
   const cam = scene.activeCamera;
   const school = city?.schoolFrame;
   let name = '';
-  if (cam && school && cam.position.y < SCHOOL.upperTop) {
+  // Ojos a 1,68 m: los pies dicen en qué piso está (planta baja, primero o segundo).
+  const feet = (cam?.position.y ?? 0) - 1.68;
+  if (cam && school && feet < LEVEL_Y[2] + 3) {
     const { u, v } = toLocal(school, cam.position.x, cam.position.z);
-    name = roomAt(u, v)?.name ?? '';
+    const room = roomAt(u, v, levelOf(feet));
+    name = room ? roomTitle(room) : '';
   }
   if (name === lastRoom) return;
   lastRoom = name;
@@ -460,7 +468,13 @@ async function start(): Promise<void> {
       );
       xrExperience = experience;
       await challenge?.connectXR(experience);
-      disposeXR = dispose;
+      // En VR los pies siguen el piso real: escalones y planta alta de la escuela.
+      const { followFloors } = await import('./vr/XRFloorFollow');
+      const stopFloors = followFloors(scene, experience, () => city?.index ?? null);
+      disposeXR = () => {
+        stopFloors();
+        dispose();
+      };
       btnVr.disabled = false;
       btnVr.textContent = 'Entrar en VR';
       btnVr.addEventListener('click', async () => {

@@ -2,6 +2,7 @@ import type { Block, CityPlan } from './CityLayout';
 import {
   inLot,
   miguelCaneOffset,
+  schoolFloorLocal,
   schoolFrame,
   schoolSolidLocal,
   SCHOOL,
@@ -112,13 +113,17 @@ export class CityIndex {
    * Sólo bloquean los tipos con volumen edificado. Parque y huerta solar
    * se pueden atravesar caminando, que es justamente lo que uno haría en la
    * ciudad real.
+   *
+   * `feetY` es la altura de los pies de quien pregunta: en la escuela hay
+   * varios pisos, y lo que bloquea depende de en cuál está (y las escaleras,
+   * de a qué altura las pisa). Sin indicarla, se pregunta a nivel de suelo.
    */
-  isSolid(x: number, z: number): boolean {
+  isSolid(x: number, z: number, feetY?: number): boolean {
     const b = this.blockAt(x, z);
     if (!b) return false;
     if (b.landmark && this.school) {
       const { u, v } = toLocal(this.school, x, z);
-      return schoolSolidLocal(u, v);
+      return schoolSolidLocal(u, v, feetY ?? SCHOOL.floorY);
     }
     switch (b.kind) {
       case 'tower':
@@ -145,13 +150,17 @@ export class CityIndex {
     return this.blockAt(x, z)?.kind === 'water';
   }
 
-  /** Altura del suelo transitable en ese punto (el canal está hundido). */
-  groundHeight(x: number, z: number): number {
+  /**
+   * Altura del suelo transitable en ese punto (el canal está hundido). Dentro
+   * de la escuela depende de `feetY`: el piso del nivel en el que se está, o
+   * el escalón que se pisa.
+   */
+  groundHeight(x: number, z: number, feetY?: number): number {
     const b = this.blockAt(x, z);
     if (b?.kind === 'water') return -0.6;
     if (b?.landmark && this.school) {
       const { u, v } = toLocal(this.school, x, z);
-      if (inLot(u, v) && v <= 0) return SCHOOL.floorY;
+      if (inLot(u, v) && v <= 0) return schoolFloorLocal(u, v, feetY ?? SCHOOL.floorY);
     }
     return 0;
   }
@@ -211,6 +220,11 @@ export class CityIndex {
     const b = this.blockAt(x, z);
     if (!b) return false;
     if (b.kind === 'water') return true;
+    // La multitud se queda en planta baja y no usa las escaleras.
+    if (b.landmark && this.school) {
+      const { u, v } = toLocal(this.school, x, z);
+      return schoolSolidLocal(u, v, SCHOOL.floorY, true);
+    }
     return this.isSolid(x, z);
   }
 

@@ -261,3 +261,92 @@ export function offsetPolygon(poly: readonly V2[], d: number): V2[] {
 export function polygonArea(poly: readonly V2[]): number {
   return signedArea(poly);
 }
+
+/** Rectángulo alineado en planta (u, v). */
+export interface HoleRect {
+  u0: number;
+  v0: number;
+  u1: number;
+  v1: number;
+}
+
+/**
+ * Polígono simple menos rectángulos alineados: los huecos de escalera de una
+ * losa. Se corta en franjas de v constante en cada vértice y en cada borde de
+ * hueco, y cada franja en trapecios; los lados de un trapecio son aristas del
+ * polígono (pueden ir en diagonal, como Miguel Cané) o bordes del hueco. Sin
+ * huecos que lo toquen devuelve el polígono tal cual, sin partir.
+ */
+export function subtractRects(poly: readonly V2[], holes: readonly HoleRect[]): V2[][] {
+  let pu0 = Infinity;
+  let pu1 = -Infinity;
+  let pv0 = Infinity;
+  let pv1 = -Infinity;
+  for (const [u, v] of poly) {
+    pu0 = Math.min(pu0, u);
+    pu1 = Math.max(pu1, u);
+    pv0 = Math.min(pv0, v);
+    pv1 = Math.max(pv1, v);
+  }
+  const hs = holes.filter((h) => h.u0 < pu1 && h.u1 > pu0 && h.v0 < pv1 && h.v1 > pv0);
+  if (hs.length === 0) return [poly.slice()];
+  const cuts = new Set<number>();
+  for (const [, v] of poly) cuts.add(v);
+  for (const h of hs) {
+    if (h.v0 > pv0 && h.v0 < pv1) cuts.add(h.v0);
+    if (h.v1 > pv0 && h.v1 < pv1) cuts.add(h.v1);
+  }
+  const ys = [...cuts].sort((a, b) => a - b);
+  const out: V2[][] = [];
+  const n = poly.length;
+  for (let k = 0; k < ys.length - 1; k++) {
+    const va = ys[k];
+    const vb = ys[k + 1];
+    if (vb - va < 1e-6) continue;
+    const vm = (va + vb) / 2;
+    // Aristas que cruzan la franja: entre dos cortes consecutivos no hay
+    // vértices, así que cada una la atraviesa entera.
+    const xs: Array<{ a: number; b: number; m: number }> = [];
+    for (let i = 0; i < n; i++) {
+      const p = poly[i];
+      const q = poly[(i + 1) % n];
+      if ((p[1] - vm) * (q[1] - vm) >= 0) continue;
+      const at = (v: number) => p[0] + ((q[0] - p[0]) * (v - p[1])) / (q[1] - p[1]);
+      xs.push({ a: at(va), b: at(vb), m: at(vm) });
+    }
+    xs.sort((x, y) => x.m - y.m);
+    for (let i = 0; i + 1 < xs.length; i += 2) {
+      // Intervalo interior [L, R]; los huecos que cubren la franja lo parten.
+      let pieces: Array<[{ a: number; b: number; m: number }, { a: number; b: number; m: number }]> = [[xs[i], xs[i + 1]]];
+      for (const h of hs) {
+        if (h.v0 > va + 1e-9 || h.v1 < vb - 1e-9) continue;
+        const next: typeof pieces = [];
+        for (const [L, R] of pieces) {
+          if (h.u1 <= L.m || h.u0 >= R.m) {
+            next.push([L, R]);
+            continue;
+          }
+          if (h.u0 > L.m) next.push([L, { a: h.u0, b: h.u0, m: h.u0 }]);
+          if (h.u1 < R.m) next.push([{ a: h.u1, b: h.u1, m: h.u1 }, R]);
+        }
+        pieces = next;
+      }
+      for (const [L, R] of pieces) {
+        const quad: V2[] = [];
+        const push = (p: V2) => {
+          const last = quad[quad.length - 1];
+          if (!last || Math.abs(last[0] - p[0]) > 1e-6 || Math.abs(last[1] - p[1]) > 1e-6) quad.push(p);
+        };
+        push([L.a, va]);
+        push([R.a, va]);
+        push([R.b, vb]);
+        push([L.b, vb]);
+        const first = quad[0];
+        const last = quad[quad.length - 1];
+        if (quad.length > 1 && Math.abs(first[0] - last[0]) < 1e-6 && Math.abs(first[1] - last[1]) < 1e-6) quad.pop();
+        if (quad.length >= 3) out.push(quad);
+      }
+    }
+  }
+  return out;
+}

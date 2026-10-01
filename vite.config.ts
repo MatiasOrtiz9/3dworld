@@ -1,8 +1,11 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
-import basicSsl from '@vitejs/plugin-basic-ssl';
 
 export default defineConfig({
+  // Puede haber más de un `vite dev` abierto en el mismo checkout (p. ej., en
+  // 5173 y 5174). Separar sus optimizaciones evita que una instancia borre
+  // shaders que la otra todavía referencia.
+  cacheDir: `node_modules/.vite-${process.pid}`,
   server: {
     host: true, // expone en la LAN para probar desde el visor
     port: 5173,
@@ -13,7 +16,6 @@ export default defineConfig({
     chunkSizeWarningLimit: 2048,
   },
   plugins: [
-    basicSsl(),
     VitePWA({
       registerType: 'autoUpdate',
       // El paquete principal supera 1 MB; sin subir este techo el service

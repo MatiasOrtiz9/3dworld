@@ -14,6 +14,8 @@ import { SchoolBuilder } from './builders/SchoolBuilder';
 import type { Block } from './CityLayout';
 import type { SchoolFrame } from './SchoolLayout';
 import type { Mesh } from '@babylonjs/core/Meshes/mesh';
+import type { Camera } from '@babylonjs/core/Cameras/camera';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 
 /**
  * Clave del material de ventana encendida.
@@ -149,45 +151,63 @@ export class City {
     this.mats.freezeAll();
   }
 
-  /**
-   * Precompila los shaders de todos los materiales.
-   *
-   * Medimos que el cuello de botella de la carga NO es la descarga (523 KB en
-   * producción) sino la compilación de shaders: el shader PBR con sombras en
-   * cascada, IBL, niebla y mapeo tonal es enorme, y el navegador lo compila la
-   * primera vez que tiene que dibujar con él. Si eso ocurre en el primer
-   * cuadro, la pantalla se congela con la ciudad ya construida.
-   *
-   * Compilándolos a propósito ANTES de mostrar la escena, ese tiempo cae
-   * dentro de la barra de progreso, donde el usuario lo espera.
-   */
+  /** Calienta unas pocas variantes del encuadre inicial sin bloquear el arranque. */
   async precompile(
+    camera: Camera | null,
     onProgress?: (done: number, total: number) => void,
-    budgetMs = 2500,
+    budgetMs = 1400,
   ): Promise<{ compiled: number; total: number; ms: number }> {
     const t0 = performance.now();
-    // Los materiales que cubren más geometría primero: si el presupuesto se
-    // agota, que lo ya compilado sea lo que más se ve.
-    const meshes = [...this.farm.sourceMeshes, ...this.schoolMeshes]
-      .slice()
-      .sort((a, b) => b.thinInstanceCount * b.getTotalIndices() - a.thinInstanceCount * a.getTotalIndices());
+    const allMeshes = [...this.farm.sourceMeshes, ...this.schoolMeshes];
+    // Solo calentamos materiales que aparecen desde la cámara de inicio. El
+    // barrido anterior empezaba por la malla más grande de toda la ciudad —a
+    // menudo follaje que ni siquiera entra en cuadro— y llamaba varias veces
+    // al mismo material compartido.
+    const visibleMeshes = camera ? allMeshes.filter((mesh) => camera.isInFrustum(mesh)) : allMeshes;
+    const candidates = visibleMeshes.length ? visibleMeshes : allMeshes;
+    candidates.sort((a, b) => {
+      const position = camera?.globalPosition;
+      if (!position) return b.thinInstanceCount * b.getTotalIndices() - a.thinInstanceCount * a.getTotalIndices();
+      const aDistance = Vector3.DistanceSquared(a.getBoundingInfo().boundingSphere.centerWorld, position);
+      const bDistance = Vector3.DistanceSquared(b.getBoundingInfo().boundingSphere.centerWorld, position);
+      return aDistance - bDistance;
+    });
+
+    // Un material puede estar en cientos de mallas. Compilarlo una vez alcanza
+    // para que Babylon reutilice el programa; 4 variantes visibles son
+    // suficientes para dibujar la primera vista sin retener la pantalla.
+    const seenMaterials = new Set<number>();
+    const meshes = candidates.filter((mesh) => {
+      const id = mesh.material?.uniqueId;
+      if (id === undefined || seenMaterials.has(id)) return false;
+      seenMaterials.add(id);
+      return true;
+    }).slice(0, 4);
 
     let done = 0;
+    onProgress?.(done, Math.max(1, meshes.length));
     for (const mesh of meshes) {
-      // Presupuesto duro. Sin esto, en un equipo lento (o con render por
-      // software, donde un shader PBR puede tardar decenas de segundos) la
-      // pantalla de carga se queda colgada para siempre. Lo que no entre en el
-      // presupuesto se compila solo, de forma perezosa, como antes.
       if (performance.now() - t0 > budgetMs) break;
       const mat = mesh.material;
       if (mat) {
-        try {
-          await mat.forceCompilationAsync(mesh);
-        } catch {
-          // Un shader que no compila no debe impedir que arranque la ciudad.
-        }
+        // forceCompilationAsync es asíncrono y puede tardar mucho más que el
+        // presupuesto en una GPU integrada. No lo podemos cancelar, pero sí
+        // dejar que siga en segundo plano y arrancar el render en 700 ms.
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        const compiling = mat.forceCompilationAsync(mesh).then(
+          () => true,
+          () => true,
+        );
+        const ready = await Promise.race([
+          compiling,
+          new Promise<boolean>((resolve) => {
+            timeout = setTimeout(() => resolve(false), 700);
+          }),
+        ]);
+        if (timeout !== undefined) clearTimeout(timeout);
+        if (!ready) break;
       }
-      onProgress?.(++done, meshes.length);
+      onProgress?.(++done, Math.max(1, meshes.length));
     }
     return { compiled: done, total: meshes.length, ms: Math.round(performance.now() - t0) };
   }

@@ -6,6 +6,7 @@
   "description": "Ciudad solarpunk 2050 — experiencia 3D/VR generada por codigo",
   "scripts": {
     "dev": "vite",
+    "dev:vr": "vite --config vite.vr.config.ts --host 0.0.0.0 --port 5181 --strictPort",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

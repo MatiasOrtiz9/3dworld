@@ -78,9 +78,12 @@ export class PlayerController {
     this.velocityZ = 0;
     if (mode === 'walk') {
       // Al aterrizar, buscar un punto libre cercano para no quedar dentro de un muro.
+      // Desde el vuelo se aterriza en el piso más alto por debajo de los pies
+      // (en la escuela puede ser el primer o el segundo piso).
       const p = this.camera.position;
-      const free = this.findFreeSpot(p.x, p.z);
-      this.camera.position.set(free.x, this.index.groundHeight(free.x, free.z) + EYE_HEIGHT, free.z);
+      const landing = this.index.groundHeight(p.x, p.z, p.y - EYE_HEIGHT);
+      const free = this.findFreeSpot(p.x, p.z, landing);
+      this.camera.position.set(free.x, this.index.groundHeight(free.x, free.z, landing) + EYE_HEIGHT, free.z);
     }
     this.onModeChange?.(mode);
   }
@@ -235,8 +238,9 @@ export class PlayerController {
       }
     }
 
-    // Gravedad y salto.
-    const floor = this.index.groundHeight(cam.position.x, cam.position.z) + EYE_HEIGHT;
+    // Gravedad y salto. El piso depende de la altura de los pies: en la
+    // escuela hay planta alta y escaleras.
+    const floor = this.index.groundHeight(cam.position.x, cam.position.z, this.feet()) + EYE_HEIGHT;
     if (this.grounded && this.keys.has('Space')) {
       this.velocityY = JUMP;
       this.grounded = false;
@@ -251,19 +255,24 @@ export class PlayerController {
     }
   };
 
+  /** Altura de los pies. */
+  private feet(): number {
+    return this.camera.position.y - EYE_HEIGHT;
+  }
+
   private blocked(x: number, z: number): boolean {
-    return this.index.isSolid(x, z);
+    return this.index.isSolid(x, z, this.feet());
   }
 
   /** Espiral de búsqueda de un punto libre, para no aterrizar dentro de un muro. */
-  private findFreeSpot(x: number, z: number): { x: number; z: number } {
-    if (!this.index.isSolid(x, z)) return { x, z };
+  private findFreeSpot(x: number, z: number, feetY?: number): { x: number; z: number } {
+    if (!this.index.isSolid(x, z, feetY)) return { x, z };
     for (let r = 2; r <= 40; r += 2) {
       for (let a = 0; a < 12; a++) {
         const ang = (a / 12) * Math.PI * 2;
         const nx = x + Math.cos(ang) * r;
         const nz = z + Math.sin(ang) * r;
-        if (!this.index.isSolid(nx, nz)) return { x: nx, z: nz };
+        if (!this.index.isSolid(nx, nz, feetY)) return { x: nx, z: nz };
       }
     }
     return { x, z };

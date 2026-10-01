@@ -76,6 +76,7 @@ export default tseslint.config(
         navigator: 'readonly',
         location: 'readonly',
         Event: 'readonly',
+        MutationObserver: 'readonly',
         caches: 'readonly',
       },
     },
