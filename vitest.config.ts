@@ -9,5 +9,13 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/**/*.test.ts'],
     reporters: 'dot',
+    // Algunas pruebas recorren la escuela entera (el mapa de luz natural se
+    // calcula dos veces para comprobar que es determinista, el QA del
+    // equipamiento, los recorridos de la historia). En frío y con todos los
+    // archivos en paralelo —como en el build de despliegue, con pocos
+    // núcleos— superaban los 5 s por defecto y el build fallaba sin que nada
+    // estuviera roto. El límite sólo corta pruebas colgadas.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
   },
 });
