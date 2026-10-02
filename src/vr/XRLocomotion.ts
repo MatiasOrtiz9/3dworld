@@ -4,7 +4,7 @@ import type { WebXRDefaultExperience } from '@babylonjs/core/XR/webXRDefaultExpe
 import type { WebXRInputSource } from '@babylonjs/core/XR/webXRInputSource';
 import { WebXRControllerComponent } from '@babylonjs/core/XR/motionController/webXRControllerComponent';
 import { WebXRState } from '@babylonjs/core/XR/webXRTypes';
-import { Vector3 } from '@babylonjs/core/Maths/math.vector';
+import { Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
 
 /** Lo que la caminata necesita saber de la ciudad (y lo que un test puede simular). */
 export interface WalkIndex {
@@ -29,6 +29,8 @@ const BRAKING = 18;
 const JUMP_DISTANCE = 1;
 /** Altura de ojos si el visor todavía no la informa. */
 const DEFAULT_HEAD = 1.6;
+/** Giro por pasos del stick derecho: 30°, el estándar de los juegos de Quest. */
+const TURN_STEP = Math.PI / 6;
 
 /**
  * Zona muerta del stick y reescalado: fuera de la zona muerta la respuesta
@@ -114,6 +116,11 @@ export class XRLocomotion {
   private stick: WebXRControllerComponent | null = null;
   /** Control izquierdo: sus ejes crudos sirven si el perfil no trae stick. */
   private left: WebXRInputSource | null = null;
+  /** Control derecho: el giro por pasos se lee de su gamepad crudo. */
+  private right: WebXRInputSource | null = null;
+  private rightOwner = '';
+  /** El stick derecho volvió al centro: el próximo empujón gira otra vez. */
+  private turnArmed = true;
   private stickOwner = '';
   private vx = 0;
   private vz = 0;
@@ -137,6 +144,10 @@ export class XRLocomotion {
   ) {
     this.addedObserver = xr.input.onControllerAddedObservable.add(this.bind);
     this.removedObserver = xr.input.onControllerRemovedObservable.add((source) => {
+      if (source.uniqueId === this.rightOwner) {
+        this.right = null;
+        this.rightOwner = '';
+      }
       if (source.uniqueId !== this.stickOwner) return;
       this.stick = null;
       this.left = null;
@@ -178,9 +189,9 @@ export class XRLocomotion {
     this.jumpPending = false;
   }
 
-  /** Altura de los pies y de la cabeza del último cuadro (para herramientas). */
-  get debug(): { feet: number; head: number } {
-    return { feet: this.feet, head: this.head };
+  /** Altura de los pies y de la cabeza del último cuadro, y si se puede caminar (para herramientas). */
+  get debug(): { feet: number; head: number; canWalk: boolean } {
+    return { feet: this.feet, head: this.head, canWalk: this.enabled };
   }
 
   dispose(): void {
@@ -189,11 +200,17 @@ export class XRLocomotion {
     this.xr.input.onControllerRemovedObservable.remove(this.removedObserver);
     this.stick = null;
     this.left = null;
+    this.right = null;
   }
 
   // ------------------------------------------------------------------ interno
 
   private bind = (source: WebXRInputSource): void => {
+    if (source.inputSource.handedness === 'right') {
+      this.right = source;
+      this.rightOwner = source.uniqueId;
+      return;
+    }
     if (source.inputSource.handedness !== 'left') return;
     this.left = source;
     this.stickOwner = source.uniqueId;
@@ -232,6 +249,36 @@ export class XRLocomotion {
       pressed ||= Boolean(pad.buttons[3]?.pressed);
     }
     return { x, y, pressed };
+  }
+
+  /**
+   * Giro por pasos de 30° con el stick derecho, leído del gamepad crudo como
+   * la caminata: si el perfil del navegador no expone el stick, el giro de
+   * Babylon no funcionaba (su ángulo queda en 0 en XRSetup). Con el stick
+   * hacia adelante o atrás no gira: ahí se apunta el teletransporte.
+   */
+  private snapTurn(cam: WebXRDefaultExperience['baseExperience']['camera']): void {
+    const pad = this.right?.inputSource.gamepad;
+    if (!pad) return;
+    let x = 0;
+    let y = 0;
+    let strongest = 0;
+    for (let i = 0; i + 1 < pad.axes.length; i += 2) {
+      const m = Math.hypot(pad.axes[i], pad.axes[i + 1]);
+      if (m > strongest) {
+        strongest = m;
+        x = pad.axes[i];
+        y = pad.axes[i + 1];
+      }
+    }
+    if (Math.abs(x) < 0.3) {
+      this.turnArmed = true;
+      return;
+    }
+    if (!this.turnArmed || Math.abs(x) < 0.7 || Math.abs(y) > 0.55) return;
+    this.turnArmed = false;
+    const angle = TURN_STEP * (x > 0 ? 1 : -1) * (this.scene.useRightHandedSystem ? -1 : 1);
+    cam.rotationQuaternion.multiplyInPlace(Quaternion.FromEulerAngles(0, angle, 0));
   }
 
   private readHead(): number {
@@ -274,6 +321,7 @@ export class XRLocomotion {
     let tx = 0;
     let tz = 0;
     let running = false;
+    if (this.enabled) this.snapTurn(cam);
     const st = this.enabled ? this.readStick() : null;
     if (st) {
       const s = shapeStick(st.x, st.y);

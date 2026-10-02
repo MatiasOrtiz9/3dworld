@@ -663,6 +663,34 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     él). La pantalla completa y el bloqueo horizontal se piden al
     LEVANTAR el dedo (con toque, `pointerdown` no cuenta como gesto).
 
+56. **En el visor nada traba la caminata ni exige puntería** (reportado con
+    el Quest puesto: "no puedo caminar y es raro interactuar con los profes"):
+    - Al entrar al visor desde el título se juega directo (`startInXR`):
+      antes aparecía un menú que había que apuntar con el láser, y la
+      caminata quedaba desactivada mientras estuviera abierto.
+    - Con un diálogo, cartel o actividad abiertos se puede caminar; sólo se
+      frena en las escenas guionadas (`modal === 'cutscene'`).
+    - Los botones se leen del gamepad crudo en los dos controles
+      (`pollXRButtons`, mapeo xr-standard: 0 gatillo, 4 A/X, 5 B/Y), sin
+      depender del puntero de Babylon. Gatillo: elige lo que apunta ese
+      control. A/X: sigue el diálogo, elige la primera opción si no se apunta
+      a ninguna, o habla con quien está señalado. B/Y: cierra carteles. Con
+      una sola opción (Continuar, Cerrar) cualquier botón la elige.
+      `GamePanel3D` tiene antirrebote de 300 ms: el gatillo llega también por
+      el puntero de Babylon en el mismo cuadro.
+    - Para señalar a alguien alcanza con mirarlo de cerca (la mirada es el
+      respaldo si ningún control apunta a nada), y el rayo acepta cualquier
+      parte del cuerpo, de la cadera a la cabeza.
+    - El giro por pasos de 30° lo hace `XRLocomotion` leyendo el gamepad
+      crudo del control derecho (el de Babylon queda en 0 grados): dependía
+      de que el perfil del navegador expusiera el stick.
+    - En el emulador IWER la cámara no respeta el espacio de referencia
+      desplazado: la caminata calcula la velocidad (`__xr().motion` = 1) y
+      escribe la posición, pero el emulador la pisa. En el visor real ese
+      mecanismo es el mismo de la teletransportación de Babylon.
+      `tools/test-vr.mjs` prueba el resto con botones emulados (arranque sin
+      menú, caminata habilitada, diálogo completo sólo con A/X).
+
 ---
 
 ## 6. Estado actual

@@ -22,7 +22,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const positional = process.argv.slice(2).filter((a) => !a.startsWith('--'));
-// Con título: al entrar al visor tiene que aparecer el menú del juego delante.
+// Con título: entrar al visor desde ahí tiene que arrancar la partida sola.
 const baseUrl = positional[0] ?? 'http://localhost:5190/?seed=42';
 const url = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'titulo=1&libre=0&hud=1';
 const shotDir = positional[1] ?? 'shots';
@@ -168,30 +168,48 @@ check(
 );
 check('no aparece dentro de un muro', spawn.solid === false);
 
-const welcome = await page.evaluate(() => {
-  const s = window.__scene;
-  const panel = s.getMeshByName('gamePanel');
-  if (!panel?.isEnabled()) return null;
-  const cam = s.activeCamera;
-  const to = panel.getAbsolutePosition().subtract(cam.position);
-  const dist = to.length();
-  const yaw = cam.rotationQuaternion.toEulerAngles().y;
-  const fwd = { x: Math.sin(yaw), z: Math.cos(yaw) };
-  const cos = (to.x * fwd.x + to.z * fwd.z) / Math.hypot(to.x, to.z);
-  return { dist, angle: (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI };
-});
-check(
-  'el menú del juego queda delante, a distancia de lectura',
-  welcome !== null && welcome.dist > 0.8 && welcome.dist < 2.6 && welcome.angle < 30,
-  welcome ? `${fmt(welcome.dist)} m · ${fmt(welcome.angle, 0)}°` : 'no visible',
-);
+// Desde el título, entrar al visor arranca la partida sola: antes aparecía un
+// menú que había que apuntar con el láser, y si el clic no entraba el jugador
+// quedaba quieto sin poder caminar (reportado con el visor puesto).
+const started = await page
+  .waitForFunction(() => window.__director() && !window.__director().atTitle && window.__director().modal === null, {
+    timeout: 15000,
+    polling: 200,
+  })
+  .then(() => true)
+  .catch(() => false);
+check('al entrar al visor el juego arranca solo, sin menú que apuntar', started);
+check('apenas empieza se puede caminar', (await page.evaluate(() => window.__xr()?.canWalk)) === true);
 
-// Se empieza la partida como lo haría el gatillo sobre "Comenzar": con el menú
-// abierto la caminata está pausada a propósito (leer en movimiento marea).
-await page.evaluate(() => window.__director()?.resume(true));
-await sleep(2500);
-const paused = await page.evaluate(() => window.__director()?.modal ?? null);
-check('al empezar, el juego deja caminar', paused === null, String(paused));
+// Hablar con Rubén sólo con botones del control (el camino nuevo, que no
+// depende del puntero de Babylon): la A avanza cada línea y elige la primera
+// opción; durante el diálogo se puede seguir caminando.
+const press = async (hand, button) => {
+  await page.evaluate((h, b) => window.__xrDevice.controllers[h].updateButtonValue(b, 1), hand, button);
+  await sleep(150);
+  await page.evaluate((h, b) => window.__xrDevice.controllers[h].updateButtonValue(b, 0), hand, button);
+  await sleep(450);
+};
+await page.evaluate(() => void window.__director().talk('ruben'));
+await sleep(700);
+const opened = await page.evaluate(() => ({
+  modal: window.__director().modal,
+  panel: Boolean(window.__scene.getMeshByName('gamePanel')?.isEnabled()),
+  canWalk: window.__xr()?.canWalk,
+}));
+check('el diálogo con Rubén se abre en un panel del visor', opened.modal === 'dialogue' && opened.panel, JSON.stringify(opened));
+check('con un diálogo abierto se puede seguir caminando', opened.canWalk === true);
+let presses = 0;
+for (; presses < 20; presses++) {
+  if ((await page.evaluate(() => window.__director().modal)) !== 'dialogue') break;
+  await press(presses % 2 ? 'left' : 'right', presses % 2 ? 'x-button' : 'a-button');
+}
+const after = await page.evaluate(() => ({ modal: window.__director().modal, done: window.__director().engine.data.done.length }));
+check(
+  'con A/X (sin apuntar) se avanza el diálogo hasta el final',
+  after.modal !== 'dialogue' && after.done > 0,
+  `${presses} botones · ${JSON.stringify(after)}`,
+);
 
 const controllers = await page.evaluate(() => {
   const s = window.__scene;

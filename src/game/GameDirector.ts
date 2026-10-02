@@ -479,6 +479,7 @@ export class GameDirector {
     this.panel?.update(dt);
     if (this.inXR) this.keepPanelInView(dt);
     this.runTimers();
+    this.pollXRButtons();
 
     if (this.mode === 'title') {
       this.titleCamera(dt);
@@ -1084,11 +1085,17 @@ export class GameDirector {
     }
     let f: Candidate | null = null;
     if (this.inXR) {
-      const src = this.pointerController();
-      if (src) {
+      // El control que tiene el láser primero, después el otro; si ninguno
+      // apunta a nada, alcanza con mirar a quien está cerca (como en la
+      // computadora): hablar con un profe no exige puntería.
+      const first = this.pointerController();
+      const sources = [first, ...(this.xr?.input.controllers ?? []).filter((c) => c !== first)];
+      for (const src of sources) {
+        if (!src || f) continue;
         src.getWorldPointerRayToRef(this.ray);
         f = focusByRay(this.candidates, this.ray.origin, this.ray.direction, feet);
       }
+      if (!f) f = focusByGaze(this.candidates, eye, this.player.forward(), feet, (c) => this.occluded(c, feet));
       this.updateProxies();
     } else if (this.deps.canInteract?.() ?? true) {
       const dir = this.player.forward();
@@ -1128,7 +1135,7 @@ export class GameDirector {
     const { verb, target, locked } = this.describe(f.key);
     if (this.inXR) {
       this.hud.setPrompt(null);
-      this.panel?.setLabel(target, `Gatillo · ${verb}`, { x: f.x, y: f.y + 0.75, z: f.z });
+      this.panel?.setLabel(target, `Gatillo o A · ${verb}`, { x: f.x, y: f.y + 0.75, z: f.z });
     } else {
       this.hud.setPrompt({ verb, target, locked }, () => this.interact(f.key));
     }
@@ -1992,8 +1999,11 @@ export class GameDirector {
     } catch {
       // Jugador no disponible.
     }
-    // En el visor, con un panel abierto no se camina: leer en movimiento marea.
-    this.xrControls?.setLocomotionEnabled(!paused);
+    // En el visor la caminata nunca queda trabada por un panel abierto: si el
+    // clic no entraba, el jugador quedaba quieto sin poder cerrarlo (lo que
+    // se reportó con el visor puesto). Sólo se frena en las escenas guionadas,
+    // cuando la historia mueve al jugador.
+    this.xrControls?.setLocomotionEnabled(this.modal !== 'cutscene');
   }
 
   private wait(seconds: number): Promise<void> {
@@ -2060,7 +2070,7 @@ export class GameDirector {
       // Al entrar, el visor reubica al jugador en este mismo cuadro: el panel
       // se ubica después de dibujarlo, cuando la cámara ya está en su lugar.
       this.scene.onAfterRenderObservable.addOnce(() => {
-        if (this.mode === 'title') this.showXRMenu();
+        if (this.mode === 'title') this.startInXR();
         else if (this.shown) this.present(true);
       });
     } else {
@@ -2103,30 +2113,55 @@ export class GameDirector {
   }
 
   /** Inicio dentro del visor: el título HTML no existe ahí. */
-  private showXRMenu(): void {
-    if (!this.panel || !this.xr) return;
+  /**
+   * Al entrar al visor desde el título se juega directo (continúa la partida
+   * guardada o empieza una nueva): antes aparecía un menú que había que
+   * apuntar con el láser, y con el clic sin entrar el jugador quedaba quieto.
+   */
+  private startInXR(): void {
     this.hud.hideTitle();
-    this.xrMenu = true;
-    this.applyPause();
-    const has = this.engine.data.done.length > 0;
-    const cam = this.xr.baseExperience.camera;
-    const f = cam.getDirection(new Vector3(0, 0, 1));
-    this.panel.place(cam.globalPosition, { x: f.x, z: f.z });
-    const buttons = has ? ['Continuar', 'Nueva partida'] : ['Comenzar'];
-    this.panel.show(
-      {
-        kind: 'menu',
-        kicker: 'Escuela CIMDIP & Miguel Cané',
-        title: 'Recorrido 40',
-        text: 'Te eligieron para armar el recorrido de los 40 años. Stick izquierdo: caminar. Stick derecho: girar y saltar. Apuntá con el láser y apretá el gatillo para hablar y usar objetos.',
-        buttons,
-      },
-      (i) => {
-        this.panel?.hide();
-        this.xrMenu = false;
-        if (has && i === 0) this.resume(true);
-        else this.newGame();
-      },
-    );
+    this.xrMenu = false;
+    this.resume(true);
+    this.after(5, () => this.vrToast('Controles', 'Stick izq.: caminar · A o gatillo: hablar, seguir y elegir'));
+  }
+
+  /** Botones del visor del cuadro anterior, por control (gatillo, A/X, B/Y). */
+  private readonly xrButtons = new Map<string, boolean[]>();
+
+  /**
+   * Botones leídos del gamepad crudo (mapeo xr-standard: 0 gatillo, 4 A/X,
+   * 5 B/Y), en los dos controles. No dependen del perfil del navegador ni del
+   * puntero de Babylon, que en el Quest no siempre entregaba el clic.
+   */
+  private pollXRButtons(): void {
+    if (!this.inXR || !this.xr) return;
+    for (const c of this.xr.input.controllers) {
+      const pad = c.inputSource.gamepad;
+      if (!pad) continue;
+      const now = [0, 4, 5].map((i) => Boolean(pad.buttons[i]?.pressed));
+      const before = this.xrButtons.get(c.uniqueId) ?? [false, false, false];
+      this.xrButtons.set(c.uniqueId, now);
+      if (now[0] && !before[0]) this.xrPress('trigger', c);
+      if (now[1] && !before[1]) this.xrPress('primary', c);
+      if (now[2] && !before[2]) this.xrPress('secondary', c);
+    }
+  }
+
+  private xrPress(kind: 'trigger' | 'primary' | 'secondary', c: WebXRInputSource): void {
+    if (this.mode !== 'play') return;
+    const panel = this.panel;
+    if (panel?.visible) {
+      if (kind === 'secondary') {
+        panel.cancel();
+        return;
+      }
+      // La opción a la que apunta ESTE control; si no apunta al panel y hay
+      // una sola (Continuar, Cerrar), cualquier botón la elige.
+      c.getWorldPointerRayToRef(this.ray);
+      if (panel.clickRay(this.ray) || panel.pickSingle()) return;
+      if (kind === 'primary') panel.pickFirstChoice();
+      return;
+    }
+    if (kind !== 'secondary' && this.modal === null && this.focus) this.interact(this.focus.key);
   }
 }

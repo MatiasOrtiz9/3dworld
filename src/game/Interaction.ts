@@ -67,17 +67,28 @@ export function focusByRay(cands: readonly Candidate[], origin: V3, dir: V3, fee
     if (Math.abs(feet.y - c.baseY) > 1.3) continue;
     const dPlan = Math.hypot(c.x - feet.x, c.z - feet.z);
     if (dPlan - c.radius * 0.5 > c.range * reach) continue;
-    const vx = c.x - origin.x;
-    const vy = c.y - origin.y;
-    const vz = c.z - origin.z;
-    const t = vx * dx + vy * dy + vz * dz;
-    if (t < 0) continue;
-    const px = vx - dx * t;
-    const py = vy - dy * t;
-    const pz = vz - dz * t;
-    const miss = Math.hypot(px, py, pz);
-    if (miss > c.radius + 0.22) continue;
-    const score = miss / (c.radius + 0.22) + t * 0.05;
+    // A una persona se le apunta a cualquier parte del cuerpo (de la cadera
+    // a la cabeza), no a un punto del pecho: con el control en la mano, el
+    // rayo casi nunca pasaba a menos de medio metro de ese punto.
+    const person = c.key.startsWith('npc:');
+    const ys = person ? [c.y - 0.75, c.y - 0.35, c.y, c.y + 0.25] : [c.y];
+    const tol = c.radius + (person ? 0.3 : 0.22);
+    let miss = Infinity;
+    let t = -1;
+    for (const y of ys) {
+      const vx = c.x - origin.x;
+      const vy = y - origin.y;
+      const vz = c.z - origin.z;
+      const tt = vx * dx + vy * dy + vz * dz;
+      if (tt < 0) continue;
+      const m = Math.hypot(vx - dx * tt, vy - dy * tt, vz - dz * tt);
+      if (m < miss) {
+        miss = m;
+        t = tt;
+      }
+    }
+    if (t < 0 || miss > tol) continue;
+    const score = miss / tol + t * 0.05;
     if (score < bestScore) {
       best = c;
       bestScore = score;

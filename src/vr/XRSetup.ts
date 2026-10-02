@@ -42,7 +42,7 @@ export interface XRControls {
   /** Para al usuario en `eye` (x, z) mirando hacia `look`; `feetY` elige el piso. */
   placeAt(eye: Vector3, look: Vector3, feetY?: number): void;
   /** Estado interno para herramientas de verificación. */
-  debug(): { feet: number; head: number; motion: number };
+  debug(): { feet: number; head: number; motion: number; canWalk: boolean };
   dispose(): void;
 }
 
@@ -148,7 +148,10 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
   teleport.parabolicRayEnabled = true; // parábola: se lee mejor que el rayo recto
   teleport.straightRayEnabled = false;
   teleport.parabolicCheckRadius = 6;
-  teleport.rotationAngle = Math.PI / 6; // giro por pasos de 30° a los costados
+  // El giro por pasos (30°) lo hace XRLocomotion leyendo el gamepad crudo:
+  // el de Babylon dependía de que el perfil expusiera el stick. Acá queda en 0
+  // para que no gire dos veces cuando el perfil sí lo expone.
+  teleport.rotationAngle = 0;
   // Llegar mirando hacia donde se miraba. Con esto activo, el stick al volver
   // al centro pasaba por posiciones diagonales y se aterrizaba girado al azar.
   teleport.rotationEnabled = false;

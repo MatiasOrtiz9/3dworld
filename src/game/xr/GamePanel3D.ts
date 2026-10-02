@@ -5,6 +5,7 @@ import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTextur
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
 import type { Vector3 } from '@babylonjs/core/Maths/math.vector';
+import type { Ray } from '@babylonjs/core/Culling/ray';
 import { PointerEventTypes, type PointerInfo } from '@babylonjs/core/Events/pointerEvents';
 import type { Observer } from '@babylonjs/core/Misc/observable';
 import type { ActivityView } from '../activities/types';
@@ -58,6 +59,10 @@ export class GamePanel3D {
   private readonly pointer: Observer<PointerInfo>;
   private zones: Zone[] = [];
   private onPick: ((i: number) => void) | null = null;
+  /** Qué muestra el panel ahora (B/Y sólo cierra carteles). */
+  private kind: PanelModel['kind'] | null = null;
+  /** Antirrebote: el gatillo puede llegar por dos caminos en el mismo cuadro. */
+  private lastPickAt = 0;
   private labelText = '';
   private toastLeft = 0;
 
@@ -151,6 +156,7 @@ export class GamePanel3D {
 
   show(model: PanelModel, onPick: (i: number) => void): void {
     this.onPick = onPick;
+    this.kind = model.kind;
     const ctx = this.texture.getContext() as unknown as CanvasRenderingContext2D;
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = 'rgba(12,22,20,0.97)';
@@ -191,6 +197,59 @@ export class GamePanel3D {
     this.panel.setEnabled(false);
     this.zones = [];
     this.onPick = null;
+    this.kind = null;
+  }
+
+  /**
+   * Clic con el rayo de un control (los botones del visor, sin depender del
+   * puntero de Babylon): true si cayó sobre una opción del panel.
+   */
+  clickRay(ray: Ray): boolean {
+    if (!this.visible) return false;
+    const pick = ray.intersectsMesh(this.panel);
+    if (!pick.hit) return false;
+    const zone = this.zoneAt(pick.getTextureCoordinates());
+    if (zone) this.fire(zone.index);
+    return Boolean(zone);
+  }
+
+  /** Con una sola opción (Continuar, Cerrar, Comenzar), cualquier botón la elige sin apuntar. */
+  pickSingle(): boolean {
+    if (!this.visible || this.zones.length !== 1) return false;
+    this.fire(this.zones[0].index);
+    return true;
+  }
+
+  /**
+   * A/X en un diálogo con opciones y sin apuntar: la primera (la que sigue la
+   * historia). Con el gatillo sobre un botón se elige cualquiera.
+   */
+  pickFirstChoice(): boolean {
+    if (!this.visible || this.kind !== 'line' || this.zones.length === 0) return false;
+    this.fire(this.zones[0].index);
+    return true;
+  }
+
+  /** B/Y: cierra los carteles informativos (los diálogos y actividades se responden). */
+  cancel(): boolean {
+    if (!this.visible || this.kind !== 'card' || this.zones.length === 0) return false;
+    this.fire(this.zones[0].index);
+    return true;
+  }
+
+  private fire(index: number): void {
+    const now = performance.now();
+    if (now - this.lastPickAt < 300) return;
+    this.lastPickAt = now;
+    this.onPick?.(index);
+  }
+
+  private zoneAt(uv: { x: number; y: number } | null): Zone | undefined {
+    if (!uv) return undefined;
+    // Con invertY (por defecto) la fila 0 del canvas corresponde a v = 1.
+    const px = uv.x * W;
+    const py = (1 - uv.y) * H;
+    return this.zones.find((z) => px >= z.x0 && px <= z.x1 && py >= z.y0 && py <= z.y1);
   }
 
   // ===================================================================== cartel
@@ -413,12 +472,7 @@ export class GamePanel3D {
     if (info.type !== PointerEventTypes.POINTERDOWN || !this.visible) return;
     const pick = info.pickInfo;
     if (!pick?.hit || pick.pickedMesh !== this.panel) return;
-    const uv = pick.getTextureCoordinates();
-    if (!uv) return;
-    // Con invertY (por defecto) la fila 0 del canvas corresponde a v = 1.
-    const px = uv.x * W;
-    const py = (1 - uv.y) * H;
-    const zone = this.zones.find((z) => px >= z.x0 && px <= z.x1 && py >= z.y0 && py <= z.y1);
-    if (zone) this.onPick?.(zone.index);
+    const zone = this.zoneAt(pick.getTextureCoordinates());
+    if (zone) this.fire(zone.index);
   };
 }
