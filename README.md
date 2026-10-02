@@ -307,13 +307,27 @@ Se documentan porque cada uno costó una iteración y son trampas reutilizables.
 
 ## VR
 
-Configurado pero **sin probar en visor**: teletransporte con arco parabólico,
-giro por pasos de 30°, punteros, seguimiento de manos, rejilla de confort. El
-post-procesado se desactiva en VR (son pasadas de pantalla completa por ojo).
+Probado en el emulador de Quest 3 (`node tools/test-vr.mjs`); la caminata se
+ajustó con pruebas en el visor. Controles:
+
+- **Stick izquierdo:** caminar con colisión y pisos (apretarlo corre). Si el
+  navegador no expone el stick como componente, se leen los ejes crudos del
+  gamepad.
+- **Stick derecho:** girar de a 30° a los costados, teletransporte hacia
+  adelante (arco hasta el destino) y un paso atrás hacia abajo.
+- **Gatillo:** elegir con el láser (hablar, usar, botones del panel). Empieza
+  en la mano derecha y pasa a la otra al apretar su gatillo.
+- **Muñeca:** dónde estás y el objetivo actual. Al moverse aparece una viñeta
+  de confort. El post-procesado se desactiva en VR (son pasadas de pantalla
+  completa por ojo).
+
+Para probar localmente, ejecutá `npm run dev:vr`. El servidor HTTPS escucha en
+el puerto `5182`. Con la PC y el Quest en la misma Wi-Fi, abrí en Meta Quest
+Browser `https://IP-DE-LA-PC:5182/` y pulsá **Entrar en VR**. Si WebXR falla,
+el motivo aparece en pantalla (en el visor no hay consola a mano).
 
 > **WebXR exige contexto seguro.** Desde un visor, `http://192.168.x.x` no
-> alcanza: hay que servir por HTTPS, o usar `adb reverse tcp:5173 tcp:5173` para
-> que el visor lo vea como `localhost`.
+> alcanza: en desarrollo usá `npm run dev:vr`, que sirve la página por HTTPS.
 
 ## Licencias
 

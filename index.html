@@ -324,6 +324,15 @@
       /* ---------- métricas ---------- */
       #stats { position: fixed; z-index: 21; left: 1rem; bottom: calc(1rem + var(--safe-b)); font-size: 0.68rem; letter-spacing: 0.05em; line-height: 1.5; color: rgba(238,246,242,0.7); font-variant-numeric: tabular-nums; pointer-events: none; display: none; text-shadow: 0 1px 2px #000; }
       body.metrics #stats { display: block; }
+      /* Por qué no se pudo entrar en VR: en el visor no hay consola a mano. */
+      #vr-status {
+        position: fixed; z-index: 60; left: 1rem; bottom: calc(4.2rem + var(--safe-b));
+        max-width: min(680px, calc(100vw - 2rem)); padding: 0.65rem 0.85rem;
+        border: 1px solid rgba(242,193,78,0.65); border-radius: 10px;
+        background: rgba(13,27,24,0.94); color: #eef6f2;
+        font-size: 0.78rem; line-height: 1.45; overflow-wrap: anywhere;
+      }
+      #vr-status[hidden] { display: none; }
 
       @media (max-width: 640px) {
         #objective { width: calc(100vw - 2rem - 130px); }
@@ -390,6 +399,7 @@
       </div>
     </div>
     <div id="stats"></div>
+    <div id="vr-status" role="status" aria-live="polite" hidden></div>
 
     <!-- ==================== menú de pausa ==================== -->
     <div id="pause" class="hidden" role="dialog" aria-modal="true" aria-label="Menú">

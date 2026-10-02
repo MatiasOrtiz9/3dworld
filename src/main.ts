@@ -17,7 +17,7 @@ import { Life } from './world/Life';
 import { Population } from './world/people/Population';
 import { Soundscape } from './audio/Soundscape';
 import { acousticsAtWorld } from './audio/schoolAcoustics';
-import { isVrSupported } from './vr/isVrSupported';
+import { isHeadsetBrowser, isVrSupported } from './vr/isVrSupported';
 import type { XRControls } from './vr/XRSetup';
 import { seedFromString } from './utils/rng';
 import { Hud } from './ui/Hud';
@@ -40,6 +40,15 @@ const btnMode = document.getElementById('btn-mode') as HTMLButtonElement;
 const btnSound = document.getElementById('btn-sound') as HTMLButtonElement;
 const helpWalk = document.getElementById('help-walk') as HTMLDivElement;
 const helpFly = document.getElementById('help-fly') as HTMLDivElement;
+const vrStatus = document.getElementById('vr-status') as HTMLDivElement | null;
+
+/** Por qué no se pudo entrar en VR, a la vista: en el visor no hay consola. */
+const reportVrProblem = (message: string): void => {
+  if (!vrStatus) return;
+  vrStatus.hidden = false;
+  vrStatus.textContent = message;
+};
+const errorText = (err: unknown): string => (err instanceof Error ? `${err.name}: ${err.message}` : String(err));
 
 const progress = (pct: number, msg?: string) => {
   bootBar.style.width = `${pct}%`;
@@ -551,6 +560,8 @@ async function start(): Promise<void> {
           // clic, y reconstruir la escuela tardó demasiado. Ya quedó en perfil
           // VR, así que el segundo intento entra de inmediato.
           console.warn('[cimdip] No se pudo entrar en VR:', err);
+          btnVr.title = errorText(err);
+          reportVrProblem(`WebXR no pudo iniciar la sesión: ${errorText(err)}`);
           vrIdle('Tocá de nuevo para entrar');
         } finally {
           boot.classList.add('hidden');
@@ -560,11 +571,20 @@ async function start(): Promise<void> {
     } catch (err) {
       console.warn('[cimdip] No se pudo inicializar WebXR:', err);
       btnVr.textContent = 'VR no disponible';
+      btnVr.title = errorText(err);
+      reportVrProblem(`WebXR detectado, pero no se pudo preparar Babylon XR: ${errorText(err)}`);
     }
   } else {
     btnVr.textContent = 'VR no disponible';
     btnVr.title =
       'WebXR necesita un visor y un contexto seguro (HTTPS o localhost). En escritorio podés recorrer la escuela con WASD.';
+    // En el visor sí se explica por qué (en una computadora sin visor es lo normal).
+    if (isHeadsetBrowser()) {
+      const reason = window.isSecureContext
+        ? 'navigator.xr no existe en esta pestaña del navegador del visor.'
+        : 'la página no está en un contexto seguro: WebXR requiere HTTPS confiable o localhost.';
+      reportVrProblem(`WebXR no detectado: ${reason} Origen: ${location.origin}`);
+    }
   }
 }
 

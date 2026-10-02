@@ -1186,15 +1186,18 @@ export class GameDirector {
   private onPointer = (info: PointerInfo): void => {
     if (!this.inXR || info.type !== PointerEventTypes.POINTERDOWN) return;
     if (this.panel?.visible) return;
+    // Primero el foco: lo calcula la geometría con el rayo del control y es
+    // lo que el jugador ve rotulado. En el Quest Browser el índice de thin
+    // instance del picking no siempre es fiable (comprobado en el visor).
+    if (this.focus) {
+      this.interact(this.focus.key);
+      return;
+    }
     const pick = info.pickInfo;
     if (pick?.hit && pick.pickedMesh === this.markers.proxyMesh && pick.thinInstanceIndex >= 0) {
       const key = this.proxyKeys[pick.thinInstanceIndex];
-      if (key) {
-        this.interact(key);
-        return;
-      }
+      if (key) this.interact(key);
     }
-    if (this.focus) this.interact(this.focus.key);
   };
 
   private pointerController(): WebXRInputSource | null {

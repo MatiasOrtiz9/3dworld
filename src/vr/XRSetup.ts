@@ -103,6 +103,13 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
     disableHandTracking: true,
     inputOptions: { doNotLoadControllerMeshes: true },
   });
+  // En el Quest Browser Babylon llegó a devolver una experiencia a medias sin
+  // avisar: mejor un error claro (se muestra en pantalla) que un botón muerto.
+  if (!experience.baseExperience || !experience.input) {
+    throw new Error(
+      'Babylon devolvió una experiencia XR incompleta (baseExperience/input ausentes). Revisá la consola del navegador para ver el error interno.',
+    );
+  }
   const base = experience.baseExperience;
   const features = base.featuresManager;
   const cam = base.camera;

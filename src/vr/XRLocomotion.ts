@@ -112,6 +112,8 @@ export class XRLocomotion {
   motion = 0;
   private enabled = true;
   private stick: WebXRControllerComponent | null = null;
+  /** Control izquierdo: sus ejes crudos sirven si el perfil no trae stick. */
+  private left: WebXRInputSource | null = null;
   private stickOwner = '';
   private vx = 0;
   private vz = 0;
@@ -137,6 +139,7 @@ export class XRLocomotion {
     this.removedObserver = xr.input.onControllerRemovedObservable.add((source) => {
       if (source.uniqueId !== this.stickOwner) return;
       this.stick = null;
+      this.left = null;
       this.stickOwner = '';
     });
     for (const source of xr.input.controllers) this.bind(source);
@@ -185,21 +188,51 @@ export class XRLocomotion {
     this.xr.input.onControllerAddedObservable.remove(this.addedObserver);
     this.xr.input.onControllerRemovedObservable.remove(this.removedObserver);
     this.stick = null;
+    this.left = null;
   }
 
   // ------------------------------------------------------------------ interno
 
   private bind = (source: WebXRInputSource): void => {
     if (source.inputSource.handedness !== 'left') return;
+    this.left = source;
+    this.stickOwner = source.uniqueId;
     const attach = (): void => {
       const stick = source.motionController?.getComponentOfType(WebXRControllerComponent.THUMBSTICK_TYPE);
-      if (!stick) return; // mano sin control: no hay stick
-      this.stick = stick;
-      this.stickOwner = source.uniqueId;
+      // Sin componente de stick (mano sin control, o un perfil del navegador
+      // que no lo expone) se leen los ejes crudos del gamepad (`readStick`).
+      if (stick) this.stick = stick;
     };
     if (source.motionController) attach();
     else source.onMotionControllerInitObservable.addOnce(attach);
   };
+
+  /**
+   * Stick izquierdo: el componente de Babylon o, si el perfil del navegador no
+   * lo expone (pasó en el Quest Browser: sin esto no se caminaba), el par de
+   * ejes más activo del gamepad XR, con el botón del stick (el 3 del mapeo
+   * xr-standard) para correr.
+   */
+  private readStick(): { x: number; y: number; pressed: boolean } | null {
+    const pad = this.left?.inputSource.gamepad;
+    if (!this.stick && !pad) return null;
+    let x = this.stick?.axes.x ?? 0;
+    let y = this.stick?.axes.y ?? 0;
+    let pressed = this.stick?.pressed ?? false;
+    if (pad && Math.hypot(x, y) < 0.16) {
+      let strongest = 0;
+      for (let i = 0; i + 1 < pad.axes.length; i += 2) {
+        const m = Math.hypot(pad.axes[i], pad.axes[i + 1]);
+        if (m > strongest) {
+          strongest = m;
+          x = pad.axes[i];
+          y = pad.axes[i + 1];
+        }
+      }
+      pressed ||= Boolean(pad.buttons[3]?.pressed);
+    }
+    return { x, y, pressed };
+  }
 
   private readHead(): number {
     const h = this.xr.baseExperience.camera.realWorldHeight;
@@ -241,10 +274,11 @@ export class XRLocomotion {
     let tx = 0;
     let tz = 0;
     let running = false;
-    if (this.enabled && this.stick) {
-      const s = shapeStick(this.stick.axes.x, this.stick.axes.y);
+    const st = this.enabled ? this.readStick() : null;
+    if (st) {
+      const s = shapeStick(st.x, st.y);
       if (s.x !== 0 || s.y !== 0) {
-        running = this.stick.pressed;
+        running = st.pressed;
         const speed = running ? RUN_SPEED : WALK_SPEED;
         cam.rotationQuaternion.toEulerAnglesToRef(this.euler);
         const sin = Math.sin(this.euler.y);
