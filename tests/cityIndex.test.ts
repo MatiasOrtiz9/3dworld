@@ -62,14 +62,6 @@ describe('CityIndex.isSolid', () => {
     expect(index.isSolid(0, z)).toBe(false);
   });
 
-  it('parques y huertas solares se pueden atravesar caminando', () => {
-    for (const b of plan.blocks) {
-      if (b.kind === 'park' || b.kind === 'energy' || b.kind === 'water') {
-        expect(index.isSolid(b.cx, b.cz), `${b.kind} en ${b.gx},${b.gz}`).toBe(false);
-      }
-    }
-  });
-
   it('la calle nunca bloquea', () => {
     const pitch = plan.blockSize + plan.streetWidth;
     for (let i = -3; i <= 3; i++) {
@@ -77,27 +69,55 @@ describe('CityIndex.isSolid', () => {
     }
   });
 
-  it('el patio interior de una manzana de vivienda es transitable', () => {
+  it('la vivienda perimetral es maciza entera (el patio está cerrado) y la vereda no', () => {
     const res = require_(plan.blocks.find((b) => b.kind === 'residential'), 'residential');
-    // El centro de la manzana perimetral es el patio.
-    expect(index.isSolid(res.cx, res.cz)).toBe(false);
-    // El perímetro construido, no.
-    expect(index.isSolid(res.cx + res.width / 2 - 2, res.cz)).toBe(true);
+    expect(res.barDepth).toBeGreaterThan(10);
+    expect(index.isSolid(res.cx, res.cz - res.depth / 2 + 3)).toBe(true);
+    // El patio no tiene pasaje en planta baja: macizo, para que ni el
+    // teletransporte ni el aterrizaje desde el vuelo dejen a nadie encerrado.
+    expect(index.isSolid(res.cx, res.cz)).toBe(true);
+    expect(index.isPedestrianBlocked(res.cx, res.cz)).toBe(true);
+    expect(index.isSolid(res.cx, res.cz - res.depth / 2 - 2)).toBe(false);
   });
 
-  it('el fuste de una torre bloquea y su entorno inmediato no', () => {
+  it('la torre bloquea exactamente su basamento', () => {
     const tower = require_(plan.blocks.find((b) => b.kind === 'tower'), 'tower');
+    const half = (tower.footprint! * 1.65) / 2;
     expect(index.isSolid(tower.cx, tower.cz)).toBe(true);
-    expect(index.isSolid(tower.cx + 20, tower.cz + 20)).toBe(false);
+    expect(index.isSolid(tower.cx + half - 0.1, tower.cz)).toBe(true);
+    expect(index.isSolid(tower.cx + half + 0.4, tower.cz)).toBe(false);
+    expect(index.isSolid(tower.cx + tower.width / 2 - 1, tower.cz + tower.depth / 2 - 1)).toBe(false);
+  });
+
+  it('el mercado es una nave abierta: se camina sobre la plataforma entre columnas y puestos', () => {
+    const market = require_(plan.blocks.find((b) => b.kind === 'market'), 'market');
+    const w = market.width * 0.8;
+    const d = market.depth * 0.8;
+    const bays = Math.max(4, Math.round(w / 6));
+    // Una columna del pórtico es maciza.
+    expect(index.isSolid(market.cx + (0.5 / bays - 0.5) * w, market.cz + d / 2)).toBe(true);
+    // Los puestos son macizos.
+    for (const s of market.stalls!) expect(index.isSolid(s.x, s.z)).toBe(true);
+    // Hay lugar libre bajo la cubierta, y ahí el piso es la plataforma.
+    let free = 0;
+    for (let x = -w / 2 + 1; x < w / 2 - 1; x += 1) {
+      for (let z = -d / 2 + 1; z < d / 2 - 1; z += 1) {
+        if (!index.isSolid(market.cx + x, market.cz + z)) {
+          free++;
+          expect(index.groundHeight(market.cx + x, market.cz + z)).toBeCloseTo(0.25);
+        }
+      }
+    }
+    expect(free).toBeGreaterThan(600);
+    // Fuera de la plataforma, la vereda a cota cero.
+    expect(index.groundHeight(market.cx + w / 2 + 1, market.cz)).toBe(0);
   });
 });
 
 describe('CityIndex.groundHeight', () => {
-  it('el canal está hundido y el resto a cota cero', () => {
-    const water = require_(plan.blocks.find((b) => b.kind === 'water'), 'water');
-    expect(index.groundHeight(water.cx, water.cz)).toBeLessThan(0);
-    const park = require_(plan.blocks.find((b) => b.kind === 'park'), 'park');
-    expect(index.groundHeight(park.cx, park.cz)).toBe(0);
+  it('fuera de la escuela el terreno está a cota cero', () => {
+    const res = require_(plan.blocks.find((b) => b.kind === 'residential'), 'residential');
+    expect(index.groundHeight(res.cx, res.cz)).toBe(0);
   });
 });
 
@@ -129,12 +149,6 @@ describe('CityIndex.describe', () => {
     }
   });
 
-  it('la huerta solar genera más por m² de manzana que una vivienda', () => {
-    const energy = require_(plan.blocks.find((b) => b.kind === 'energy'), 'energy');
-    const res = require_(plan.blocks.find((b) => b.kind === 'residential'), 'residential');
-    expect(index.describe(energy).solarM2).toBeGreaterThan(index.describe(res).solarM2);
-  });
-
   it('la generación es coherente con la superficie de paneles', () => {
     // 1 m² ≈ 0,2 kW pico · 4,5 horas solares pico por día en Buenos Aires.
     for (const b of plan.blocks) {
@@ -162,24 +176,21 @@ describe('CityIndex.totals', () => {
     expect(t.blocks).toBe(plan.blocks.length);
   });
 
-  it('una ciudad de 81 manzanas da cifras de orden urbano plausible', () => {
+  it('el barrio da cifras de orden barrial plausibles', () => {
     const t = index.totals();
-    // Si estos rangos se rompen, algo cambió en las estimaciones y el panel de
-    // energía estaría mostrando números sin sentido.
-    expect(t.people).toBeGreaterThan(1000);
-    expect(t.people).toBeLessThan(60000);
-    expect(t.solarM2).toBeGreaterThan(5000);
+    // Diez manzanas y una torre alrededor de la escuela: miles de vecinos,
+    // no decenas de miles.
+    expect(t.people).toBeGreaterThan(500);
+    expect(t.people).toBeLessThan(20000);
   });
 });
 
 describe('CityIndex — consistencia con otras semillas', () => {
-  it('funciona con cualquier tamaño de grilla', () => {
-    for (const gridSize of [5, 7, 9, 11]) {
-      const p = generateCityPlan(123, { gridSize });
+  it('encuentra todas las manzanas con cualquier semilla', () => {
+    for (const seed of [1, 7, 123, 2050]) {
+      const p = generateCityPlan(seed);
       const idx = new CityIndex(p);
-      for (const b of p.blocks) {
-        expect(idx.blockAt(b.cx, b.cz), `grid ${gridSize}`).not.toBeNull();
-      }
+      for (const b of p.blocks) expect(idx.blockAt(b.cx, b.cz), `semilla ${seed}`).not.toBeNull();
     }
   });
 });

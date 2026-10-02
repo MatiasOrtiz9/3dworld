@@ -64,7 +64,7 @@ export class BuildingBuilder {
     const slabMat = this.mats.surface(PALETTE.concreteLight, 0.7, 0, 'concrete');
 
     // Manzana perimetral: cuatro barras alrededor de un patio.
-    const barDepth = this.rng.range(11, 14);
+    const barDepth = block.barDepth ?? this.rng.range(11, 14);
     // Cada barra sabe hacia qué calle da: ahí van la planta baja comercial y
     // los balcones. La cara interior, al patio, queda lisa a propósito.
     const sides: Array<{
@@ -409,7 +409,7 @@ export class BuildingBuilder {
   /** Torre alta con jardines en altura cada pocos pisos. */
   private tower(block: Block): void {
     const { cx, cz, height } = block;
-    const footprint = this.rng.range(17, 24);
+    const footprint = block.footprint ?? this.rng.range(17, 24);
     const floors = Math.round(height / FLOOR_H);
     const bodyMat = this.mats.surfaceVaried(this.rng.pick(FACADE_TONES), 0.72, 0, 'concreteXL');
     const slabMat = this.mats.surface(PALETTE.concreteLight, 0.68, 0, 'concrete');
@@ -598,12 +598,14 @@ export class BuildingBuilder {
     const topY = Math.min(floors, Math.floor((w - 4) / 2.8)) * FLOOR_H;
     this.roofSolar(cx, cz, w * 0.6, d * 0.6, topY);
     // Árboles pegados al edificio: difuminan el límite entre dentro y fuera.
-    for (let i = 0; i < 4; i++) {
-      this.nature.broadleaf(
-        cx + this.rng.range(-width / 2, width / 2),
-        cz + this.rng.range(-depth / 2, depth / 2),
-        this.rng.range(0.85, 1.2),
-      );
+    // Sólo en la franja entre el vidrio y la vereda: sorteados en toda la
+    // manzana, dos de cada tres caían adentro y la copa atravesaba la losa.
+    const out = (w / 2 + width / 2) / 2;
+    for (let side = 0; side < 4; side++) {
+      const along = this.rng.range(-width / 2 + 3, width / 2 - 3);
+      const tx = side < 2 ? cx + along : cx + (side === 2 ? -out : out);
+      const tz = side < 2 ? cz + (side === 0 ? -out : out) : cz + along;
+      this.nature.broadleaf(tx, tz, this.rng.range(0.7, 0.95));
     }
   }
 
@@ -684,11 +686,17 @@ export class BuildingBuilder {
       );
     }
 
-    // Puestos.
-    const stalls = this.rng.int(6, 11);
-    for (let i = 0; i < stalls; i++) {
-      const sx = cx + this.rng.range(-w / 2 + 2, w / 2 - 2);
-      const sz = cz + this.rng.range(-d / 2 + 2, d / 2 - 2);
+    // Puestos: los decide el plano (la colisión los conoce).
+    const stalls =
+      block.stalls ??
+      Array.from({ length: this.rng.int(6, 11) }, () => ({
+        x: cx + this.rng.range(-w / 2 + 2, w / 2 - 2),
+        z: cz + this.rng.range(-d / 2 + 2, d / 2 - 2),
+        w: this.rng.range(2, 3.4),
+        h: this.rng.range(2.1, 2.6),
+        d: this.rng.range(1.6, 2.4),
+      }));
+    for (const st of stalls) {
       this.farm.addBoxOnGround(
         this.mats.surfaceVaried(
           this.rng.pick([PALETTE.terracotta, PALETTE.sun, PALETTE.signal]),
@@ -697,11 +705,11 @@ export class BuildingBuilder {
           null,
           0.12,
         ),
-        sx,
-        sz,
-        this.rng.range(2, 3.4),
-        this.rng.range(2.1, 2.6),
-        this.rng.range(1.6, 2.4),
+        st.x,
+        st.z,
+        st.w,
+        st.h,
+        st.d,
         0.25,
       );
     }

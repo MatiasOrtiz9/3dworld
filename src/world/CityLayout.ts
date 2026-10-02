@@ -1,325 +1,234 @@
+/**
+ * El plano del barrio de la escuela.
+ *
+ * La experiencia gira entera alrededor de la Escuela CIMDIP & Miguel Cané:
+ * el mapa es la escuela en el centro y, del otro lado de cada calle que la
+ * rodea, UNA hilera de manzanas con los edificios de la ciudad 2050 (vivienda
+ * con terrazas verdes y patio, equipamiento cívico, mercado de madera) y una
+ * torre con jardines en altura en la esquina sureste. Más allá de esa hilera
+ * hay pasto, árboles y la niebla del horizonte.
+ *
+ * Datos puros: no importa nada del motor.
+ *
+ * Grilla de 5 × 5 manzanas cuadradas (así el índice espacial resuelve "en qué
+ * manzana estoy" con una división); sólo se pueblan las celdas alrededor del
+ * predio escolar:
+ *
+ *        gx:   0          1         2         3
+ *   gz 1    vivienda  mercado    cívico   vivienda    ← Lafinur (z = −pitch/2)
+ *   gz 2    vivienda  [ESCUELA: anexo + principal]  cívico
+ *   gz 3    TORRE     vivienda  vivienda   mercado    ← Laprida (z = +pitch/2)
+ *          ↑ Gral. Acha (x = −1,5 pitch)        ↑ calle oeste (x = +pitch/2)
+ *
+ * En este mundo el norte es −z y el este es −x (ver HANDOFF 19 y 25): el
+ * gimnasio (este) cae en el anexo, del lado de Gral. Acha, y la esquina de
+ * Miguel Cané y Laprida en la manzana principal. La torre queda en diagonal
+ * al gimnasio, cruzando Laprida y Gral. Acha: fuera de las vistas de la
+ * fachada (que miran al norte) para no aparecer detrás del portal; se la ve
+ * al llegar girando hacia el este, desde los patios y desde arriba.
+ */
 import { Rng } from '../utils/rng';
 
 export type BlockKind =
-  | 'park' // parque / bosque urbano
-  | 'water' // canal
-  | 'residential' // vivienda con terrazas verdes
-  | 'civic' // equipamiento bajo y ancho
-  | 'tower' // torre alta con jardines verticales
+  | 'civic' // el predio escolar (sus dos manzanas) y equipamiento bajo y ancho
+  | 'residential' // vivienda en manzana perimetral con terrazas verdes y patio
+  | 'tower' // torre alta con jardines en altura
   | 'market' // mercado cubierto, estructura de madera
-  | 'energy'; // huerta solar / turbinas
+  // Tipos que el barrio ya no genera; quedan para que el código que todavía
+  // los nombra compile (las casas bajas de `NeighborhoodBuilder`, la ciudad).
+  | 'houses'
+  | 'park'
+  | 'water'
+  | 'energy';
+
+/** Lados de una manzana, por el eje del mundo hacia el que miran. */
+export type BlockSide = 'xp' | 'xn' | 'zp' | 'zn';
 
 export interface Block {
-  /** Índice en la grilla. */
   gx: number;
   gz: number;
-  /** Centro en metros (mundo). */
   cx: number;
   cz: number;
-  /** Tamaño edificable de la manzana en metros. */
   width: number;
   depth: number;
   kind: BlockKind;
-  /** Distancia Chebyshev al centro, en manzanas. */
   ring: number;
-  /** Altura sugerida, en metros. */
   height: number;
-  /**
-   * Hito curado dentro de un plano que por lo demás puede regenerarse. La
-   * escuela ocupa DOS manzanas: la principal y su anexo al oeste, unidas sin la
-   * calle intermedia (ver `CityPlan.schoolSite`).
-   */
   landmark?: 'school' | 'schoolAnnex';
+  /** Casas (`houses`, sin uso hoy): lados con frente edificado. */
+  frontage?: BlockSide[];
+  /**
+   * Medidas estructurales decididas en el plano (no en el constructor): así
+   * son iguales en escritorio y en VR —el constructor gasta azar distinto
+   * según el detalle— y la colisión de `CityIndex` coincide exacto.
+   * Torre: lado del fuste (el basamento mide 1,65 veces esto).
+   */
+  footprint?: number;
+  /** Vivienda: profundidad de las cuatro barras alrededor del patio. */
+  barDepth?: number;
+  /** Mercado: puestos bajo la cubierta, en mundo (centro y medidas). */
+  stalls?: Array<{ x: number; z: number; w: number; h: number; d: number }>;
 }
 
 export interface Street {
-  /** Eje: 'x' corre este-oeste, 'z' corre norte-sur. */
   axis: 'x' | 'z';
-  /** Coordenada fija del eje de la calle. */
   at: number;
-  /** Ancho total. */
   width: number;
-  /** Si lleva vía de tranvía. */
   tram: boolean;
-  /** Tramos, a lo largo del eje, donde la calle no existe (predio escolar). */
   gaps?: Array<[number, number]>;
+  /** Tramo existente a lo largo de la calle; sin indicarlo, todo el mapa. */
+  span?: [number, number];
+  /** Nombre real, si es una de las calles de la escuela. */
+  name?: string;
 }
 
 export interface CityPlan {
   seed: number;
-  /** Manzanas de la grilla. Indexar por `gx`/`gz` con `gridSize`. */
   blocks: Block[];
   streets: Street[];
-  /** Manzanas por lado de la grilla de referencia. */
   gridSize: number;
-  /** Semiancho del terreno, en metros. */
   extent: number;
   blockSize: number;
   streetWidth: number;
-  /** Eje del canal, como recta z = slope * x + offset. */
+  /** Sin canal: se conserva el campo con ancho 0 para el código heredado. */
   canal: { slope: number; offset: number; halfWidth: number };
-  /**
-   * Predio de la escuela, en mundo: la manzana central y la de su oeste
-   * unidas en una sola, porque la planta real (~67 × 39 m) no entra en una
-   * manzana de la grilla. Laprida es la calle de su fachada, al sur.
-   */
   schoolSite?: { x0: number; x1: number; z0: number; z1: number };
 }
 
 export interface LayoutOptions {
-  /** Manzanas por lado (impar para que haya un centro exacto). */
+  /** Ignorado: el barrio tiene siempre el mismo tamaño (queda por compatibilidad). */
   gridSize?: number;
   blockSize?: number;
   streetWidth?: number;
 }
 
-/**
- * Genera el plano de la ciudad.
- *
- * Criterios de diseño urbano (deliberados, no arbitrarios):
- *
- *  - **La escuela manda.** Ocupa el centro de la ciudad (la manzana central y
- *    la de su oeste). Su fachada mira al sur, a Laprida; el canal corre
- *    siempre a sus espaldas, al norte.
- *  - **Altura en anillos.** Bajo en el centro (escala humana), alto en el
- *    anillo 2-3, y vuelve a bajar en el borde. Esto da un
- *    perfil legible desde cualquier punto y evita el "muro de torres".
- *  - **Un canal diagonal.** Rompe la rigidez de la grilla, da reflejos —que en
- *    VR leen muy bien— y crea bordes de parque naturales.
- *  - **El verde no es decoración.** Parques distribuidos, no relegados al borde.
- */
+/** Profundidad de la hilera de casas desde la línea municipal. */
+export const HOUSE_DEPTH = 14;
+
+/** Tamaño de la grilla del índice (la escuela en su centro). */
+const GRID = 5;
+
 export function generateCityPlan(seed: number, options: LayoutOptions = {}): CityPlan {
   const rng = new Rng(seed);
-  const gridSize = options.gridSize ?? 9;
   const blockSize = options.blockSize ?? 42;
   const streetWidth = options.streetWidth ?? 15;
-
   const pitch = blockSize + streetWidth;
-  const half = (gridSize - 1) / 2;
-  const extent = (gridSize * pitch) / 2;
+  const half = (GRID - 1) / 2;
+  const extent = (GRID * pitch) / 2;
 
-  // El canal cruza la ciudad en diagonal.
-  //
-  // El desplazamiento mínimo ya no existe para proteger la manzana central —de
-  // eso se encarga la precedencia de `ring === 0` en `classifyBlock`— sino por
-  // una razón puramente GEOMÉTRICA: si el eje del canal pasa demasiado cerca
-  // del centro, la lámina de agua se dibuja encima de esa manzana y el
-  // resultado se ve roto. El mínimo es la distancia a la que el borde del canal deja de tocar
-  // la manzana central.
-  //
-  // Una versión anterior usaba 1,5 manzanas de mínimo, que era mucho más de lo
-  // necesario, y como efecto no buscado empujaba el canal al borde: cruzaba
-  // 4,6 manzanas en vez de las 9-12 que corresponden a una diagonal sobre una
-  // grilla de 9x9. El canal había perdido la mitad de su presencia.
-  // Semiancho de 17-21 m (canal de 34-42 m).
-  //
-  // No es un número estético: se midió. Una manzana pasa a ser agua cuando su
-  // CENTRO cae dentro del semiancho, y los centros de una grilla de paso 57 m
-  // se agrupan a distancias de 1, 2, 4, 11, 13, 14, 16, 16, 19… y después
-  // saltan a 28. Con 14 m el canal tocaba 6 manzanas; con 20 llega a 9, que es
-  // el máximo útil — ensancharlo más no suma ninguna manzana hasta pasados los
-  // 28 m, y ahí ya sería un río, no un canal urbano.
-  const canalHalfWidth = rng.range(17, 21);
-  const slope = rng.range(0.55, 0.85) * (rng.chance(0.5) ? 1 : -1);
-  // Distancia perpendicular necesaria = media manzana + medio ancho de canal.
-  // El factor sqrt(slope^2+1) convierte esa distancia al desplazamiento en Z.
-  const clearance = (blockSize / 2 + canalHalfWidth + 1) * Math.hypot(slope, 1);
-  const canal = {
-    slope,
-    // Rango corto a propósito: cuanto más lejos del centro corre el eje, menos
-    // manzanas cruza. Con pitch * 1.3 el canal se iba al borde otra vez.
-    offset: (rng.chance(0.5) ? 1 : -1) * rng.range(clearance, clearance + pitch * 0.75),
-    halfWidth: canalHalfWidth,
-  };
-
-  // Predio escolar: la fila del medio de la grilla, en la manzana central y
-  // la de su oeste. La fachada mira al sur, a Laprida, con ciudad enfrente; el
-  // canal y el resto quedan a sus espaldas, al norte.
-  const schoolRow = half;
-  const schoolZ = (schoolRow - half) * pitch;
   const schoolSite = {
     x0: -pitch - blockSize / 2,
     x1: blockSize / 2,
-    z0: schoolZ - blockSize / 2,
-    z1: schoolZ + blockSize / 2,
-  };
-  // El canal corre siempre del lado norte, detrás de la escuela, y si todavía
-  // roza el predio se aleja un poco más: la lámina de agua se dibuja entera y
-  // taparía la escuela.
-  canal.offset = -Math.abs(canal.offset);
-  const siteClear = () =>
-    [
-      [schoolSite.x0, schoolSite.z0],
-      [schoolSite.x0, schoolSite.z1],
-      [schoolSite.x1, schoolSite.z0],
-      [schoolSite.x1, schoolSite.z1],
-    ].every(([x, z]) => {
-      const lineZ = canal.slope * x + canal.offset;
-      const dist = (z - lineZ) / Math.hypot(canal.slope, 1);
-      return dist > canal.halfWidth + 6;
-    });
-  for (let guard = 0; guard < 200 && !siteClear(); guard++) canal.offset -= 2;
-
-  const distanceToCanal = (x: number, z: number) => {
-    // Distancia punto-recta para z = slope*x + offset  →  slope*x - z + offset = 0
-    return Math.abs(canal.slope * x - z + canal.offset) / Math.hypot(canal.slope, 1);
+    z0: -blockSize / 2,
+    z1: blockSize / 2,
   };
 
   const blocks: Block[] = [];
+  const add = (gx: number, gz: number, kind: BlockKind, extra: Partial<Block> = {}) => {
+    blocks.push({
+      gx,
+      gz,
+      cx: (gx - half) * pitch,
+      cz: (gz - half) * pitch,
+      width: blockSize,
+      depth: blockSize,
+      kind,
+      ring: Math.max(Math.abs(gx - half), Math.abs(gz - half)),
+      height: 9.5,
+      ...extra,
+    });
+  };
 
-  for (let gx = 0; gx < gridSize; gx++) {
-    for (let gz = 0; gz < gridSize; gz++) {
-      const cx = (gx - half) * pitch;
-      const cz = (gz - half) * pitch;
-      const ring = Math.max(Math.abs(gx - half), Math.abs(gz - half));
+  // El predio escolar: la manzana principal (Miguel Cané) y el anexo (gimnasio).
+  add(2, 2, 'civic', { landmark: 'school' });
+  add(1, 2, 'civic', { landmark: 'schoolAnnex' });
 
-      const kind = classifyBlock(rng, ring, distanceToCanal(cx, cz), canal.halfWidth);
-
-      blocks.push({
-        gx,
-        gz,
-        cx,
-        cz,
-        width: blockSize,
-        depth: blockSize,
-        kind,
-        ring,
-        height: suggestHeight(rng, kind, ring),
-      });
-    }
+  // La hilera de manzanas: el reparto está curado, no sorteado. Bajo y de
+  // escala humana enfrente del portal y del gimnasio (vivienda de 4-6 pisos,
+  // cívico, mercado) y la torre en la esquina sureste. Detrás de la escuela
+  // (al norte) no va nada alto: aparecería detrás del portal en la llegada.
+  // Las alturas sí salen de la semilla.
+  const RING: ReadonlyArray<readonly [number, number, BlockKind]> = [
+    [0, 1, 'residential'],
+    [1, 1, 'market'],
+    [2, 1, 'civic'],
+    [3, 1, 'residential'],
+    [0, 2, 'residential'],
+    [3, 2, 'civic'],
+    [0, 3, 'tower'],
+    [1, 3, 'residential'],
+    [2, 3, 'residential'],
+    [3, 3, 'market'],
+  ];
+  for (const [gx, gz, kind] of RING) {
+    const extra: Partial<Block> = { height: ringHeight(rng, kind) };
+    if (kind === 'tower') extra.footprint = rng.range(17, 24);
+    if (kind === 'residential') extra.barDepth = rng.range(11, 14);
+    if (kind === 'market') extra.stalls = marketStalls(rng, (gx - half) * pitch, (gz - half) * pitch, blockSize * 0.8);
+    add(gx, gz, kind, extra);
   }
 
-  // El recorrido tiene un destino estable: la escuela está siempre en el
-  // centro de la ciudad y ocupa dos manzanas. Se fuerzan como equipamiento
-  // para que ningún otro tipo (ni el agua) las reclame.
-  for (const [gx, landmark] of [
-    [half, 'school'],
-    [half - 1, 'schoolAnnex'],
-  ] as const) {
-    const b = blocks.find((k) => k.gx === gx && k.gz === schoolRow);
-    if (!b) continue;
-    b.kind = 'civic';
-    b.height = 9.5;
-    b.landmark = landmark;
-  }
-  const hasSchool = blocks.some((b) => b.landmark === 'school');
-
-  // Calles: una por cada línea de la grilla, más los bordes.
-  // Avenidas con tranvía cada tres calles, empezando por la central.
-  const isAvenue = (i: number) => (i - Math.round(half + 0.5)) % 3 === 0;
-  const streets: Street[] = [];
-  for (let i = 0; i <= gridSize; i++) {
-    const at = (i - half - 0.5) * pitch;
-    const avenue = isAvenue(i);
-    const width = avenue ? streetWidth * 1.35 : streetWidth;
-    // Laprida, la calle de la fachada (la línea al sur de la escuela), es una
-    // calle común: sin tranvía ni ensanche delante del portón.
-    const laprida = i === schoolRow + 1;
-    streets.push({ axis: 'x', at, width: laprida ? streetWidth : width, tram: avenue && !laprida });
-    const zStreet: Street = { axis: 'z', at, width, tram: avenue };
-    // La calle entre las dos manzanas de la escuela no existe: el predio es uno.
-    if (hasSchool && i === half) zStreet.gaps = [[schoolSite.z0, schoolSite.z1]];
-    streets.push(zStreet);
-  }
+  // Calles: las cuatro que rodean la escuela, más la que separa las manzanas
+  // vecinas del norte y del sur (frente al eje del predio). Cada una existe
+  // sólo a lo largo del barrio.
+  const xs: [number, number] = [-2.5 * pitch, 1.5 * pitch];
+  const zs: [number, number] = [-1.5 * pitch, 1.5 * pitch];
+  const streets: Street[] = [
+    { axis: 'x', at: -pitch / 2, width: streetWidth, tram: false, span: xs, name: 'Lafinur' },
+    { axis: 'x', at: pitch / 2, width: streetWidth, tram: false, span: xs, name: 'Laprida' },
+    { axis: 'z', at: -1.5 * pitch, width: streetWidth, tram: false, span: zs, name: 'Gral. Acha' },
+    // Entre las dos manzanas de la escuela la calle no existe: el predio es uno.
+    { axis: 'z', at: -pitch / 2, width: streetWidth, tram: false, span: zs, gaps: [[schoolSite.z0, schoolSite.z1]] },
+    { axis: 'z', at: pitch / 2, width: streetWidth, tram: false, span: zs },
+  ];
 
   return {
     seed,
     blocks,
     streets,
-    gridSize,
+    gridSize: GRID,
     extent,
     blockSize,
     streetWidth,
-    canal,
-    schoolSite: hasSchool ? schoolSite : undefined,
+    canal: { slope: 0, offset: -1e6, halfWidth: 0 },
+    schoolSite,
   };
 }
 
-/**
- * Decide el tipo de una manzana.
- *
- * Exportada para poder testear directamente la defensa de la manzana central.
- * Hay DOS salvaguardas contra que el canal se la coma: el desplazamiento
- * mínimo del canal (en `generateCityPlan`) y la precedencia de `ring === 0`
- * acá. Probar sólo el plano completo verifica la primera y deja la segunda sin
- * cobertura — una prueba de mutación lo demostró: se puede quitar esta
- * precedencia y la suite sigue en verde.
- */
-export function classifyBlock(
-  rng: Rng,
-  ring: number,
-  canalDistance: number,
-  canalHalfWidth: number,
-): BlockKind {
-  // La manzana central es INTOCABLE y va primero: ahí está la escuela (que
-  // después la marca como hito). Antes era la plaza del Árbol Solar; cuando
-  // esta comprobación estaba debajo de la del canal, había semillas en las
-  // que el agua se la comía.
-  if (ring === 0) return 'civic';
-
-  // El canal manda sobre el resto: si la manzana lo cruza, es agua.
-  if (canalDistance < canalHalfWidth) return 'water';
-  // Ribera: parque.
-  if (canalDistance < canalHalfWidth * 1.9) return 'park';
-
-  // Reparto por anillos.
-  //
-  // La auditoría encontró que `market` aparecía 2,4 veces por ciudad (2,9 %) y
-  // es el tipo con más geometría específica del proyecto: pórticos de madera,
-  // arcos, cubierta mixta de vidrio y paneles, puestos. Se construía mucho para
-  // algo que casi no se veía. `civic` estaba igual de relegado.
-  //
-  // La corrección es sacarlos del anillo 1 —donde competían entre sí por ocho
-  // manzanas— y repartirlos también por los anillos 2 y 3. De paso baja el peso
-  // de `park`, que ocupaba más de un quinto de la ciudad siendo el tipo con
-  // menos geometría interesante.
-
-  if (ring === 1) {
-    // Alrededor del centro: equipamiento público y mercado, escala baja.
-    return rng.chance(0.45) ? 'market' : 'civic';
+/** Puestos del mercado sobre su plataforma, con pasillos de 1,6 m entre ellos. */
+function marketStalls(rng: Rng, cx: number, cz: number, w: number): NonNullable<Block['stalls']> {
+  const stalls: NonNullable<Block['stalls']> = [];
+  const n = rng.int(6, 10);
+  for (let guard = 0; stalls.length < n && guard < 200; guard++) {
+    const s = {
+      x: cx + rng.range(-w / 2 + 2.5, w / 2 - 2.5),
+      z: cz + rng.range(-w / 2 + 3, w / 2 - 3),
+      w: rng.range(2, 3.4),
+      h: rng.range(2.1, 2.6),
+      d: rng.range(1.6, 2.4),
+    };
+    if (stalls.some((o) => Math.abs(o.x - s.x) < (o.w + s.w) / 2 + 1.6 && Math.abs(o.z - s.z) < (o.d + s.d) / 2 + 1.6)) continue;
+    stalls.push(s);
   }
-
-  if (ring === 2) {
-    if (rng.chance(0.34)) return 'tower';
-    if (rng.chance(0.21)) return 'civic';
-    if (rng.chance(0.15)) return 'market';
-    if (rng.chance(0.12)) return 'park';
-    return 'residential';
-  }
-
-  if (ring === 3) {
-    if (rng.chance(0.2)) return 'tower';
-    if (rng.chance(0.18)) return 'civic';
-    if (rng.chance(0.13)) return 'market';
-    if (rng.chance(0.16)) return 'park';
-    return 'residential';
-  }
-
-  // Borde: producción de energía y verde, escala baja. Deja ver el horizonte.
-  if (rng.chance(0.28)) return 'energy';
-  if (rng.chance(0.24)) return 'park';
-  if (rng.chance(0.1)) return 'market';
-  return 'residential';
+  return stalls;
 }
 
-function suggestHeight(rng: Rng, kind: BlockKind, ring: number): number {
+/**
+ * Altura de cada tipología. Los rangos son los de la ciudad anterior, con la
+ * vivienda acotada a 4-7 pisos: enfrente de una escuela de dos plantas, las
+ * barras de 30 m del anillo 2 la aplastaban.
+ */
+function ringHeight(rng: Rng, kind: BlockKind): number {
   switch (kind) {
-    case 'water':
-    case 'park':
-      return 0;
-    case 'energy':
-      return rng.range(4, 7);
+    case 'tower':
+      return rng.range(62, 76);
+    case 'residential':
+      return rng.range(14, 23);
     case 'civic':
-      // La central tiene altura fija: no consume azar, así el resto de la
-      // ciudad sale igual que cuando esa manzana era la plaza (que tampoco lo
-      // consumía). La escuela, que ocupa esa manzana, la pisa después.
-      return ring === 0 ? 12 : rng.range(9, 16);
+      return rng.range(9, 14);
     case 'market':
       return rng.range(11, 14);
-    case 'residential':
-      // Baja hacia el borde: perfil urbano legible.
-      return rng.range(14, 30) * (ring >= 4 ? 0.62 : 1);
-    case 'tower':
-      return rng.range(46, 88);
+    default:
+      return 9.5;
   }
 }

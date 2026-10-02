@@ -24,7 +24,9 @@ await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
 await page
   .waitForFunction(() => document.getElementById('boot')?.classList.contains('hidden'), { timeout: 300000, polling: 500 })
   .catch(() => logs.push('[warn] boot no se ocultó'));
-await page.evaluate(() => document.getElementById('help')?.classList.add('hidden'));
+// Métricas visibles (Ajustes → Métricas): se actualizan cada medio segundo.
+await page.evaluate(() => document.body.classList.add('metrics'));
+await new Promise((r) => setTimeout(r, 700));
 const stats = await page.$eval('#stats', (el) => el.innerText).catch(() => '');
 console.log(stats.replace(/\n/g, ' | '));
 let flying = false;
@@ -43,7 +45,26 @@ for (const v of views) {
   );
   await new Promise((r) => setTimeout(r, v.wait ?? 1500));
   await page.screenshot({ path: `${outDir}/${v.name}.png` });
-  console.log('shot', v.name);
+  // Coste de ESTE encuadre: draw calls reales del último cuadro, triángulos
+  // activos y gente dibujada.
+  const cost = await page.evaluate(async () => {
+    const s = window.__scene;
+    const e = s.getEngine();
+    // El contador de draw calls es acumulado: se mide la diferencia en 10 cuadros.
+    const frame = () => new Promise((r) => requestAnimationFrame(r));
+    await frame();
+    const dc0 = e._drawCalls?.current ?? 0;
+    for (let i = 0; i < 10; i++) await frame();
+    const dc1 = e._drawCalls?.current ?? 0;
+    return {
+      dc: Math.round((dc1 - dc0) / 10),
+      meshes: s.getActiveMeshes().length,
+      tris: Math.round(s.getActiveIndices() / 3000),
+      people: window.__people?.()?.drawn ?? 0,
+      fps: Math.round(e.getFps()),
+    };
+  });
+  console.log('shot', v.name, `${cost.dc} dc · ${cost.meshes} mallas · ${cost.tris}k tris · ${cost.people} personas · ${cost.fps} fps`);
 }
 const noise = /Babylon\.js v|WebGL: |deprecat|COSTBREAKDOWN|\[vite\]|precompile/i;
 console.log(logs.filter((l) => !noise.test(l)).slice(0, 30).join('\n') || '(sin errores)');

@@ -1,4 +1,5 @@
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
+import { Color3 } from '@babylonjs/core/Maths/math.color';
 import type { InstanceFarm } from '../../core/InstanceFarm';
 import type { Materials } from '../Materials';
 import type { Rng } from '../../utils/rng';
@@ -7,6 +8,8 @@ import type { NatureBuilder } from './NatureBuilder';
 import type { BuildingBuilder } from './BuildingBuilder';
 import type { StreetLevel } from './StreetLevel';
 import { PALETTE } from '../Palette';
+
+const hex = (h: string) => Color3.FromHexString(h);
 
 /**
  * Infraestructura urbana: suelo, calles, canal y energía.
@@ -31,15 +34,37 @@ export class InfraBuilder {
     private readonly greenDensity = 1,
   ) {}
 
-  /** Suelo base de toda la ciudad. */
+  /**
+   * Suelo: vereda y calzada sólo dentro del barrio; afuera, terreno con pasto
+   * gastado y una franja de árboles que sugiere que el barrio sigue, sin
+   * construirlo (la escuela es la protagonista).
+   */
   ground(plan: CityPlan): void {
-    const size = plan.extent * 2 + 200;
+    const b = districtBounds(plan);
+    const size = plan.extent * 2 + 400;
+    this.farm.add(
+      'box',
+      this.mats.surface(hex('#7d8a5c'), 0.95, 0, 'pavementXL'),
+      new Vector3(0, -0.52, 0),
+      new Vector3(size, 1, size),
+    );
     this.farm.add(
       'box',
       this.mats.surface(PALETTE.pavement, 0.9, 0, 'pavementXL'),
-      new Vector3(0, -0.5, 0),
-      new Vector3(size, 1, size),
+      new Vector3((b.x0 + b.x1) / 2, -0.5, (b.z0 + b.z1) / 2),
+      new Vector3(b.x1 - b.x0, 1, b.z1 - b.z0),
     );
+    // Cinturón de árboles alrededor, más denso cerca y ralo lejos.
+    const count = Math.round(110 * this.greenDensity);
+    for (let i = 0; i < count; i++) {
+      const side = this.rng.int(0, 3);
+      const out = 6 + Math.pow(this.rng.next(), 1.6) * 55;
+      const t = this.rng.next();
+      const x = side === 0 ? b.x0 - out : side === 1 ? b.x1 + out : b.x0 - 40 + t * (b.x1 - b.x0 + 80);
+      const z = side === 2 ? b.z0 - out : side === 3 ? b.z1 + out : b.z0 - 40 + t * (b.z1 - b.z0 + 80);
+      if (this.rng.chance(0.85)) this.nature.broadleaf(x, z, this.rng.range(0.9, 1.5), 0);
+      else this.nature.conifer(x, z, this.rng.range(0.9, 1.3), 0);
+    }
   }
 
   /** Calzadas y veredas. */
@@ -54,7 +79,8 @@ export class InfraBuilder {
       const isX = street.axis === 'x';
       // Tramos existentes: la calle entre las dos manzanas de la escuela se
       // corta, porque el predio es uno solo.
-      for (const [s0, s1] of streetSpans(-length / 2, length / 2, street.gaps)) {
+      const [from, to] = street.span ?? [-length / 2, length / 2];
+      for (const [s0, s1] of streetSpans(from, to, street.gaps)) {
         const c = (s0 + s1) / 2;
         const l = s1 - s0;
         this.farm.add(
@@ -116,7 +142,8 @@ export class InfraBuilder {
    * norte y oeste, de modo que cada calle se planta exactamente una vez.
    */
   streetscape(block: Block, plan: CityPlan): void {
-    if (block.kind === 'water') return;
+    // Las casas del barrio plantan su propia vereda (NeighborhoodBuilder).
+    if (block.kind === 'water' || block.kind === 'houses') return;
     if (block.landmark) {
       this.schoolStreetscape(block, plan);
       return;
@@ -252,6 +279,8 @@ export class InfraBuilder {
   /** Canal: agua, taludes verdes y muelles de madera. */
   canal(plan: CityPlan): void {
     const { canal } = plan;
+    // El barrio de la escuela no tiene canal.
+    if (canal.halfWidth <= 0) return;
     const length = plan.extent * 2.9;
     // Babylon es zurdo: rotar +X sobre Y por un angulo lo lleva a
     // (cos, 0, -sin). La recta que queremos tiene direccion (cos, 0, +sin),
@@ -533,4 +562,11 @@ function streetSpans(from: number, to: number, gaps?: Array<[number, number]>): 
   }
   if (cur < to) out.push([cur, to]);
   return out;
+}
+
+/** Rectángulo del barrio: calles y manzanas edificadas, con las veredas exteriores. */
+export function districtBounds(plan: CityPlan): { x0: number; x1: number; z0: number; z1: number } {
+  const pitch = plan.blockSize + plan.streetWidth;
+  const margin = plan.streetWidth / 2;
+  return { x0: -2.5 * pitch - margin, x1: 1.5 * pitch + margin, z0: -1.5 * pitch - margin, z1: 1.5 * pitch + margin };
 }

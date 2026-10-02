@@ -6,6 +6,7 @@ import {
   SCHOOL,
   STAIRS,
   levelOf,
+  roomAt,
   roomLevel,
   schoolFloorLocal,
   schoolSolidLocal,
@@ -101,10 +102,10 @@ describe('escaleras', () => {
     // Primer tramo hacia el este, descanso, segundo tramo hacia el oeste.
     const top = climb(
       [
-        [20.4, -26.3],
+        [21.0, -26.3],
         [26.5, -26.3],
         [26.5, -28.6],
-        [20.4, -28.6],
+        [22.6, -28.6],
       ],
       FY,
     );
@@ -113,10 +114,10 @@ describe('escaleras', () => {
     // Y se baja por el mismo camino hasta planta baja.
     const bottom = climb(
       [
-        [20.4, -28.6],
+        [22.6, -28.6],
         [26.5, -28.6],
         [26.5, -26.3],
-        [20.4, -26.3],
+        [23.35, -26.3],
       ],
       top,
     );
@@ -126,18 +127,124 @@ describe('escaleras', () => {
 
   it('el costado de un tramo es macizo para quien está abajo', () => {
     // A mitad del primer tramo los escalones están a la altura de la cadera.
-    expect(schoolSolidLocal(24.0, -26.3, FY)).toBe(true);
+    expect(schoolSolidLocal(24.9, -26.3, FY)).toBe(true);
     // Pero el arranque se pisa.
-    expect(schoolSolidLocal(20.5, -26.3, FY)).toBe(false);
+    expect(schoolSolidLocal(23.4, -26.3, FY)).toBe(false);
   });
 
-  it('la multitud no usa las escaleras', () => {
-    for (const s of STAIRS) {
+  it('la multitud no usa las escaleras que arrancan del suelo', () => {
+    // Los tramos y descansos de los pisos altos pasan por encima: debajo se
+    // camina (el arranque de la pasarela sobre el patio, por ejemplo).
+    for (const s of STAIRS.filter((st) => st.y0 < 0.5)) {
       const [uc, vc] = center(s);
-      expect(schoolSolidLocal(uc, vc, FY, true)).toBe(true);
+      expect(schoolSolidLocal(uc, vc, FY, true), `${uc}, ${vc}`).toBe(true);
     }
-    for (const l of LANDINGS) {
+    for (const l of LANDINGS.filter((ld) => ld.y < 2 || !ld.hollow)) {
       expect(schoolSolidLocal((l.u0 + l.u1) / 2, (l.v0 + l.v1) / 2, FY, true)).toBe(true);
     }
   });
 });
+
+describe('plantas altas del recorrido', () => {
+  it('"Acceso al Nivel Secundario": del hall al pasillo de los trofeos', () => {
+    const top = climb(
+      [
+        [33.65, -8.7],
+        [33.65, -13.9],
+        [35.0, -13.9],
+        [35.0, -11.6],
+        [34.9, -5.0],
+      ],
+      FY,
+    );
+    expect(levelOf(top)).toBe(1);
+    expect(roomAt(34.9, -5.0, 1)?.id).toBe('pasilloTrofeos');
+  });
+
+  it('del descanso, por la pasarela vidriada, al edificio de bloque y al aula de danzas', () => {
+    const l1 = climb(
+      [
+        [33.65, -8.7],
+        [33.65, -14.2],
+        [36.0, -14.2],
+        [41.5, -14.2],
+        [43.0, -14.2],
+        [43.0, -15.3],
+      ],
+      FY,
+    );
+    expect(levelOf(l1)).toBe(1);
+    const l2 = climb(
+      [
+        [43.0, -15.3],
+        [44.6, -15.3],
+        [48.2, -15.3],
+        [48.2, -16.9],
+        [44.6, -16.9],
+        [43.2, -16.9],
+        [43.2, -14.1],
+        [45.6, -14.1],
+        [45.6, -10.0],
+      ],
+      l1,
+    );
+    expect(levelOf(l2)).toBe(2);
+    expect(roomAt(45.6, -10.0, 2)?.id).toBe('aulaDanzas');
+  });
+
+  it('"Acceso a primer piso": la escalera del ala oeste sube en U', () => {
+    const top = climb(
+      [
+        [12.6, -12.9],
+        [9.0, -12.9],
+        [8.7, -12.9],
+        [8.7, -10.25],
+        [11.9, -10.25],
+        [12.2, -8.2],
+        [4.0, -8.2],
+      ],
+      FY,
+    );
+    expect(levelOf(top)).toBe(1);
+    expect(roomAt(4.0, -8.2, 1)?.id).toBe('pasilloL1');
+  });
+
+  it('el jardín sube sus tres plantas', () => {
+    const l1 = climb(
+      [
+        [58.4, -36.0],
+        [58.4, -31.5],
+        [59.8, -31.5],
+        [59.8, -35.9],
+      ],
+      FY,
+    );
+    expect(levelOf(l1)).toBe(1);
+    const l2 = climb(
+      [
+        [59.8, -35.9],
+        [58.4, -35.9],
+        [58.4, -31.5],
+        [59.8, -31.5],
+        [59.8, -35.9],
+        [61.3, -35.9],
+        [61.3, -33.0],
+      ],
+      l1,
+    );
+    expect(levelOf(l2)).toBe(2);
+    expect(roomAt(61.3, -33.0, 2)?.id).toBe('sum');
+  });
+
+  it('por la escalera exterior blanca del patio este se llega al descanso de la torre', () => {
+    const top = climb(
+      [
+        [33.55, -20.2],
+        [33.55, -14.5],
+      ],
+      FY,
+    );
+    expect(top).toBeGreaterThan(FY + 2.3);
+  });
+});
+

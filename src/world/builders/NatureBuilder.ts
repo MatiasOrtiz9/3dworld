@@ -70,6 +70,10 @@ export class NatureBuilder {
       // Grano irregular, no la veta con nudos de la madera laminada: con esa
       // textura los troncos parecían postes de obra.
       'concrete',
+      // Fuera de la escala métrica: a tamaño real, el hormigón trae sus juntas
+      // de encofrado cada 60 cm, que en un tronco se leían como anillos de
+      // caño. Con la UV del cilindro queda la corteza de grano fino de antes.
+      { metric: false },
     );
 
     // Tronco, con una leve inclinación: ningún árbol real es una plomada.
@@ -164,7 +168,7 @@ export class NatureBuilder {
     const trunkH = height * 0.2;
     this.farm.add(
       'cylinder',
-      this.mats.surface(PALETTE.bark, 0.95, 0, 'concrete'),
+      this.mats.surface(PALETTE.bark, 0.95, 0, 'concrete', { metric: false }),
       new Vector3(x, groundY + trunkH / 2, z),
       new Vector3(height * 0.05, trunkH, height * 0.05),
     );

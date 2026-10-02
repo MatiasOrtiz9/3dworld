@@ -33,7 +33,9 @@ const FY = SCHOOL.floorY;
  */
 export class SchoolIdentity {
   private readonly mesh: Mesh;
+  private readonly floorMesh: Mesh;
   private readonly material: StandardMaterial;
+  private readonly floorMaterial: StandardMaterial;
   private readonly texture: DynamicTexture;
 
   constructor(scene: Scene, frame: SchoolFrame) {
@@ -55,14 +57,28 @@ export class SchoolIdentity {
     // La bandera se ve de los dos lados.
     this.material.backFaceCulling = false;
 
+    // La cancha del polideportivo va aparte, con más luz propia: el
+    // estándar multiplica el emisivo por la textura, y bajo la bóveda (sin
+    // sol directo) el cemento claro quedaba gris oscuro. Un draw call más,
+    // sólo cuando el polideportivo está en cuadro.
+    this.floorMaterial = new StandardMaterial('schoolIdentityFloor', scene);
+    this.floorMaterial.diffuseTexture = this.texture;
+    this.floorMaterial.diffuseColor = new Color3(0.42, 0.42, 0.42);
+    this.floorMaterial.specularColor = new Color3(0.06, 0.06, 0.06);
+    this.floorMaterial.emissiveColor = new Color3(0.72, 0.72, 0.7);
+
     const q = new QuadBatch(frame);
     const S = 1; // mira al sur (+v)
     const N = -1; // mira al norte (−v)
     const portalU = (32.95 + 41.9) / 2;
     // Portal sobre Laprida: marquesina y escudo.
-    q.wall(portalU, 0.585, 3.5, 8.3, 1.4, 0, S, R.sign);
-    q.wall(portalU, 0.525, 6.78, 0.72, 0.62, 0, S, R.crest);
+    // El portal sobresale 0,85 m de la fachada (ver SchoolBuilder.portal).
+    q.wall(37.425, 0.875, 3.15, 8.2, 1.36, 0, S, R.sign);
+    q.wall(portalU, 0.875, 6.78, 0.72, 0.62, 0, S, R.crest);
     q.wall(FLAG.u, FLAG.v, FLAG.y, 1.6, 1.0, 0, S, R.flag);
+    // Jardín: marquesina "Educación Inicial" y banda "CIMDIP" sobre la calle del norte.
+    q.wall(63.3, V.top - 0.97, 3.2, 8.0, 0.88, 0, N, R.inicial);
+    q.wall(58.525, V.top - 0.27, 6.0, 1.4, 5.2, 0, N, R.cimdip);
 
     // Hall de acceso: banner de pie, reloj sobre las puertas y plano de evacuación.
     const banner = ITEMS.find((it) => it.kind === 'banner');
@@ -94,7 +110,8 @@ export class SchoolIdentity {
     q.wall(2.6, V.classTop - 0.115, FY + 1.9, 1.4, 1.0, 0, N, R.cork1);
     q.wall(5.0, V.corrS + 0.115, FY + 1.9, 1.4, 1.0, 0, S, R.cork2);
     q.wall(37.45, V.hallDoors - 0.13, 3.0, 0.42, 0.42, 0, N, R.clock);
-    q.wall(U.east1 + 0.12, -4.4, 1.65, 1.3, 0.8, 1, 0, R.plan);
+    // El plano de evacuación cuelga en el frente de la oficina de recepción.
+    q.wall(34.72, V.recN - 0.115, 1.65, 1.0, 0.62, 0, -1, R.plan);
 
     // Tecnología: mural "imagina · diseña · crea" y cartel del aula maker.
     q.wall(25.0, V.nBlockN - 0.115, 1.95, 3.7, 1.48, 0, N, R.mural);
@@ -106,7 +123,11 @@ export class SchoolIdentity {
 
     // Polideportivo: la cancha ocupa todo el piso (corre de oeste a este) y
     // la bandera blanca con el escudo cuelga en el testero este.
-    q.floorAlongU(U.gymW + 0.1, V.gymTop + 0.1, U.e - 0.15, -0.15, FY + 0.006, R.court);
+    const floor = new QuadBatch(frame);
+    floor.floorAlongU(U.gymW + 0.1, V.gymTop + 0.1, U.e - 0.15, -0.15, FY + 0.006, R.court);
+    this.floorMesh = floor.toMesh('schoolIdentityFloor', scene);
+    this.floorMesh.material = this.floorMaterial;
+    this.floorMesh.isPickable = false;
     q.wall(U.e - 0.18, GYM_MID, 5.1, 2.2, 2.75, -1, 0, R.crestBanner);
 
     // Carteles de los ambientes sobre sus puertas.
@@ -119,7 +140,8 @@ export class SchoolIdentity {
     plate('PROF.', 12.4, V.profB + 0.115, 0, S, 0.8);
     plate('DIR. PRIM', 5.5, V.dirTop - 0.115, 0, N, 0.9);
     plate('BUFFET', 29.4, V.corrS + 0.115, 0, S);
-    plate('SALÓN DE LOS ESPEJOS', U.salonW - 0.115, -12.1, -1, 0, 1.5);
+    // Su puerta es doble (vano de 2,25 m): el cartel va por encima del cabezal.
+    plate('SALÓN DE LOS ESPEJOS', U.salonW - 0.115, -12.1, -1, 0, 1.5, 2.46);
     plate('GIMNASIO · SUM', U.gymW - 0.115, -10.1, -1, 0, 1.5, 2.5);
     plate('GIMNASIO · SUM', 59.3, V.gymTop - 0.115, 0, N, 1.6, 2.55);
     plate('ARTE', 52.35, V.artB + 0.115, 0, S, 0.8);
@@ -159,12 +181,14 @@ export class SchoolIdentity {
   }
 
   get shadowCasters(): Mesh[] {
-    return [this.mesh];
+    return [this.mesh, this.floorMesh];
   }
 
   dispose(): void {
     this.mesh.dispose();
+    this.floorMesh.dispose();
     this.material.dispose();
+    this.floorMaterial.dispose();
     this.texture.dispose();
   }
 }

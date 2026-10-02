@@ -26,6 +26,7 @@
     "@vitejs/plugin-basic-ssl": "^2.3.0",
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
+    "iwer": "^2.5.0",
     "prettier": "^3.9.9",
     "puppeteer-core": "^25.12.0",
     "typescript": "^5.7.0",

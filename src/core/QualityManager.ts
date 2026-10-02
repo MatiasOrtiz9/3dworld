@@ -2,6 +2,7 @@ import type { Engine } from '@babylonjs/core/Engines/engine';
 import type { Scene } from '@babylonjs/core/scene';
 import type { BaseTexture } from '@babylonjs/core/Materials/Textures/baseTexture';
 import type { RenderQuality } from './RenderPipeline';
+import type { ShadowFilter, ShadowMode } from '../world/Environment';
 
 export type QualityTier = 'low' | 'vr' | 'balanced' | 'high';
 
@@ -9,16 +10,34 @@ export interface QualityProfile {
   label: string;
   /** Escala de resolución: >1 renderiza por debajo de la nativa. */
   hardwareScaling: number;
+  /**
+   * Hay sombras del sol (cualquier modo). Se conserva por compatibilidad:
+   * el modo concreto lo dice `shadowMode`.
+   */
   shadows: boolean;
+  /**
+   * `static`: un mapa sobre el barrio dibujado una vez por cambio de hora
+   * (costo por cuadro ≈ una lectura de textura); `cascaded`: cascadas que
+   * siguen a la cámara, redibujadas cada cuadro. Ver Environment.
+   */
+  shadowMode: ShadowMode;
   shadowResolution: number;
+  /** Filtrado del borde: `low` = 1 lectura PCF por hardware, `medium` = 4. */
+  shadowFilter: ShadowFilter;
   /** Multiplicador de densidad de vegetación. */
   greenDensity: number;
   /**
    * Manzanas por lado. Todos los perfiles usan 5: la experiencia se centra en
-   * la escuela y el barrio inmediato (25 manzanas en vez de 49-81).
+   * la escuela y el barrio inmediato. El plano compacto lo ignora (su tamaño
+   * es fijo); se conserva para no romper a quien lo lea.
    */
   gridSize: number;
-  /** Distancia de recorte. */
+  /**
+   * Distancia de recorte. Con el barrio compacto, la niebla funde el suelo a
+   * unos `extent + 220` m (ver TimeOfDay.fogReach): más allá no hay nada que
+   * ver, y un plano lejano corto mejora la precisión de profundidad. El cielo
+   * no depende de él (se dibuja en el fondo del búfer, ver Sky).
+   */
   maxZ: number;
   /** Copas de follaje de alto detalle. */
   highDetailFoliage: boolean;
@@ -32,16 +51,19 @@ export interface QualityProfile {
 
 export const QUALITY: Record<QualityTier, QualityProfile> = {
   // Perfil de entrada para equipos con integrada débil o poca memoria.
-  // La escala 1.5 reduce a ~44 % los píxeles de la resolución nativa; las
-  // sombras y el SSAO son las pasadas que más tiempo consumen según la auditoría.
+  // La escala 1.5 reduce a ~44 % los píxeles de la resolución nativa. Las
+  // sombras DINÁMICAS y el SSAO son las pasadas caras según la auditoría; la
+  // sombra estática no lo es (se dibuja una vez), así que este perfil la tiene.
   low: {
     label: 'Baja',
     hardwareScaling: 1.5,
-    shadows: false,
-    shadowResolution: 0,
+    shadows: true,
+    shadowMode: 'static',
+    shadowResolution: 1024,
+    shadowFilter: 'low',
     greenDensity: 0.55,
     gridSize: 5,
-    maxZ: 700,
+    maxZ: 600,
     highDetailFoliage: false,
     highDetailStreet: false,
     crowdSize: 60,
@@ -50,34 +72,51 @@ export const QUALITY: Record<QualityTier, QualityProfile> = {
     post: 'lite',
   },
   // Perfil pensado para Quest 2/3: el objetivo son 72 fps sostenidos.
-  // Sin sombras dinámicas (es el gasto más grande) y ciudad más compacta.
+  //
+  // Sombra ESTÁTICA y no dinámica. Cuentas para Quest 2 (13,9 ms por cuadro,
+  // cada malla se dibuja dos veces, una por ojo): una sombra dinámica sumaría
+  // otra pasada de ~200 mallas por cuadro, que en el navegador del visor son
+  // varios milisegundos de CPU sólo en llamadas de dibujo. La estática se
+  // dibuja una vez al cargar y al mover la hora; por cuadro cuesta una lectura
+  // de textura con PCF por hardware por píxel. A cambio, los interiores dejan
+  // de recibir sol a través de los techos (antes, sin sombras, el sol
+  // iluminaba los pisos de las aulas) y la fachada gana volumen.
   vr: {
     label: 'VR',
     hardwareScaling: 1.15,
-    shadows: false,
-    shadowResolution: 0,
+    shadows: true,
+    shadowMode: 'static',
+    shadowResolution: 2048,
+    shadowFilter: 'low',
     greenDensity: 0.55,
     gridSize: 5,
     maxZ: 700,
     highDetailFoliage: false,
     highDetailStreet: false,
     crowdSize: 90,
-    // Bloom y antialiasing SÍ, oclusión ambiental no.
+    // SIN post-proceso, y no por costo: por color.
     //
-    // La ablación en GPU real midió que bloom + FXAA cuestan 0,11 ms por
-    // cuadro, contra 2,18-7,28 ms de la oclusión ambiental. Apagar todo el
-    // post-proceso en VR —como estaba— tiraba una mejora visual notable para
-    // ahorrar una décima de milisegundo. La oclusión sí se queda afuera.
-    post: 'lite',
+    // El pipeline de post-proceso se engancha a la cámara de escritorio y,
+    // por ser HDR, le avisa a todos los materiales que el mapeo tonal
+    // (ACES, exposición, contraste, curvas) lo hará él. Dentro del visor
+    // dibuja la cámara XR, que no tiene post-proceso: los materiales salían
+    // en espacio lineal, sin mapeo tonal — cielo saturado, verdes casi
+    // negros, sol quemado. Sin pipeline, el mapeo tonal se compila dentro
+    // de cada material y el visor ve lo mismo que el escritorio.
+    post: 'off',
   },
+  // La sombra estática a 2048 se ve mejor que las cascadas a 1024 (que se
+  // redibujaban cuatro veces por cuadro) y no cuesta casi nada por cuadro.
   balanced: {
     label: 'Media',
     hardwareScaling: 1,
     shadows: true,
-    shadowResolution: 1024,
+    shadowMode: 'static',
+    shadowResolution: 2048,
+    shadowFilter: 'medium',
     greenDensity: 0.85,
     gridSize: 5,
-    maxZ: 1200,
+    maxZ: 900,
     highDetailFoliage: true,
     highDetailStreet: true,
     crowdSize: 140,
@@ -87,10 +126,12 @@ export const QUALITY: Record<QualityTier, QualityProfile> = {
     label: 'Alta',
     hardwareScaling: 1,
     shadows: true,
+    shadowMode: 'cascaded',
     shadowResolution: 2048,
+    shadowFilter: 'medium',
     greenDensity: 1.15,
     gridSize: 5,
-    maxZ: 2000,
+    maxZ: 1100,
     highDetailFoliage: true,
     highDetailStreet: true,
     crowdSize: 180,
@@ -192,7 +233,13 @@ export class QualityManager {
     const distanceScale = [1, 0.86, 0.72, 0.58][this.adaptive];
     const textureScale = [1, 0.75, 0.5, 0.25][this.adaptive];
     this.engine.setHardwareScalingLevel(p.hardwareScaling * resolutionScale);
-    for (const camera of this.scene.cameras) camera.maxZ = p.maxZ * distanceScale;
+    for (const camera of this.scene.cameras) {
+      // La cámara del visor fija su propio plano lejano (ver vr/XRSetup) y
+      // sus cámaras de ojo heredan el de ella; allí la palanca adaptativa es
+      // la foveación. Pisarlo recortaba el horizonte dentro del visor.
+      if (isXrCamera(camera)) continue;
+      camera.maxZ = p.maxZ * distanceScale;
+    }
     for (const texture of this.scene.textures) {
       if (!this.textureAnisotropy.has(texture)) {
         this.textureAnisotropy.set(texture, texture.anisotropicFilteringLevel);
@@ -243,6 +290,11 @@ export class QualityManager {
     if (cores <= 8 || (nav.deviceMemory !== undefined && nav.deviceMemory <= 8)) return 'balanced';
     return 'high';
   }
+}
+
+/** Cámara del visor o cámara de ojo (rig) de cualquier cámara. */
+function isXrCamera(camera: { isRigCamera?: boolean; getClassName?: () => string }): boolean {
+  return Boolean(camera.isRigCamera) || camera.getClassName?.() === 'WebXRCamera';
 }
 
 function getWebGLRenderer(canvas?: HTMLCanvasElement): string {

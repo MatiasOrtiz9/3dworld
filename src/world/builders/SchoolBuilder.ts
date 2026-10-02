@@ -13,7 +13,11 @@ import { PALETTE } from '../Palette';
 import { PrismBatch, offsetPolygon, polygonArea, subtractRects } from './PrismBatch';
 import {
   APEX,
+  CEILING_H,
   FENCES,
+  FURNITURE,
+  KINDER_ROOMS,
+  ceilingHeight,
   LANDINGS,
   LEVEL_Y,
   MEETING_POINT,
@@ -26,6 +30,8 @@ import {
   STAIRS,
   SALON_COLUMNS,
   makerWallAt,
+  riserCount,
+  wallGapBehind,
   GYM_MID,
   GYM_PILASTERS,
   U,
@@ -51,7 +57,12 @@ import {
   type Stair,
   type Volume,
   type Wall,
+  CREST,
+  U1,
+  V1,
 } from '../SchoolLayout';
+import { isInteractiveDoor } from '../SchoolDoors';
+import { SWITCHABLE_ROOMS, type Fixture } from '../SchoolLights';
 
 const hex = (h: string) => Color3.FromHexString(h);
 
@@ -75,6 +86,9 @@ const HOLE: Record<OpeningType, [number, number]> = {
   band: [1.95, 2.75],
   counter: [0.95, 2.05],
 };
+
+/** Vanos con marco de puerta (jambas y cabezal de 8 cm sobre el dintel). */
+const FRAMED: ReadonlySet<OpeningType> = new Set(['door', 'double', 'exit', 'entrance']);
 
 /** Guarda roja de pasillos y patios: de 1,16 a 1,24 m sobre el piso. */
 const STRIPE: readonly [number, number] = [1.16, 1.24];
@@ -111,7 +125,7 @@ const STYLES: Readonly<Record<string, RoomStyle>> = {
   aula1: { wainscot: ['woodIn', 1.05], stripe: false, curtain: 'violet' },
   aula2: { wainscot: ['woodIn', 1.05], stripe: false, curtain: 'violet' },
   aula3: { wainscot: ['woodIn', 1.05], stripe: false, curtain: 'violet' },
-  aula4: { wall: 'aqua', wainscot: ['woodIn', 1.05], stripe: false, curtain: 'sky' },
+  aula4: { wall: 'aqua', wainscot: ['woodIn', 1.05], stripe: false, curtain: 'violet' },
   aula5: { wall: 'aqua', wainscot: ['woodIn', 1.05], stripe: false, curtain: 'sky' },
   aula6: { wainscot: ['woodIn', 1.05], stripe: false },
   dirPrim: { wainscot: ['woodIn', 1.0], stripe: false },
@@ -137,6 +151,59 @@ const STYLES: Readonly<Record<string, RoomStyle>> = {
   // propia (bloque al oeste, gris al este) en los datos del muro.
   gimnasio: { stripe: false },
   jardin: { wall: 'yellow', stripe: false },
+  torreHall: { stripe: false, lights: 'none' },
+
+  // ---------------------------------------------------- plantas altas
+  // Pasillo de lockers y sector nuevo: cerámico beige, cielorraso de placas
+  // y la guarda roja de toda la escuela (5:12–6:56).
+  pasilloL1: { ceiling: 'panels', lights: 'panel' },
+  pasilloNorteL1: { ceiling: 'panels', lights: 'panel' },
+  rellanoNorte: { ceiling: 'panels', lights: 'panel' },
+  pasilloOesteL1: { ceiling: 'panels', lights: 'panel' },
+  pasilloTrofeos: { lights: 'tube' },
+  secretaria: { wall: 'greige', stripe: false },
+  aulaS1: { wainscot: ['woodIn', 1.05], stripe: false, curtain: 'violet', ceiling: 'panels' },
+  aulaS2: { stripe: true, curtain: 'violet', ceiling: 'panels' },
+  aulaS3: { stripe: false, curtain: 'curtainWhite', ceiling: 'panels' },
+  aulaS4: { wainscot: ['woodIn', 1.05], stripe: false, curtain: 'violet', ceiling: 'panels' },
+  aulaS5: { stripe: true, curtain: 'violet', ceiling: 'panels' },
+  banosS: { wall: 'ceramic', stripe: false, ceiling: 'panels', lights: 'panel' },
+  banosN: { wall: 'cream', stripe: false, ceiling: 'panels', lights: 'panel' },
+  aula6BD: { stripe: true, curtain: 'violet' },
+  aula6AC: { stripe: true, curtain: 'violet' },
+  aulaC1: { stripe: false, curtain: 'curtainWhite', ceiling: 'panels' },
+  aulaC2: { wainscot: ['woodIn', 1.05], stripe: false, curtain: 'violet', ceiling: 'panels' },
+  biblioteca: { stripe: true, ceiling: 'panels', lights: 'panel' },
+  bilingue: { stripe: false, curtain: 'curtainWhite', ceiling: 'panels' },
+  galeria: { stripe: true, lights: 'panel' },
+  pasarela: { wall: 'white', wainscot: ['black', 0.9], stripe: false, lights: 'tube' },
+  dirSec: { wall: 'cream', stripe: false, curtain: 'curtainRed', ceiling: 'panels' },
+  precepSec: { wall: 'cream', stripe: true, ceiling: 'panels', lights: 'panel' },
+  aulaSec: { stripe: false, ceiling: 'panels' },
+  escaleraOeste: { stripe: false, lights: 'none' },
+  escaleraNorteL1: { lights: 'none' },
+  // Edificio de bloque: bloque de hormigón a la vista, cerámico blanco y
+  // cubierta de chapa blanca sobre perfiles negros (8:08–8:42).
+  pasilloBloque: { wall: 'block', stripe: false, ceiling: 'panels' },
+  aulaBloqueD: { wall: 'block', stripe: false, curtain: 'violet' },
+  aulaBloqueC: { wall: 'block', stripe: false },
+  aulaBloqueA: { stripe: false, curtain: 'violet' },
+  // Aula de danzas: el cielorraso es la bóveda del polideportivo.
+  aulaDanzas: { wainscot: ['block', 0.8], stripe: false, ceiling: null, lights: 'dome' },
+  hallDanzas: { stripe: false, ceiling: null, lights: 'none' },
+  // Jardín: cada sala con su color (10:45–13:41).
+  jardinRecepcion: { stripe: false, ceiling: 'panels', lights: 'panel' },
+  jardinEscalera: { wall: 'yellow', stripe: false, lights: 'none' },
+  jardinGaleria: { wall: 'mint', stripe: false },
+  salaAmarilla: { wall: 'yellow', stripe: false, curtain: 'curtainWhite' },
+  jardinHall1: { wall: 'pinkWall', stripe: false },
+  salaCeleste: { wall: 'skyWall', stripe: false, curtain: 'curtainWhite' },
+  jardinGaleria1: { wall: 'mint', stripe: false },
+  salaRosa: { wall: 'pinkWall', stripe: false },
+  salaRoja: { wall: 'redWall', stripe: false },
+  jardinHall2: { wall: 'orangeWall', stripe: false },
+  espacioMusica: { stripe: false },
+  sum: { stripe: false, lights: 'panel', ceiling: 'panels' },
 };
 
 interface Side {
@@ -168,6 +235,11 @@ export class SchoolBuilder {
   private f!: SchoolFrame;
   private prisms!: PrismBatch;
   private readonly m: Record<string, Material>;
+  /**
+   * Luminarias de las aulas con interruptor, por aula: la parte que se
+   * enciende la dibuja el juego (`game/world/Lights`); acá queda el marco.
+   */
+  readonly switchable = new Map<string, Fixture[]>();
   /** Piso del nivel del objeto que se está armando (ver `item`). */
   private fy: number = FY;
 
@@ -177,77 +249,148 @@ export class SchoolBuilder {
     private readonly rng: Rng,
     private readonly nature: NatureBuilder,
     private readonly street: StreetLevel,
+    /**
+     * Detalle fino de mobiliario y herrería. En VR (perfiles sin detalle de
+     * calle) pupitres, sillas, rejas, mallas y cortinas se arman con menos
+     * piezas: a la distancia de lectura de un visor no se distinguen y la
+     * planta alta multiplicó esas piezas.
+     */
+    private readonly detailed = true,
   ) {
-    const i = (h: string, kind: Parameters<Materials['interior']>[1] = null, lift?: number) =>
-      mats.interior(hex(h), kind, lift);
-    const s = (h: string, rough = 0.8, metal = 0, kind: Parameters<Materials['surface']>[3] = null) =>
-      mats.surface(hex(h), rough, metal, kind);
+    // Toda superficie de la escuela es MÉTRICA: la UV sale de la posición en
+    // el mundo (Materials, MetricUVPlugin), así cada textura mide lo real en
+    // cualquier caja, y suma relieve (normales) y capa de detalle según la
+    // calidad. `detail`: 'floor' para pisos (marcas de uso), 'wall' para
+    // paredes grandes (tono y ondulación que rompen la repetición).
+    const i = (
+      h: string,
+      kind: Parameters<Materials['interior']>[1] = null,
+      lift?: number,
+      rough?: number,
+      detail?: 'floor' | 'wall',
+    ) => mats.interior(hex(h), kind, lift, rough, { metric: true, detail });
+    const s = (
+      h: string,
+      rough = 0.8,
+      metal = 0,
+      kind: Parameters<Materials['surface']>[3] = null,
+      detail?: 'floor' | 'wall',
+    ) => mats.surface(hex(h), rough, metal, kind, { metric: true, detail });
     this.m = {
-      // Exterior: gris claro de la fachada real, zócalos y remates.
-      facade: s('#c6c9c9', 0.9, 0, 'concreteXL'),
-      slab: s('#d9dbd9', 0.8, 0, 'concrete'),
-      roof: s('#74777a', 0.85, 0, 'concrete'),
-      gymRoof: s('#86675a', 0.6, 0.2, 'metal'),
-      patio: s('#aeaba4', 0.92, 0, 'pavement'),
-      // Interior (con luz rebotada simulada).
-      white: i('#efefeb'),
-      stripe: i('#b81e24', null, 0.2),
-      ceiling: i('#f4f4f0', null, 0.3),
+      // Exterior: gris claro de la fachada real, zócalos y remates. La
+      // fachada es revoque pintado (no hormigón con juntas de encofrado).
+      facade: s('#d9d7d6', 0.9, 0, 'plaster', 'wall'),
+      slab: s('#d9dbd9', 0.85, 0, 'concrete'),
+      // Chapa galvanizada: metal sin pintar pero gastado, no espejo.
+      roof: s('#7b7f84', 0.58, 0.25, 'corrugated'),
+      // Chapa de la bóveda: herrumbre rojiza, como en la toma aérea.
+      gymRoof: s('#7e4630', 0.85, 0.15, 'corrugated'),
+      jardinRoof: s('#a9bcc4', 0.6, 0.2, 'corrugated'),
+      // Portal: revoque gris grafito; pilares de granito rosado pulido.
+      portal: s('#5d5f64', 0.92, 0, 'plaster', 'wall'),
+      stone: s('#ab8a78', 0.42, 0, 'granite'),
+      // Verde oliva del muro del patio este: látex exterior.
+      olive: s('#6f735e', 0.9, 0, 'plaster', 'wall'),
+      sand: s('#8a7a62', 0.95, 0, 'pavement'),
+      // Césped del parque visto de lejos: el árido fino de las superficies
+      // enormes (pavementXL), sin juntas.
+      lawn: mats.surface(hex('#6f8a55'), 0.95, 0, 'pavementXL'),
+      patio: s('#aeaba4', 0.9, 0, 'pavement', 'floor'),
+      // Interior (con luz rebotada simulada). Látex mate sobre revoque.
+      white: i('#efefeb', 'plaster', undefined, undefined, 'wall'),
+      // La guarda es esmalte sintético: satinada, algo más lisa que el látex.
+      stripe: i('#b81e24', 'plaster', 0.2, 0.62),
+      ceiling: i('#f4f4f0', 'plaster', 0.3, 0.95),
       // Granito gris de hall, pasillos y aulas; parquet del aula de danzas;
       // damero del comedor y cerámico claro de los sectores nuevos.
       // Granito reconstituido gris de 30 × 30 (pasillos, aulas, ala oeste).
-      tile: i('#a6a59f', 'granite'),
+      tile: i('#a6a59f', 'granite', undefined, undefined, 'floor'),
       // Piso del hall: claro y pulido, con bandas oscuras.
-      hallStone: i('#c4bdb5', 'pavement'),
-      terracotta: i('#9a5a2e', 'ceramic'),
-      aqua: i('#dce6e4'),
+      hallStone: i('#c4bdb5', 'pavement', undefined, undefined, 'floor'),
+      terracotta: i('#9a5a2e', 'ceramic', undefined, undefined, 'floor'),
+      aqua: i('#dce6e4', 'plaster', undefined, undefined, 'wall'),
       marble: i('#cbc1b6', 'marble', 0.2),
-      render: i('#8a857e', 'concrete', 0.16),
-      wood: i('#c08a55', 'parquet'),
-      checker: i('#ffffff', 'checker', 0.16),
-      ceramic: i('#e6dfd3', 'ceramic'),
-      rubber: i('#3b3e43', null, 0.12),
+      render: i('#8a857e', 'plaster', 0.16, undefined, 'wall'),
+      wood: i('#c08a55', 'parquet', undefined, undefined, 'floor'),
+      checker: i('#ffffff', 'checker', 0.16, undefined, 'floor'),
+      ceramic: i('#e6dfd3', 'ceramic', undefined, undefined, 'floor'),
+      ceramicTan: i('#bba07c', 'ceramic', undefined, undefined, 'floor'),
+      tuft: s('#b39a6e', 0.95),
+      rubber: i('#3b3e43', 'rubber', 0.12, undefined, 'floor'),
       lattice: i('#b8875a', 'lattice', 0.2),
       panels: i('#f3f3ef', 'panels', 0.3),
       // Madera de interior (zócalos de las aulas y tablas del cielorraso del
-      // aula de danzas), con la luz rebotada de los interiores.
-      woodIn: i('#c9a073', 'timber', 0.22),
+      // aula de danzas), con la luz rebotada de los interiores. Barnizada:
+      // satinada, con el reflejo suave de las ventanas.
+      woodIn: i('#a8784a', 'timber', 0.22, 0.5),
       // Bloque de hormigón a la vista (polideportivo, aula de danzas, Adm.).
-      block: i('#a5a49f', 'block', 0.16),
+      block: i('#a5a49f', 'block', 0.16, undefined, 'wall'),
       // Cortinas: celestes en las aulas del frente, violetas en las demás.
-      sky: s('#2fa8d8', 0.9),
-      violet: s('#5a4590', 0.9),
-      // Tapas de pupitre y sillas verde salvia de las aulas de primaria.
-      sage: s('#b9bd9a', 0.7),
-      orange: s('#e8822a', 0.6),
-      lime: s('#a6c23a', 0.6),
-      chalk: s('#26322d', 0.85),
-      gymFloor: i('#bdb9ae', 'pavement'),
+      // Tela con pliegues (relieve y sombra propia), mate.
+      sky: s('#2fa8d8', 0.95, 0, 'fabric'),
+      violet: s('#3d3a6e', 0.95, 0, 'fabric'),
+      // Tapas de pupitre y sillas verde salvia de las aulas de primaria:
+      // laminado plástico, satinado. El mobiliario pintado o plástico lleva la
+      // textura del látex (variación de tono de ±3 %): un color perfectamente
+      // liso es lo que lo hacía leerse como bloque de juguete.
+      sage: s('#b9bd9a', 0.55, 0, 'plaster'),
+      orange: s('#e8822a', 0.6, 0, 'plaster'),
+      lime: s('#a6c23a', 0.6, 0, 'plaster'),
+      chalk: s('#141816', 0.92),
+      // El polideportivo se ilumina por las franjas traslúcidas y las ventanas
+      // altas (9:22–9:28), que el sol directo no atraviesa en el modelo: más
+      // rebote propio en su piso y sus muros, o queda en penumbra.
+      gymFloor: i('#bdb9ae', 'pavement', 0.52, undefined, 'floor'),
       // Vinílico del Aula Maker: verde salvia y azul acero.
-      green: i('#4f8a5f'),
+      green: i('#4f8a5f', 'rubber', undefined, 0.7, 'floor'),
       steel: i('#4d6b85'),
-      gymWall: i('#8e9296'),
-      yellow: i('#e9c23c'),
+      gymWall: i('#8e9296', 'plaster', 0.46, undefined, 'wall'),
+      yellow: i('#e9c23c', 'plaster', undefined, undefined, 'wall'),
+      // Plantas altas y patio este (recorrido 4:28–9:16, 9:40–10:06).
+      dance: i('#7a3e2e', 'parquet', undefined, undefined, 'floor'),
+      blockDark: i('#9a9184', 'block', 0.14, undefined, 'wall'),
+      // Chapas pintadas: esmalte sobre metal, satinado.
+      redSheet: s('#9a4f45', 0.55, 0.12, 'corrugated'),
+      blueSheet: i('#3f4f96', 'corrugated', 0.12, 0.55),
+      brickWhite: s('#e2e1dc', 0.92, 0, 'brick', 'wall'),
+      jardinRed: s('#c22832', 0.82, 0, 'plaster', 'wall'),
+      mint: i('#a9dcc6', 'plaster', undefined, undefined, 'wall'),
+      skyWall: i('#9fd0e8', 'plaster', undefined, undefined, 'wall'),
+      pinkWall: i('#f1b7ca', 'plaster', undefined, undefined, 'wall'),
+      redWall: i('#dc6a5c', 'plaster', undefined, undefined, 'wall'),
 
       // Carpintería, herrería y mobiliario.
       glass: mats.glass(hex('#a9c3cf'), 0.26),
       glassDark: mats.glass(PALETTE.glassBlue, 0.9),
-      frame: s('#e6e8e8', 0.45, 0.15),
-      red: s('#b81e24', 0.6),
+      // Marcos y aberturas pintados con esmalte: satinado y dieléctrico (la
+      // metalicidad los agrisaba como si fueran aluminio crudo).
+      frame: s('#e6e8e8', 0.42, 0),
+      red: s('#b81e24', 0.55, 0, 'plaster'),
       // Azul francia: sillas, canteros, protecciones y gráficas del recorrido.
-      blue: s('#1d4fb0', 0.6),
-      navy: s('#243b67', 0.65),
-      metalDark: s('#2c2f35', 0.5, 0.25, 'metal'),
-      metal: mats.metal(PALETTE.solarFrame, 0.4),
-      timber: s('#c99a62', 0.8, 0, 'timber'),
-      timberDark: s('#7b5236', 0.8, 0, 'timber'),
-      chairGreen: s('#2f7a5c', 0.6),
-      board: i('#f6f7f6', null, 0.35),
-      // Espejo: claro y brillante (no hay reflejo real; se lee por el brillo).
-      mirrorGlass: s('#d6e0e4', 0.05, 0.9),
+      // Polipropileno: mate-satinado, no el brillo de juguete.
+      blue: s('#1d4fb0', 0.6, 0, 'plaster'),
+      navy: s('#243b67', 0.65, 0, 'plaster'),
+      // Herrería pintada (rejas, barandas): esmalte gastado sobre hierro. Sin
+      // el cepillado del aluminio, que en un hierro pintado no existe.
+      metalDark: s('#2c2f35', 0.55, 0.2, 'plaster'),
+      // Aluminio de marcos y pizarras: cepillado fino a su escala real.
+      metal: mats.surface(PALETTE.solarFrame, 0.4, 0.25, 'metal', { metric: true }),
+      // Madera barnizada de pupitres, bancos y estantes.
+      timber: s('#c99a62', 0.55, 0, 'timber'),
+      timberDark: s('#7b5236', 0.55, 0, 'timber'),
+      chairGreen: s('#2f7a5c', 0.6, 0, 'plaster'),
+      // Pizarra blanca, hojas y mesadas: melamina o esmalte, con brillo.
+      board: i('#f6f7f6', null, 0.35, 0.4),
+      // Cortinas blancas (aulas del sector nuevo, salas del jardín): tela, no
+      // la melamina de la pizarra con la que compartían material.
+      curtainWhite: s('#ecebe6', 0.95, 0, 'fabric'),
+      // Espejos (salón de los espejos y aula de danzas): plata pulida con un
+      // reflejo de ambiente procedural (ver Materials.mirror). Los de marco
+      // de color y los sin marco comparten material: un draw call.
+      mirrorGlass: mats.mirror(),
       soil: mats.surface(PALETTE.soil, 0.95, 0, null),
       grass: mats.grass(PALETTE.leafMid),
-      stair: i('#9a9a96', 'concrete', 0.18),
+      stair: i('#9a9a96', 'concrete', 0.18, undefined, 'floor'),
       light: mats.glow(hex('#f5f8ff'), 0.95),
       exitSign: mats.glow(hex('#37c46b'), 0.9),
       lit: mats.glow(PALETTE.glassLit, 0.7),
@@ -260,14 +403,22 @@ export class SchoolBuilder {
     Object.assign(m, {
       bars: m.metalDark,
       black: m.metalDark,
-      portal: m.metalDark,
-      stone: m.timberDark,
       appliance: m.frame,
-      mirror: m.frame,
+      // Espejo sin marco de color: el mismo espejo (con el blanco de los
+      // marcos se leía como una pared).
+      mirror: m.mirrorGlass,
       leaf: m.board,
       chairBlue: m.blue,
       curtainBlue: m.blue,
       curtainRed: m.red,
+      // Colores de las plantas altas y del patio que se leen igual con uno
+      // existente: cada material propio sería otro draw call.
+      mesh: m.metalDark,
+      gravel: m.patio,
+      patioGreen: m.green,
+      greige: m.render,
+      cream: m.white,
+      orangeWall: m.orange,
       // Colores del recorrido que comparten material con uno cercano.
       charcoal: m.metalDark,
       darkGreen: m.chairGreen,
@@ -299,6 +450,7 @@ export class SchoolBuilder {
     for (const it of ITEMS) this.item(it);
     this.lights();
     this.portal();
+    this.jardinFacade();
     this.frontage();
     this.fences();
     this.utilityLines();
@@ -375,7 +527,7 @@ export class SchoolBuilder {
       { bottom: false },
     );
     // Fondos de los vecinos detrás de la medianera: pasto y algún árbol.
-    this.prisms.plan(this.m.grass, [APEX, [miguelCaneU(top), top], [U.teaE, top], [U.teaE, rearV(U.teaE)]], 0, 0.05, {
+    this.prisms.plan(this.m.lawn, [APEX, [miguelCaneU(top), top], [U.teaE, top], [U.teaE, rearV(U.teaE)]], 0, 0.05, {
       bottom: false,
     });
     for (const [u, v] of [
@@ -412,7 +564,7 @@ export class SchoolBuilder {
       [parkEdge(top), top],
       [west, top],
     ];
-    this.prisms.plan(this.m.grass, park, 0, 0.06, { bottom: false });
+    this.prisms.plan(this.m.lawn, park, 0, 0.06, { bottom: false });
     for (let v = -4; v > top + 3; v -= 7.5) {
       const u = (west + parkEdge(v)) / 2 + this.rng.range(-1.5, 1.5);
       if (u > parkEdge(v) - 2.5 || u < west + 2.5) continue;
@@ -438,9 +590,11 @@ export class SchoolBuilder {
       dark: this.m.tileDark,
       checker: this.m.checker,
       ceramic: this.m.ceramic,
+      ceramicTan: this.m.ceramicTan,
       rubber: this.m.rubber,
       terracotta: this.m.terracotta,
       hallStone: this.m.hallStone,
+      dance: this.m.dance,
     };
     for (const r of ROOMS) {
       const level = roomLevel(r);
@@ -452,8 +606,10 @@ export class SchoolBuilder {
         this.prisms.plan(mat[r.floor], r.poly, 0, top, { bottom: false });
         continue;
       }
+      // Con cara inferior: bajo la galería en voladizo y bajo la pasarela se ve
+      // la losa desde el patio (oscura, como en el video).
       for (const piece of subtractRects(r.poly, voidsAt(level))) {
-        this.prisms.plan(mat[r.floor], piece, top - 0.14, top, { bottom: false });
+        this.prisms.plan(mat[r.floor], piece, top - 0.14, top);
       }
     }
   }
@@ -462,10 +618,24 @@ export class SchoolBuilder {
 
   private side(w: Wall, room: Room | null): Side {
     if (w.kind === 'medianera' || !room) {
-      return { bands: [[0, w.h, this.m.facade]], stripe: false, exterior: true, room };
+      const ext = (w.ext && this.m[w.ext]) || this.m.facade;
+      return { bands: [[0, w.h, ext]], stripe: false, exterior: true, room };
     }
     const st = STYLES[room.id] ?? {};
-    const mat = this.m[w.finish?.[room.id] ?? st.wall ?? 'white'];
+    const key = w.finish?.[room.id] ?? st.wall ?? 'white';
+    if (key === 'blockTwoTone') {
+      // Testero del polideportivo: bloque claro abajo, más oscuro desde ~4 m.
+      return {
+        bands: [
+          [0, 4.1, this.m.block],
+          [4.1, w.h, this.m.blockDark],
+        ],
+        stripe: false,
+        exterior: false,
+        room,
+      };
+    }
+    const mat = this.m[key];
     const stripe = st.stripe ?? (mat === this.m.white && !st.wainscot);
     // Muro alto del gimnasio visto desde un ambiente bajo: por encima del
     // techo vecino ya es fachada.
@@ -477,7 +647,7 @@ export class SchoolBuilder {
     } else {
       bands.push([0, top, mat]);
     }
-    if (top < w.h) bands.push([top, w.h, this.m.facade]);
+    if (top < w.h) bands.push([top, w.h, (w.upper && this.m[w.upper]) || this.m.facade]);
     return { bands, stripe, exterior: false, room };
   }
 
@@ -488,30 +658,81 @@ export class SchoolBuilder {
     const dv = (w.b[1] - av) / len;
     const nu = -dv;
     const nv = du;
-    const mu = au + (du * len) / 2;
-    const mv = av + (dv * len) / 2;
     const t = w.kind === 'int' ? SCHOOL.wallT : SCHOOL.extT;
     // Base del muro: los de los pisos altos apoyan sobre la losa de su nivel.
     const yb = w.level * H;
-    const pos = this.side(w, roomAt(mu + nu * 0.45, mv + nv * 0.45, w.level));
-    const neg = this.side(w, roomAt(mu - nu * 0.45, mv - nv * 0.45, w.level));
-    const same =
-      pos.bands.length === neg.bands.length &&
-      pos.bands.every((b, k) => b[2] === neg.bands[k][2] && b[0] === neg.bands[k][0] && b[1] === neg.bands[k][1]);
-    const layers: Layer[] = same
-      ? [{ off: 0, t, side: pos }]
-      : [
-          { off: t / 4, t: t / 2, side: pos },
-          { off: -t / 4, t: t / 2, side: neg },
-        ];
     const at = (d: number): P => [au + du * d, av + dv * d];
+    const roomsAt = (d: number): [Room | null, Room | null] => {
+      const [pu, pv] = at(d);
+      return [roomAt(pu + nu * 0.45, pv + nv * 0.45, w.level), roomAt(pu - nu * 0.45, pv - nv * 0.45, w.level)];
+    };
 
-    // Tramos: el muro se corta en cada borde de vano; en cada tramo quedan
-    // los vanos que lo cubren (pueden ser varios, a distinta altura).
+    // Un muro largo pasa por varios ambientes: se corta donde llega otro muro
+    // o termina un ambiente, y cada tramo toma la terminación de los ambientes
+    // que tiene a cada lado. Antes se miraba sólo el centro del muro: el fondo
+    // de la recepción del jardín se pintaba entero del amarillo de la Sala
+    // Amarilla, también del lado de la galería verde (y se veía en el vano).
+    const along = (p: P): number | null => {
+      const ru = p[0] - au;
+      const rv = p[1] - av;
+      const d = ru * du + rv * dv;
+      return Math.abs(-ru * dv + rv * du) <= t / 2 + 0.16 && d > 0.05 && d < len - 0.05 ? d : null;
+    };
+    const roomCuts: number[] = [];
+    for (const o of WALLS) {
+      if (o === w || o.level !== w.level) continue;
+      for (const p of [o.a, o.b]) {
+        const d = along(p);
+        if (d !== null) roomCuts.push(d);
+      }
+    }
+    for (const r of ROOMS) {
+      if (roomLevel(r) !== w.level) continue;
+      for (const p of r.poly) {
+        const d = along(p);
+        if (d !== null) roomCuts.push(d);
+      }
+    }
+    // Tramos de terminación: entre cortes, fusionando los que ven lo mismo.
+    const marks = [0, ...roomCuts.sort((x, y) => x - y), len];
+    const finishes: Array<{ t0: number; t1: number; layers: Layer[]; key: string }> = [];
+    for (let k = 0; k < marks.length - 1; k++) {
+      const t0 = marks[k];
+      const t1 = marks[k + 1];
+      if (t1 - t0 < 0.02) continue;
+      const [rp, rn] = roomsAt((t0 + t1) / 2);
+      const key = `${rp?.id ?? '-'}|${rn?.id ?? '-'}`;
+      const last = finishes[finishes.length - 1];
+      if (last && last.key === key) {
+        last.t1 = t1;
+        continue;
+      }
+      const pos = this.side(w, rp);
+      const neg = this.side(w, rn);
+      const same =
+        pos.bands.length === neg.bands.length &&
+        pos.bands.every((b, j) => b[2] === neg.bands[j][2] && b[0] === neg.bands[j][0] && b[1] === neg.bands[j][1]) &&
+        pos.stripe === neg.stripe;
+      const layers: Layer[] = same
+        ? [{ off: 0, t, side: pos }]
+        : [
+            { off: t / 4, t: t / 2, side: pos },
+            { off: -t / 4, t: t / 2, side: neg },
+          ];
+      finishes.push({ t0: last ? last.t1 : t0, t1, layers, key });
+    }
+    if (finishes.length) {
+      finishes[0].t0 = 0;
+      finishes[finishes.length - 1].t1 = len;
+    }
+
+    // Tramos: el muro se corta en cada borde de vano y de terminación; en
+    // cada tramo quedan los vanos que lo cubren (varios, a distinta altura).
     const cuts = [0, len];
     for (const o of w.openings) cuts.push(o.t0, o.t1);
+    for (const f of finishes) cuts.push(f.t0, f.t1);
     cuts.sort((x, y) => x - y);
-    const spans: Array<{ t0: number; t1: number; holes: Array<[number, number]> }> = [];
+    const spans: Array<{ t0: number; t1: number; holes: Array<[number, number]>; layers: Layer[] }> = [];
     for (let k = 0; k < cuts.length - 1; k++) {
       const t0 = cuts[k];
       const t1 = cuts[k + 1];
@@ -519,16 +740,24 @@ export class SchoolBuilder {
       const mid = (t0 + t1) / 2;
       const holes = w.openings
         .filter((o) => o.t0 <= mid && o.t1 >= mid)
-        .map((o) => holeOf(o, w.h))
+        .map((o): [number, number] => {
+          const [hb, ht] = holeOf(o, w.h);
+          // Las puertas llevan un cabezal de marco de 8 cm sobre el vano: el
+          // dintel del muro arranca encima. Si arrancaba en el mismo plano
+          // que la cara inferior del cabezal, las dos caras titilaban.
+          return [hb, FRAMED.has(o.type) ? Math.min(ht + 0.08, w.h) : ht];
+        })
         .sort((x, y) => x[0] - y[0]);
-      spans.push({ t0, t1, holes });
+      const fin = finishes.find((f) => mid >= f.t0 && mid <= f.t1) ?? finishes[0];
+      spans.push({ t0, t1, holes, layers: fin.layers });
     }
 
-    for (const L of layers) {
-      for (const [y0, y1, mat] of L.side.bands) {
-        for (const s of spans) {
-          const a = at(s.t0);
-          const b = at(s.t1);
+    const stripeCut = spans.map((s) => s.holes.some(([hb, ht]) => hb < STRIPE[1] && ht > STRIPE[0]));
+    spans.forEach((s, k) => {
+      const a = at(s.t0);
+      const b = at(s.t1);
+      for (const L of s.layers) {
+        for (const [y0, y1, mat] of L.side.bands) {
           // Lleno entre vanos, dentro de la franja [y0, y1].
           let y = y0;
           for (const [hb, ht] of s.holes) {
@@ -538,20 +767,24 @@ export class SchoolBuilder {
           }
           if (y < y1 - 0.005) this.piece(mat, a, b, L.t, yb + y, yb + y1, L.off);
         }
-      }
-      // Guarda roja fina a 1,20 m (centro), como en todos los pasillos del
-      // recorrido: corre por los antepechos y se corta en las puertas.
-      if (L.side.stripe) {
-        for (const s of spans) {
-          if (s.holes.some(([hb, ht]) => hb < STRIPE[1] && ht > STRIPE[0])) continue;
-          this.piece(this.m.stripe, at(s.t0), at(s.t1), L.t + 0.02, yb + STRIPE[0], yb + STRIPE[1], L.off);
+        // Guarda roja fina a 1,20 m (centro), como en todos los pasillos del
+        // recorrido: corre por los antepechos y se corta en las puertas. Donde
+        // termina contra un vano se retira 3 mm: su canto quedaba en el mismo
+        // plano que el canto del muro y titilaba.
+        if (L.side.stripe && !stripeCut[k]) {
+          const t0 = s.t0 + (k > 0 && stripeCut[k - 1] ? 0.003 : 0);
+          const t1 = s.t1 - (k < spans.length - 1 && stripeCut[k + 1] ? 0.003 : 0);
+          this.piece(this.m.stripe, at(t0), at(t1), L.t + 0.02, yb + STRIPE[0], yb + STRIPE[1], L.off);
         }
       }
-    }
+    });
 
-    const extSign = pos.exterior && !neg.exterior ? 1 : neg.exterior && !pos.exterior ? -1 : 0;
     for (const o of w.openings) {
-      this.opening(w, o, at(o.t0), at(o.t1), o.t1 - o.t0, t, [nu, nv], extSign, pos.room, neg.room);
+      const [rp, rn] = roomsAt((o.t0 + o.t1) / 2);
+      const pe = !rp || w.kind === 'medianera';
+      const ne = !rn || w.kind === 'medianera';
+      const extSign = pe && !ne ? 1 : ne && !pe ? -1 : 0;
+      this.opening(w, o, at(o.t0), at(o.t1), o.t1 - o.t0, t, [nu, nv], extSign, rp, rn);
     }
   }
 
@@ -585,26 +818,56 @@ export class SchoolBuilder {
       this.piece(fm, a, b, 0.1, ht - 0.06, ht);
       this.piece(fm, a, along(0.06), 0.1, hb, ht);
       this.piece(fm, along(len - 0.06), b, 0.1, hb, ht);
-      this.piece(fm, along(len / 2 - 0.025), along(len / 2 + 0.025), 0.08, hb, ht);
-      if (extSign !== 0 && type === 'window') {
-        // Rejas negras de planta baja, como en todas las ventanas de la calle.
+      if (this.detailed || len > 2.4) this.piece(fm, along(len / 2 - 0.025), along(len / 2 + 0.025), 0.08, hb, ht);
+      const grille = o.grille ?? (w.level > 0 ? 'whiteBars' : 'bars');
+      if (extSign !== 0 && type === 'window' && grille !== 'none') {
         const off = extSign * (t / 2 + 0.06);
-        this.piece(m.slab, along(-0.05), along(len + 0.05), 0.16, hb - 0.06, hb, extSign * (t / 2 + 0.02));
-        for (let k = 1; k < 7; k++) {
-          const d = (k * len) / 7;
-          this.piece(m.bars, along(d - 0.012), along(d + 0.012), 0.025, hb + 0.02, ht - 0.02, off);
+        if (grille === 'bars' || grille === 'whiteBars') {
+          // Rejas: negras en planta baja, blancas en los pisos altos (Street View).
+          const bars = grille === 'bars' ? m.bars : m.frame;
+          this.piece(m.slab, along(-0.05), along(len + 0.05), 0.16, hb - 0.06, hb, extSign * (t / 2 + 0.02));
+          const nb = this.detailed ? 7 : 4;
+          for (let k = 1; k < nb; k++) {
+            const d = (k * len) / nb;
+            this.piece(bars, along(d - 0.012), along(d + 0.012), 0.025, hb + 0.02, ht - 0.02, off);
+          }
+          for (const y of this.detailed ? [hb + 0.45, ht - 0.45] : [(hb + ht) / 2]) this.piece(bars, a, b, 0.025, y, y + 0.03, off);
+        } else if (grille === 'mesh') {
+          // Malla romboidal: una trama fina y oscura delante del vidrio.
+          const step = this.detailed ? 0.14 : 0.28;
+          const n = Math.max(3, Math.round(len / step));
+          for (let k = 1; k < n; k++) {
+            const d = (k * len) / n;
+            this.piece(m.mesh, along(d - 0.006), along(d + 0.006), 0.012, hb + 0.02, ht - 0.02, off);
+          }
+          for (let y = hb + step; y < ht - 0.05; y += step) this.piece(m.mesh, a, b, 0.012, y, y + 0.012, off);
+        } else {
+          // Parasoles horizontales de chapa clara (galería roja, 2:08).
+          for (let y = hb + 0.12; y < ht - 0.05; y += 0.16) this.piece(m.frame, a, b, 0.12, y, y + 0.03, extSign * (t / 2 + 0.1));
         }
-        for (const y of [hb + 0.45, ht - 0.45]) this.piece(m.bars, a, b, 0.025, y, y + 0.03, off);
       }
-      // Cortinas en aulas y en el jardín: celestes, violetas o azules según
-      // el aula (recorrido 0:48-1:10 y fachada).
-      const inner = extSign !== 0 ? (extSign > 0 ? roomNeg : roomPos) : null;
-      if (type === 'window' && inner && (inner.id.startsWith('aula') || inner.id === 'jardin')) {
+      // Cortinas en aulas, oficinas y en el jardín: celestes, violetas, blancas
+      // o con cenefa roja según el ambiente (recorrido y fachada).
+      // El ambiente de cada ventana (no el del centro del muro): un muro largo
+      // de fachada pasa por varias aulas con cortinas distintas.
+      const wm = along(len / 2);
+      const inner = extSign !== 0 ? roomAt(wm[0] - n[0] * extSign * 0.45, wm[1] - n[1] * extSign * 0.45, w.level) : null;
+      if (type === 'window' && inner && (inner.id.startsWith('aula') || inner.id === 'jardin' || STYLES[inner.id]?.curtain)) {
         const off = -extSign * (t / 2 + 0.06);
         const cm = m[STYLES[inner.id]?.curtain ?? 'curtainBlue'];
+        // Sobre Laprida las cortinas están casi cerradas: desde la calle cada
+        // ventana se lee como un rectángulo violeta oscuro (0:04–0:08).
+        const onLaprida = Math.abs(w.a[1]) < 0.01 && Math.abs(w.b[1]) < 0.01 && w.level <= 1;
+        if (onLaprida) {
+          this.piece(cm, along(-0.3), along(len * 0.42), 0.06, hb - 0.05, ht + 0.02, off);
+          this.piece(cm, along(len * 0.58), along(len + 0.3), 0.06, hb - 0.05, ht + 0.02, off);
+          return;
+        }
         // Barral negro, cenefa y paños a los costados.
-        this.piece(m.metalDark, along(-0.3), along(len + 0.3), 0.03, ht + 0.28, ht + 0.31, off);
-        this.piece(cm, along(-0.2), along(len + 0.2), 0.05, ht + 0.02, ht + 0.28, off);
+        if (this.detailed) {
+          this.piece(m.metalDark, along(-0.3), along(len + 0.3), 0.03, ht + 0.28, ht + 0.31, off);
+          this.piece(cm, along(-0.2), along(len + 0.2), 0.05, ht + 0.02, ht + 0.28, off);
+        }
         this.piece(cm, along(-0.3), along(0.18), 0.06, hb - 0.05, ht + 0.02, off);
         this.piece(cm, along(len - 0.18), along(len + 0.3), 0.06, hb - 0.05, ht + 0.02, off);
       }
@@ -612,7 +875,8 @@ export class SchoolBuilder {
     }
 
     if (type === 'counter') {
-      this.piece(m.timber, a, b, t + 0.36, hb - 0.05, hb);
+      // Mostrador apoyado SOBRE el antepecho (no en su mismo plano).
+      this.piece(m.timber, a, b, t + 0.36, hb, hb + 0.05);
       return;
     }
     if (type === 'pass') return;
@@ -623,6 +887,9 @@ export class SchoolBuilder {
     this.piece(frameMat, a, along(0.07), t + 0.05, yb, ht);
     this.piece(frameMat, along(len - 0.07), b, t + 0.05, yb, ht);
     this.piece(frameMat, a, b, t + 0.05, ht, ht + 0.08);
+
+    // Las de aulas y oficinas las dibuja y mueve el juego (`game/world/Doors`).
+    if (isInteractiveDoor(w.level, a, b)) return;
 
     // Las hojas abren hacia el ambiente (no hacia el pasillo); las de
     // emergencia, hacia la calle.
@@ -636,8 +903,14 @@ export class SchoolBuilder {
       const p = along(h);
       const q0: P = [p[0] + n[0] * s * (t / 2 + 0.02), p[1] + n[1] * s * (t / 2 + 0.02)];
       const q1: P = [q0[0] + n[0] * s * leafW, q0[1] + n[1] * s * leafW];
-      if (type === 'entrance' || type === 'exit' || !own) {
+      if (type === 'entrance' || type === 'exit' || !own || !this.detailed) {
         this.piece(leafMat, q0, q1, 0.045, yb + 0.03, ht - 0.04);
+        // Picaporte cerca del borde libre (de los dos lados de la hoja).
+        if (this.detailed && type !== 'entrance' && type !== 'exit') {
+          const k: P = [q1[0] - (q1[0] - q0[0]) * 0.08, q1[1] - (q1[1] - q0[1]) * 0.08];
+          const k2: P = [q1[0] - (q1[0] - q0[0]) * 0.13, q1[1] - (q1[1] - q0[1]) * 0.13];
+          this.piece(m.metal, k2, k, 0.12, yb + 0.98, yb + 1.02);
+        }
       } else {
         // Hoja con vidrio: tablero abajo (hasta 0,9 m), vidrio arriba en su marco.
         this.piece(leafMat, q0, q1, 0.045, yb + 0.03, yb + 0.9);
@@ -680,7 +953,7 @@ export class SchoolBuilder {
       const kind = STYLES[r.id]?.ceiling;
       if (kind === null) continue;
       const level = roomLevel(r);
-      const y = LEVEL_Y[level] + 3.1;
+      const y = LEVEL_Y[level] + ceilingHeight(r);
       // Por donde sube una escalera al nivel de arriba, el cielorraso se abre.
       const above = level < 2 ? voidsAt((level + 1) as 1 | 2) : [];
       const pieces = subtractRects(r.poly, above);
@@ -704,24 +977,41 @@ export class SchoolBuilder {
       const top = volumeTop(vol);
       const body = offsetPolygon(poly, 0.15);
       const inward = polygonArea(poly) > 0 ? 1 : -1;
-      for (let level = 1; level <= vol.floors; level++) {
-        const y0 = level * H;
-        // Cornisa entre plantas. Arranca en la losa (no debajo): si bajara
-        // del cielorraso, su cara inferior taparía el techo de abajo. Es un
-        // anillo, no una tapa: adentro está el piso de arriba.
-        this.ring(this.m.facade, poly, 0.15, 0.34, y0, y0 + 0.22);
-        for (let i = 0; i < poly.length; i++) {
-          const a = poly[i];
-          const b = poly[(i + 1) % poly.length];
-          const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-          if (len < 0.05) continue;
-          const du = (b[0] - a[0]) / len;
-          const dv = (b[1] - a[1]) / len;
-          // Normal hacia adentro del volumen.
-          const iu = -dv * inward;
-          const iv = du * inward;
-          const mid: P = [(a[0] + b[0]) / 2 + iu * 0.5, (a[1] + b[1]) / 2 + iv * 0.5];
-          if (roomAt(mid[0], mid[1], level as Level)) continue;
+      const ringPath = offsetPolygon(poly, 0.245);
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i];
+        const b = poly[(i + 1) % poly.length];
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (len < 0.05) continue;
+        const du = (b[0] - a[0]) / len;
+        const dv = (b[1] - a[1]) / len;
+        // Normal hacia adentro del volumen.
+        const iu = -dv * inward;
+        const iv = du * inward;
+        const mid: P = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+        const inside: P = [mid[0] + iu * 0.5, mid[1] + iv * 0.5];
+        const outside: P = [mid[0] - iu * 0.45, mid[1] - iv * 0.45];
+        for (let level = 1; level <= vol.floors; level++) {
+          const y0 = level * H;
+          // Cornisa entre plantas: sólo en las caras a la intemperie (contra
+          // otro volumen igual de alto o contra el gimnasio quedaría adentro).
+          if (vol.cornice !== false && !this.covered(vol, outside, level)) {
+            const ra = ringPath[i];
+            const rb = ringPath[(i + 1) % poly.length];
+            const rl = Math.hypot(rb[0] - ra[0], rb[1] - ra[1]);
+            const e = 0.095 / Math.max(rl, 0.01);
+            this.piece(
+              this.m.facade,
+              [ra[0] - (rb[0] - ra[0]) * e, ra[1] - (rb[1] - ra[1]) * e],
+              [rb[0] + (rb[0] - ra[0]) * e, rb[1] + (rb[1] - ra[1]) * e],
+              0.19,
+              y0,
+              y0 + 0.22,
+            );
+          }
+          // Cerramiento genérico donde ese nivel no tiene ambientes: arista por
+          // arista, porque donde los hay sus muros reales hacen de fachada.
+          if (vol.shell === false || roomAt(inside[0], inside[1], level as Level)) continue;
           const e = 0.15 / len;
           const a2: P = [a[0] - (b[0] - a[0]) * e, a[1] - (b[1] - a[1]) * e];
           const b2: P = [b[0] + (b[0] - a[0]) * e, b[1] + (b[1] - a[1]) * e];
@@ -729,26 +1019,28 @@ export class SchoolBuilder {
           this.upperWindows(vol, a, b, level as Level);
         }
       }
-      this.prisms.plan(this.m.roof, body, top, top + 0.04, { bottom: false, sides: false });
-      this.parapet(body, top, 0.55);
+      if (vol.roof === false) continue;
+      this.prisms.plan((vol.roofMat && this.m[vol.roofMat]) || this.m.roof, body, top, top + 0.04, { bottom: false, sides: false });
+      // Pretil: no contra un volumen vecino que suba hasta acá o más.
+      const bodyIn = polygonArea(body) > 0 ? 1 : -1;
+      for (let i = 0; i < body.length; i++) {
+        const a = body[i];
+        const b = body[(i + 1) % body.length];
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (len < 0.05) continue;
+        const nu = (-(b[1] - a[1]) / len) * bodyIn;
+        const nv = ((b[0] - a[0]) / len) * bodyIn;
+        const probe: P = [(a[0] + b[0]) / 2 - nu * 0.6, (a[1] + b[1]) / 2 - nv * 0.6];
+        if (UPPER.some((o) => o !== vol && volumeTop(o) >= top && inPoly(o.poly, probe[0], probe[1]))) continue;
+        this.piece(this.m.slab, a, b, 0.2, top, top + 0.55, bodyIn * 0.1);
+      }
     }
   }
 
-  /** Anillo alrededor de un polígono, entre los desplazamientos `d0` y `d1` hacia afuera. */
-  private ring(mat: Material, poly: readonly P[], d0: number, d1: number, y0: number, y1: number): void {
-    const t = d1 - d0;
-    const path = offsetPolygon(poly, (d0 + d1) / 2);
-    for (let i = 0; i < path.length; i++) {
-      const a = path[i];
-      const b = path[(i + 1) % path.length];
-      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      if (len < 0.01) continue;
-      // Se estira medio espesor en cada punta para cerrar las esquinas.
-      const e = t / 2 / len;
-      const a2: P = [a[0] - (b[0] - a[0]) * e, a[1] - (b[1] - a[1]) * e];
-      const b2: P = [b[0] + (b[0] - a[0]) * e, b[1] + (b[1] - a[1]) * e];
-      this.piece(mat, a2, b2, t, y0, y1);
-    }
+  /** ¿Del otro lado de esa cara hay otro volumen alto (o el gimnasio)? */
+  private covered(vol: Volume, p: P, level: number): boolean {
+    if (UPPER.some((o) => o !== vol && o.floors >= level && inPoly(o.poly, p[0], p[1]))) return true;
+    return roomAt(p[0], p[1])?.id === 'gimnasio';
   }
 
   private parapet(poly: readonly P[], y: number, h: number): void {
@@ -851,20 +1143,43 @@ export class SchoolBuilder {
     const half = Math.asin(chord / 2 / r);
     const over = Math.asin(Math.min(0.99, (chord / 2 + 0.45) / r));
     const segs = 14;
-    const uMid = (U.gymW + U.e) / 2;
-    const uLen = U.e - U.gymW + 0.7;
+    // La bóveda sigue al oeste sobre el aula de danzas del segundo piso hasta
+    // el muro de los espejos (8:44–9:16, 9:38): el cielorraso inclinado del
+    // aula es esta misma curva.
+    const u0 = U1.vaultW;
+    const uMid = (u0 + U.e) / 2;
+    const uLen = U.e - u0 + 0.7;
     for (let i = 0; i < segs; i++) {
       const p0 = -over + ((2 * over) / segs) * i;
       const p1 = p0 + (2 * over) / segs;
       const pm = (p0 + p1) / 2;
       const w = 2 * r * Math.sin((p1 - p0) / 2) + 0.04;
       const pos = toWorld(this.f, uMid, arcV(pm));
-      // Chapa con franjas de policarbonato traslúcido cada tres paños.
-      const skylight = i % 3 === 1;
-      this.farm.add('box', skylight ? m.light : m.gymRoof, new Vector3(pos.x, arcY(pm), pos.z), new Vector3(uLen, 0.1, w), 0, pm);
+      this.farm.add('box', m.gymRoof, new Vector3(pos.x, arcY(pm), pos.z), new Vector3(uLen, 0.1, w), 0, pm);
+      // Cara interior oscura de la chapa, sólo sobre el polideportivo.
+      const inner = toWorld(this.f, (U.gymW + U.e) / 2, arcV(pm, r - 0.08));
+      this.farm.add('box', m.metalDark, new Vector3(inner.x, arcY(pm, r - 0.08), inner.z), new Vector3(U.e - U.gymW, 0.04, w), 0, pm);
+      // Franjas de policarbonato traslúcido de alero a alero (9:22–9:28).
+      for (const us of [54.58, 60.28, 65.98]) {
+        const sp = toWorld(this.f, us, arcV(pm, r + 0.03));
+        this.farm.add('box', m.light, new Vector3(sp.x, arcY(pm, r + 0.03), sp.z), new Vector3(1.0, 0.1, w), 0, pm);
+        const ip = toWorld(this.f, us, arcV(pm, r - 0.1));
+        this.farm.add('box', m.light, new Vector3(ip.x, arcY(pm, r - 0.1), ip.z), new Vector3(1.0, 0.04, w), 0, pm);
+      }
     }
-    // Cabriadas curvas bajo la chapa.
-    for (let u = U.gymW + 2.1; u < U.e - 1; u += 3.4) {
+    // Cielorraso blanco de placas que sigue la curva sobre el aula de danzas.
+    const dMid = (u0 + U.gymW) / 2;
+    for (let i = 0; i < segs; i++) {
+      const p0 = -half + ((2 * half) / segs) * i;
+      const p1 = p0 + (2 * half) / segs;
+      const pm = (p0 + p1) / 2;
+      const rr = r - 0.14;
+      const w = 2 * rr * Math.sin((p1 - p0) / 2) + 0.03;
+      const pos = toWorld(this.f, dMid, arcV(pm, rr));
+      this.farm.add('box', m.ceiling, new Vector3(pos.x, arcY(pm, rr), pos.z), new Vector3(U.gymW - u0, 0.04, w), 0, pm);
+    }
+    // Cabriadas curvas bajo la chapa, sobre cada pilastra.
+    for (const u of GYM_PILASTERS) {
       for (let i = 0; i < 10; i++) {
         const p0 = -half + ((2 * half) / 10) * i;
         const p1 = p0 + (2 * half) / 10;
@@ -879,29 +1194,52 @@ export class SchoolBuilder {
       // Luminarias colgadas.
       for (const v of [vc - 5.5, vc, vc + 5.5]) this.box(m.light, u, v, 0.5, 0.12, 0.5, wallTop - 0.6);
     }
-    // Tímpanos curvos en los extremos este y oeste.
-    // El arco cierra solo contra la cuerda que apoya sobre los muros.
-    const gable: P[] = [];
-    for (let i = 0; i <= 16; i++) {
-      const phi = -half + ((2 * half) / 16) * i;
-      gable.push([arcV(phi), arcY(phi)]);
+    /** Altura de la bóveda (cara interior) en v. */
+    const archY = (v: number) => yc + Math.sqrt(Math.max(0, r * r - (v - vc) * (v - vc)));
+    // Tímpanos: el este, ciego; el del oeste del polideportivo, ahora interior,
+    // de chapa azul con las tres ventanas del aula de danzas; y el del muro de
+    // los espejos, con cuatro ventanas altas al cielo y el paso al hall.
+    this.gable(m.facade, U.e - 0.15, U.e + 0.15, wallTop, archY, []);
+    // Cara interior gris del testero este (9:28).
+    this.gable(m.gymWall, U.e - 0.17, U.e - 0.15, wallTop, archY, []);
+    const danceWin: Array<[number, number, number, number]> = [
+      [-11.0, -9.5, 7.52, 8.57],
+      [-7.9, -6.4, 7.52, 8.57],
+      [-4.8, -3.3, 7.52, 8.57],
+    ];
+    this.gable(m.blueSheet, U.gymW, U.gymW + 0.12, wallTop, archY, danceWin);
+    this.gable(m.white, U.gymW - 0.12, U.gymW, wallTop, archY, danceWin);
+    for (const [v0, v1, y0, y1] of danceWin) {
+      // Corredizas blancas con malla romboidal del lado del polideportivo.
+      this.box(m.glass, U.gymW, (v0 + v1) / 2, 0.02, y1 - y0, v1 - v0, y0);
+      this.box(m.frame, U.gymW, (v0 + v1) / 2, 0.14, 0.05, v1 - v0, y0);
+      this.box(m.frame, U.gymW, (v0 + v1) / 2, 0.14, 0.05, v1 - v0, y1 - 0.05);
+      for (let v = v0 + 0.1; v < v1; v += 0.12) this.box(m.mesh, U.gymW + 0.16, v, 0.012, y1 - y0, 0.012, y0);
     }
-    this.prisms.alongU(m.facade, gable, U.gymW - 0.15, U.gymW + 0.15);
-    this.prisms.alongU(m.facade, gable, U.e - 0.15, U.e + 0.15);
+    const mirrorWin: Array<[number, number, number, number]> = [
+      [-5.45, -4.55, 8.85, 9.25],
+      [-7.65, -6.75, 8.85, 9.35],
+      [-9.85, -8.95, 8.85, 9.45],
+      [-12.05, -11.15, 8.85, 9.45],
+      // Paso del hall del segundo piso, bajo la bóveda.
+      [V1.blockA, V1.blockHall, 2 * H, 8.75],
+    ];
+    this.gable(m.facade, u0 - 0.15, u0 + 0.15, 2 * H, archY, mirrorWin);
+    for (const [v0, v1, y0, y1] of mirrorWin.slice(0, 4)) this.box(m.glassDark, u0, (v0 + v1) / 2, 0.06, y1 - y0, v1 - v0, y0);
     // Testero este: dos franjas rojo-blanco-azul a los lados de la bandera,
-    // con el azul hacia el centro y más alto (como en el recorrido).
+    // con el azul hacia el centro y más alto (9:28).
     const face = U.e - SCHOOL.extT / 2 - 0.02;
     for (const side of [-1, 1]) {
-      const vc = GYM_MID + side * 4.0;
+      const bc = GYM_MID + side * 4.25;
       const bars: Array<[Material, number]> = [
-        [m.red, 5.8],
-        [m.slab, 6.3],
-        [m.navy, 7.0],
+        [m.red, 6.9],
+        [m.slab, 7.6],
+        [m.navy, 8.4],
       ];
       bars.forEach(([mat, top], k) => {
         // k = 0 afuera (rojo) … k = 2 adentro (azul).
-        const bv = vc - side * (k - 1) * 0.29;
-        this.box(mat, face, bv, 0.04, top - 0.1, 0.28, FY + 0.1);
+        const bv = bc - side * (k - 1) * 0.3;
+        this.box(mat, face, bv, 0.04, top - 0.1, 0.3, FY + 0.1);
       });
     }
     // Columnas reticuladas blancas sobre cada pilastra, hasta la bóveda.
@@ -912,53 +1250,174 @@ export class SchoolBuilder {
       }
     }
     // Zócalo gris oscuro y portón de chapa de la salida a Laprida.
-    this.box(m.metalDark, 52.9, 0.05, 3.9, 0.16, 0.1, 3.5);
+    this.box(m.metalDark, 51.8, 0.05, 2.2, 0.16, 0.1, 2.5);
+  }
+
+  /**
+   * Tímpano bajo la bóveda en u0..u1, desde `yb` hasta la curva, con huecos
+   * rectangulares [v0, v1, y0, y1]: se arma en franjas verticales entre los
+   * bordes de los huecos.
+   */
+  private gable(
+    mat: Material,
+    u0: number,
+    u1: number,
+    yb: number,
+    archY: (v: number) => number,
+    holes: ReadonlyArray<readonly [number, number, number, number]>,
+  ): void {
+    const cuts = new Set<number>([V.gymTop, 0]);
+    for (const [v0, v1] of holes) {
+      cuts.add(Math.max(V.gymTop, Math.min(0, v0)));
+      cuts.add(Math.max(V.gymTop, Math.min(0, v1)));
+    }
+    const vs = [...cuts].sort((a, b) => a - b);
+    for (let k = 0; k < vs.length - 1; k++) {
+      const va = vs[k];
+      const vb = vs[k + 1];
+      if (vb - va < 0.01) continue;
+      const vm = (va + vb) / 2;
+      // Tramos sólidos en altura: de yb a la curva, menos los huecos de esta franja.
+      const spans = holes
+        .filter(([h0, h1]) => Math.min(h0, h1) <= vm && Math.max(h0, h1) >= vm)
+        .map(([, , y0, y1]) => [y0, y1] as const)
+        .sort((x, y) => x[0] - y[0]);
+      let y = yb;
+      const steps = Math.max(1, Math.ceil((vb - va) / 1.2));
+      const arch: P[] = [];
+      for (let i = steps; i >= 0; i--) {
+        const v = va + ((vb - va) * i) / steps;
+        arch.push([v, archY(v)]);
+      }
+      for (const [y0, y1] of spans) {
+        if (y0 > y + 0.01) {
+          this.prisms.alongU(
+            mat,
+            [
+              [va, y],
+              [vb, y],
+              [vb, y0],
+              [va, y0],
+            ],
+            u0,
+            u1,
+          );
+        }
+        y = Math.max(y, y1);
+      }
+      // Las franjas de los extremos apoyan en los aleros (la curva vale yb
+      // ahí): se cierran con los puntos de la curva que quedan por encima.
+      const crown = arch.filter(([, ay]) => ay > y + 0.01);
+      if (crown.length) this.prisms.alongU(mat, [[va, y], [vb, y], ...crown], u0, u1);
+    }
   }
 
   // ================================================================ escaleras
 
   private stair(s: Stair): void {
     const m = this.m;
-    const n = Math.max(4, Math.round((s.y1 - s.y0) / 0.175));
+    const n = riserCount(s);
     const alongU = s.dir === 'u+' || s.dir === 'u-';
     const from = s.dir === 'u+' ? s.u0 : s.dir === 'u-' ? s.u1 : s.dir === 'v+' ? s.v0 : s.v1;
     const to = s.dir === 'u+' ? s.u1 : s.dir === 'u-' ? s.u0 : s.dir === 'v+' ? s.v1 : s.v0;
     const run = (to - from) / n;
     // Los tramos que arrancan en planta baja son macizos; los de los pisos
-    // altos, una losa escalonada con luz por debajo.
-    const solid = s.y0 < 0.5;
+    // altos, una losa escalonada con luz por debajo (también la escalera
+    // exterior de chapa del comedor).
+    const solid = s.y0 < 0.5 && !s.hollow;
+    // La de chapa del edificio de bloque es negra, con baranda negra (8:12).
+    const chequer = s.u0 >= U1.blockStair0 - 0.01 && s.y0 >= 3;
+    const tread = chequer ? m.metalDark : m.stair;
+    // La del jardín tiene pasamanos negro (11:49–13:06).
+    const rail = chequer || s.u0 >= 57.65 ? m.metalDark : s.hollow ? m.frame : m.red;
     for (let i = 0; i < n; i++) {
       const c = from + run * (i + 0.5);
       const top = FY + s.y0 + ((i + 1) * (s.y1 - s.y0)) / n;
       const bottom = solid ? 0 : top - 0.24;
-      if (alongU) this.box(m.stair, c, (s.v0 + s.v1) / 2, Math.abs(run) + 0.01, top - bottom, s.v1 - s.v0, bottom);
-      else this.box(m.stair, (s.u0 + s.u1) / 2, c, s.u1 - s.u0, top - bottom, Math.abs(run) + 0.01, bottom);
+      if (alongU) this.box(tread, c, (s.v0 + s.v1) / 2, Math.abs(run) + 0.01, top - bottom, s.v1 - s.v0, bottom);
+      else this.box(tread, (s.u0 + s.u1) / 2, c, s.u1 - s.u0, top - bottom, Math.abs(run) + 0.01, bottom);
       // Nariz de escalón clara (las del acceso llevan una franja amarilla).
-      if (alongU) this.box(m.slab, c - run * 0.45, (s.v0 + s.v1) / 2, 0.05, 0.02, s.v1 - s.v0, top);
-      else this.box(m.slab, (s.u0 + s.u1) / 2, c - run * 0.45, s.u1 - s.u0, 0.02, 0.05, top);
+      if (!this.detailed && i > 0 && i < n - 1) continue;
+      // Narices amarillas en el primer escalón y en la llegada (0:19, 1:35).
+      const yellow = !chequer && (i === n - 1 || (i === 0 && s.y0 < 0.5));
+      const nose = yellow ? m.yellow : m.slab;
+      if (alongU) this.box(nose, c - run * 0.45, (s.v0 + s.v1) / 2, 0.05, 0.02, s.v1 - s.v0, top);
+      else this.box(nose, (s.u0 + s.u1) / 2, c - run * 0.45, s.u1 - s.u0, 0.02, 0.05, top);
     }
-    // Baranda roja inclinada sobre los dos lados largos.
     const rise = s.y1 - s.y0;
     const length = Math.abs(to - from);
     const ang = Math.atan2(rise, length);
     const hyp = Math.hypot(rise, length);
-    const yMid = FY + (s.y0 + s.y1) / 2 + 0.9;
-    for (const side of [0, 1]) {
-      if (alongU) {
-        const v = side ? s.v1 - 0.04 : s.v0 + 0.04;
-        const p = toWorld(this.f, (s.u0 + s.u1) / 2, v);
-        // +u es −x en el mundo: subir hacia +u levanta el extremo −X.
-        const east = toWorld(this.f, 1, 0).x < toWorld(this.f, 0, 0).x;
-        const up = s.dir === 'u+' ? ang : -ang;
-        const tilt = east ? -up : up;
-        this.farm.add('box', m.red, new Vector3(p.x, yMid, p.z), new Vector3(hyp, 0.05, 0.05), 0, 0, tilt);
+    const yMid = FY + (s.y0 + s.y1) / 2;
+    // Giro que inclina una caja a lo largo del tramo (+u es −x en el mundo:
+    // subir hacia +u levanta el extremo −X).
+    const east = toWorld(this.f, 1, 0).x < toWorld(this.f, 0, 0).x;
+    const tilt = alongU ? (east ? -1 : 1) * (s.dir === 'u+' ? ang : -ang) : s.dir === 'v+' ? -ang : ang;
+    const sloped = (mat: Material, across: number, y: number, thick: number, width: number) => {
+      const p = alongU ? toWorld(this.f, (s.u0 + s.u1) / 2, across) : toWorld(this.f, across, (s.v0 + s.v1) / 2);
+      if (alongU) this.farm.add('box', mat, new Vector3(p.x, y, p.z), new Vector3(hyp, thick, width), 0, 0, tilt);
+      else this.farm.add('box', mat, new Vector3(p.x, y, p.z), new Vector3(width, thick, hyp), 0, tilt, 0);
+    };
+    const mid = alongU ? (s.v0 + s.v1) / 2 : (s.u0 + s.u1) / 2;
+    const width = alongU ? s.v1 - s.v0 : s.u1 - s.u0;
+    if (!solid) {
+      // Debajo: losa inclinada lisa (hormigón) o dos zancas (chapa), en vez
+      // del serrucho de escalones sueltos que se veía desde abajo. Su cara
+      // superior pasa por el pie de cada contrahuella y baja 26 cm.
+      if (s.hollow || chequer) {
+        for (const sgn of [-1, 1]) sloped(tread, mid + sgn * (width / 2 - 0.03), yMid - 0.13, 0.26 * Math.cos(ang), 0.06);
       } else {
-        const u = side ? s.u1 - 0.04 : s.u0 + 0.04;
-        const p = toWorld(this.f, u, (s.v0 + s.v1) / 2);
-        const tilt = s.dir === 'v+' ? -ang : ang;
-        this.farm.add('box', m.red, new Vector3(p.x, yMid, p.z), new Vector3(0.05, 0.05, hyp), 0, tilt, 0);
+        sloped(tread, mid, yMid - 0.13, 0.26 * Math.cos(ang), width);
       }
     }
+    // Pasamanos a 0,9 m sobre la línea de los escalones. Del lado de un muro
+    // va sobre ménsulas; del lado abierto, sobre parantes con travesaño medio
+    // (antes era un caño suelto flotando en el aire).
+    const runAt = (t: number) => from + (to - from) * t;
+    const treadTop = (t: number) => FY + s.y0 + (Math.min(n - 1, Math.floor(t * n)) + 1) * (rise / n);
+    for (const side of [0, 1]) {
+      const edge = alongU ? (side ? s.v1 : s.v0) : side ? s.u1 : s.u0;
+      const inward = side ? -1 : 1;
+      const walled = this.stairSideWalled(s, edge);
+      const across = edge + inward * (walled ? 0.07 : 0.04);
+      sloped(rail, across, yMid + 0.9, 0.05, 0.05);
+      const posts = Math.max(2, Math.round(length / 1.1) + 1);
+      for (let k = 0; k < posts; k++) {
+        const t = 0.06 + (0.88 * k) / (posts - 1);
+        const at = runAt(t);
+        const railY = yMid + 0.9 + (t - 0.5) * rise;
+        const [pu, pv] = alongU ? [at, across] : [across, at];
+        if (walled) {
+          // Ménsula corta hasta el muro.
+          if (this.detailed) this.box(rail, alongU ? pu : pu - inward * 0.035, alongU ? pv - inward * 0.035 : pv, 0.03, 0.03, 0.03, railY - 0.07);
+        } else {
+          const y0 = treadTop(t);
+          this.box(rail, pu, pv, 0.04, railY - y0, 0.04, y0);
+        }
+      }
+      if (!walled && this.detailed) sloped(rail, across, yMid + 0.45, 0.03, 0.03);
+    }
+  }
+
+  /** ¿Hay un muro (o el tabique entre tramos) pegado a este costado del tramo? */
+  private stairSideWalled(s: Stair, edge: number): boolean {
+    const alongU = s.dir === 'u+' || s.dir === 'u-';
+    const level = Math.min(2, Math.floor((s.y0 + 0.01) / H));
+    const lo = alongU ? s.u0 : s.v0;
+    const hi = alongU ? s.u1 : s.v1;
+    // Tabique entre los dos tramos de la escalera principal (ver `cores`).
+    if (alongU && Math.abs(edge + 27.47) < 0.2 && s.u0 < 25.9 && s.u1 > 23.3) return true;
+    for (const w of WALLS) {
+      if (w.level !== level) continue;
+      const parallel = alongU ? Math.abs(w.a[1] - w.b[1]) < 0.01 : Math.abs(w.a[0] - w.b[0]) < 0.01;
+      if (!parallel) continue;
+      const line = alongU ? w.a[1] : w.a[0];
+      if (Math.abs(line - edge) > (w.kind === 'int' ? SCHOOL.wallT : SCHOOL.extT) / 2 + 0.12) continue;
+      const a = alongU ? Math.min(w.a[0], w.b[0]) : Math.min(w.a[1], w.b[1]);
+      const b = alongU ? Math.max(w.a[0], w.b[0]) : Math.max(w.a[1], w.b[1]);
+      if (Math.min(b, hi) - Math.max(a, lo) > (hi - lo) * 0.5) return true;
+    }
+    return false;
   }
 
   /**
@@ -1035,11 +1494,11 @@ export class SchoolBuilder {
     // Descansos: macizos los bajos, losa los de los pisos altos.
     for (const l of LANDINGS) {
       const top = FY + l.y;
-      const bottom = l.y < 3 ? 0 : top - 0.24;
+      const bottom = l.y < 3 && !l.hollow ? 0 : top - 0.24;
       this.box(this.m.stair, (l.u0 + l.u1) / 2, (l.v0 + l.v1) / 2, l.u1 - l.u0, top - bottom, l.v1 - l.v0, bottom);
     }
     // Tabique entre tramos.
-    this.box(this.m.white, 23.2, -27.47, 5.8, 3.2, 0.12, 0);
+    this.box(this.m.white, 24.6, -27.47, 2.6, 3.2, 0.12, 0);
   }
 
   // ============================================================ equipamiento
@@ -1056,23 +1515,45 @@ export class SchoolBuilder {
     switch (it.kind) {
       case 'desk': {
         // Tapa (madera o laminado de color) sobre cuatro patas finas y un travesaño.
-        this.box(this.mat(it.color, m.timber), u, v, w, 0.04, d, FY + 0.7);
+        const top = FURNITURE.deskTop - 0.04;
+        this.box(this.mat(it.color, m.timber), u, v, w, 0.04, d, FY + top);
+        if (!this.detailed) {
+          // Dos laterales en vez de cuatro patas y travesaño.
+          for (const s of [-1, 1]) {
+            if (alongV) this.box(m.metalDark, u, v + s * (d / 2 - 0.05), w - 0.1, top, 0.03, FY);
+            else this.box(m.metalDark, u + s * (w / 2 - 0.05), v, 0.03, top, d - 0.1, FY);
+          }
+          break;
+        }
         for (const su of [-1, 1]) {
-          for (const sv of [-1, 1]) this.box(m.metalDark, u + su * (w / 2 - 0.05), v + sv * (d / 2 - 0.05), 0.035, 0.7, 0.035, FY);
+          for (const sv of [-1, 1]) this.box(m.metalDark, u + su * (w / 2 - 0.05), v + sv * (d / 2 - 0.05), 0.035, top, 0.035, FY);
         }
         if (alongV) this.box(m.metalDark, u + w / 2 - 0.05, v, 0.03, 0.03, d - 0.1, FY + 0.25);
         else this.box(m.metalDark, u, v + d / 2 - 0.05, w - 0.1, 0.03, 0.03, FY + 0.25);
+        // Bandeja portalibros de chapa bajo la tapa, como en los bancos reales.
+        this.box(m.metalDark, u, v, w - 0.1, 0.015, d - 0.1, FY + top - 0.15);
         break;
       }
       case 'chair': {
         const mat = room?.id === 'tecnologia' ? m.chairBlue : room?.id === 'teatro' ? m.black : m.chairGreen;
-        this.chair(this.mat(it.color, mat), u, v, it.face);
+        // Las sillitas del jardín (36 cm en el plano) son de talle chico: antes
+        // se dibujaban de adulto junto a mesas de adulto.
+        this.chair(this.mat(it.color, mat), u, v, it.face, room && KINDER_ROOMS.has(room.id) ? FURNITURE.smallScale : 1);
         break;
       }
       case 'table': {
-        this.box(this.mat(it.color, m.timber), u, v, w, 0.05, d, FY + 0.72);
+        const top = (room && KINDER_ROOMS.has(room.id) ? FURNITURE.smallTable : FURNITURE.tableTop) - 0.04;
+        this.box(this.mat(it.color, m.timber), u, v, w, 0.04, d, FY + top);
         for (const su of [-1, 1]) {
-          for (const sv of [-1, 1]) this.box(m.metalDark, u + su * (w / 2 - 0.08), v + sv * (d / 2 - 0.08), 0.05, 0.72, 0.05, FY);
+          for (const sv of [-1, 1]) this.box(m.metalDark, u + su * (w / 2 - 0.08), v + sv * (d / 2 - 0.08), 0.04, top, 0.04, FY);
+        }
+        // Bastidor de caño bajo la tapa (sin él la tapa parecía apoyada en
+        // cuatro palitos sueltos).
+        if (this.detailed) {
+          for (const s of [-1, 1]) {
+            if (w >= d) this.box(m.metalDark, u, v + s * (d / 2 - 0.08), w - 0.2, 0.05, 0.02, FY + top - 0.05);
+            else this.box(m.metalDark, u + s * (w / 2 - 0.08), v, 0.02, 0.05, d - 0.2, FY + top - 0.05);
+          }
         }
         break;
       }
@@ -1083,38 +1564,75 @@ export class SchoolBuilder {
         } else {
           for (const s of [-1, 1]) this.box(m.timberDark, u + s * (w / 2 - 0.03), v, 0.05, 0.73, d, FY);
         }
+        // Faldón del lado de los alumnos (el docente se sienta del otro).
+        const [fu, fv] = faceDir(it.face);
+        const depth = alongV ? w : d;
+        const span = (alongV ? d : w) - 0.1;
+        this.box(m.timberDark, u + fu * (depth / 2 - 0.04), v + fv * (depth / 2 - 0.04), alongV ? 0.025 : span, 0.55, alongV ? span : 0.025, FY + 0.18);
         break;
       }
       case 'hexTable':
       case 'roundTable': {
         const top = this.mat(it.color, it.kind === 'hexTable' ? m.timber : m.blue);
-        const hgt = it.kind === 'hexTable' ? 0.74 : 0.55;
+        const hgt = (it.kind === 'hexTable' ? FURNITURE.tableTop : FURNITURE.smallTable) - 0.05;
         this.cyl(top, u, v, w, 0.05, FY + hgt);
-        this.box(m.metalDark, u, v, 0.1, hgt, 0.1, FY);
+        this.box(m.metalDark, u, v, 0.08, hgt, 0.08, FY);
+        // Pie en cruz en el piso: con un solo poste la mesa no se sostendría.
+        if (this.detailed) {
+          this.box(m.metalDark, u, v, w * 0.6, 0.03, 0.06, FY);
+          this.box(m.metalDark, u, v, 0.06, 0.03, w * 0.6, FY);
+        }
         const chairMat = it.kind === 'hexTable' ? m.chairBlue : m.red;
         for (let k = 0; k < 4; k++) {
           const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
           const cu = u + Math.cos(a) * (w / 2 + 0.3);
           const cv = v + Math.sin(a) * (w / 2 + 0.3);
-          const face: Item['face'] = Math.abs(Math.cos(a)) > 0.5 ? (Math.cos(a) > 0 ? 'w' : 'e') : Math.sin(a) > 0 ? 'n' : 's';
-          this.chair(chairMat, cu, cv, face, it.kind === 'roundTable' ? 0.75 : 1);
+          // Mirando al centro de la mesa (a 45°, no al norte o al sur).
+          this.chair(chairMat, cu, cv, [-Math.cos(a), -Math.sin(a)], it.kind === 'roundTable' ? FURNITURE.smallScale : 1);
         }
         break;
       }
-      case 'board': {
-        const [bw, bd] = alongV ? [0.03, d] : [w, 0.03];
-        this.box(m.metalDark, u, v, alongV ? 0.04 : w + 0.08, 1.3, alongV ? d + 0.08 : 0.04, FY + 0.85);
-        this.box(m.board, u + (alongV ? 0.02 : 0), v + (alongV ? 0 : 0.02), bw, 1.2, bd, FY + 0.9);
+      case 'board':
+        // Pizarra blanca con marco de aluminio y bandeja para fibrones.
+        this.wallBoard(it, m.board, m.metal, FY + FURNITURE.boardBottom, FURNITURE.boardTop - FURNITURE.boardBottom);
         break;
-      }
       case 'shelf': {
         const mat = this.mat(it.color, room?.id === 'jardin' ? m.appliance : m.timberDark);
-        this.box(mat, u, v, w, 1.85, d, FY);
-        for (const y of [0.5, 0.95, 1.4]) {
-          const books = this.rng.pick([m.red, m.navy, m.chairGreen, m.timber]);
-          if (alongV) this.box(books, u, v, w + 0.02, 0.28, d - 0.2, FY + y);
-          else this.box(books, u, v, w - 0.2, 0.28, d + 0.02, FY + y);
+        const levels = [0.5, 0.95, 1.4];
+        // Mismo azar en escritorio y en VR (la semilla tiene que dar lo mismo).
+        const picks = levels.map(() => this.rng.pick([m.red, m.navy, m.chairGreen, m.timber]));
+        if (!this.detailed) {
+          this.box(mat, u, v, w, 1.85, d, FY);
+          levels.forEach((y, k) => {
+            if (alongV) this.box(picks[k], u, v, w + 0.02, 0.28, d - 0.2, FY + y);
+            else this.box(picks[k], u, v, w - 0.2, 0.28, d + 0.02, FY + y);
+          });
+          break;
         }
+        // Biblioteca abierta: laterales, techo, zócalo, fondo y estantes, con
+        // libros y biblioratos que no llenan cada estante (antes era un bloque
+        // macizo con tres franjas de color que asomaban por los costados).
+        const [fu, fv] = faceDir(it.face);
+        const depth = alongV ? w : d;
+        const span = alongV ? d : w;
+        const slab = (mt: Material, a: number, off: number, l: number, dep: number, y: number, h: number) =>
+          this.box(mt, u + (alongV ? 0 : a) + fu * off, v + (alongV ? a : 0) + fv * off, alongV ? dep : l, h, alongV ? l : dep, y);
+        for (const s of [-1, 1]) slab(mat, (s * (span - 0.025)) / 2, 0, 0.025, depth, FY, 1.85);
+        const inner = span - 0.05;
+        slab(mat, 0, 0, inner, depth, FY + 1.83, 0.02);
+        slab(mat, 0, 0.01, inner, depth - 0.02, FY, 0.08);
+        slab(mat, 0, -(depth / 2 - 0.006), inner, 0.012, FY + 0.08, 1.75);
+        levels.forEach((y, k) => {
+          slab(mat, 0, 0.005, inner, depth - 0.02, FY + y - 0.02, 0.02);
+          // Dos tramos de lomos por estante, de ancho y alto distintos.
+          const h0 = 0.22 + ((k * 37 + Math.round(u * 13 + v * 7)) % 5) * 0.015;
+          const l0 = inner * (0.42 + ((k * 53 + Math.round(u * 11)) % 4) * 0.08);
+          slab(picks[k], -inner / 2 + l0 / 2 + 0.01, -0.02, l0, depth - 0.1, FY + y, h0);
+          const l1 = inner * 0.22;
+          slab(picks[(k + 1) % picks.length], inner / 2 - l1 / 2 - 0.04, -0.02, l1, depth - 0.12, FY + y, h0 + 0.03);
+        });
+        // Cajas sobre el zócalo.
+        slab(picks[2], -inner / 4, -0.02, inner * 0.4, depth - 0.1, FY + 0.08, 0.3);
         break;
       }
       case 'counter': {
@@ -1163,17 +1681,31 @@ export class SchoolBuilder {
         break;
       }
       case 'mirror': {
-        this.box(it.color ? m.mirrorGlass : m.mirror, u, v, w, 1.9, d, FY + 0.25);
+        const mh = it.h ?? 1.9;
+        this.box(it.color ? m.mirrorGlass : m.mirror, u, v, w, mh, d, FY + 0.25);
+        const len = alongV ? d : w;
+        const [fu, fv] = faceDir(it.face);
         if (it.color) {
           // Marco de color (rojo en el aula de danzas).
           const fm = this.m[it.color];
-          const len = alongV ? d : w;
           for (const sgn of [-1, 1]) {
-            if (alongV) this.box(fm, u, v + (sgn * len) / 2, w + 0.03, 1.98, 0.06, FY + 0.21);
-            else this.box(fm, u + (sgn * len) / 2, v, 0.06, 1.98, d + 0.03, FY + 0.21);
+            if (alongV) this.box(fm, u, v + (sgn * len) / 2, w + 0.03, mh + 0.08, 0.06, FY + 0.21);
+            else this.box(fm, u + (sgn * len) / 2, v, 0.06, mh + 0.08, d + 0.03, FY + 0.21);
           }
-          for (const y of [FY + 0.21, FY + 2.15]) {
+          for (const y of [FY + 0.21, FY + 0.25 + mh]) {
             this.box(fm, u, v, alongV ? w + 0.03 : len + 0.06, 0.06, alongV ? len + 0.06 : d + 0.03, y);
+          }
+        } else if (wallGapBehind(level, u - (fu * w) / 2, v - (fv * d) / 2, it.face) > 0.1) {
+          // Espejo de pie (lejos del muro): parantes negros y patas en escuadra
+          // hacia atrás, en vez de un vidrio flotando a 25 cm del piso.
+          for (const sgn of [-1, 1]) {
+            const eu = u + (alongV ? 0 : (sgn * (len + 0.03)) / 2);
+            const ev = v + (alongV ? (sgn * (len + 0.03)) / 2 : 0);
+            this.box(m.metalDark, eu, ev, 0.03, mh + 0.28, 0.03, FY);
+            this.box(m.metalDark, eu - fu * 0.15, ev - fv * 0.15, alongV ? 0.32 : 0.03, 0.03, alongV ? 0.03 : 0.32, FY);
+          }
+          for (const y of [FY + 0.22, FY + 0.25 + mh]) {
+            this.box(m.metalDark, u, v, alongV ? 0.03 : len + 0.06, 0.03, alongV ? len + 0.06 : 0.03, y);
           }
         }
         break;
@@ -1195,19 +1727,36 @@ export class SchoolBuilder {
         for (const s of [-1, 1]) this.box(m.frame, u, v + s * (d / 2), w, 1.9, 0.04, FY + 0.12);
         this.box(m.leaf, u - w / 2, v - 0.18, 0.04, 1.8, d - 0.45, FY + 0.12);
         this.box(m.appliance, u + w / 2 - 0.35, v, 0.55, 0.42, 0.38, FY);
+        // Los tabiques se separan 12 cm del piso sobre patas de acero (antes
+        // flotaban en el aire).
+        if (this.detailed) {
+          for (const s of [-1, 1]) {
+            for (const e of [-1, 1]) this.box(m.metal, u + e * (w / 2 - 0.08), v + s * (d / 2), 0.03, 0.12, 0.03, FY);
+          }
+        }
         break;
       }
       case 'stage': {
+        // Tarima con zócalo al frente (hacia `face`, donde cuelga el telón) y
+        // fondo negro atrás. Antes los dos iban siempre al norte: en el SUM
+        // el fondo tapaba el frente y en Teatro el zócalo quedaba atrás.
+        const [fu, fv] = faceDir(it.face);
+        const depth = alongV ? w : d;
+        const span = alongV ? d : w;
+        const thin = (off: number, t: number, len: number, y0: number, hgt: number, mat: Material) =>
+          this.box(mat, u + fu * off, v + fv * off, alongV ? t : len, hgt, alongV ? len : t, y0);
         this.box(m.black, u, v, w, 0.62, d, FY);
-        this.box(m.black, u, v - d / 2 - 0.05, w, 0.6, 0.02, FY);
-        // Fondo negro contra el muro del fondo.
-        this.box(m.black, u, v - d / 2 + 0.06, w - 0.1, 2.6, 0.04, FY + 0.62);
+        thin(depth / 2 + 0.01, 0.02, span, FY, 0.6, m.black);
+        thin(-(depth / 2 - 0.06), 0.04, span - 0.1, FY + 0.62, FURNITURE.backdrop, m.black);
         break;
       }
       case 'curtain': {
-        // Telón rojo recogido a los costados y bambalina superior.
-        for (const s of [-1, 1]) this.box(m.curtainRed, u + s * (w / 2 - 0.35), v, 0.7, 2.45, 0.16, FY + 0.62);
-        this.box(m.curtainRed, u, v, w, 0.45, 0.18, H - 0.55);
+        // Telón rojo recogido a los costados y bambalina contra el cielorraso
+        // de su ambiente (antes iba a una altura fija de planta baja: en el SUM
+        // del 2º piso la bambalina quedaba dos pisos más abajo).
+        const ceil = FY + (room ? ceilingHeight(room) : 3.1) - 0.03;
+        for (const s of [-1, 1]) this.box(m.curtainRed, u + s * (w / 2 - 0.35), v, 0.7, ceil - (FY + 0.62), 0.16, FY + 0.62);
+        this.box(m.curtainRed, u, v, w, 0.45, 0.18, ceil - 0.45);
         break;
       }
       case 'goal': {
@@ -1326,8 +1875,24 @@ export class SchoolBuilder {
         break;
       }
       case 'lockers': {
-        this.box(m.navy, u, v, w, 1.8, d, FY);
-        for (let k = 1; k < 4; k++) this.box(m.bars, u - w / 2 + (k * w) / 4, v, 0.02, 1.7, d + 0.02, FY + 0.05);
+        // Cuatro puertas: juntas verticales, rejilla de ventilación arriba y
+        // manija en cada una. Las juntas siguen al frente (antes, en los que
+        // miran al este, cortaban el costado del mueble en vez del frente).
+        const span = alongV ? d : w;
+        const [fu, fv] = faceDir(it.face);
+        const depth = alongV ? w : d;
+        this.box(this.mat(it.color, m.navy), u, v, w, 1.8, d, FY);
+        const front = (a: number, off: number, l: number, y: number, h: number, mt: Material, dep = 0.02) =>
+          this.box(mt, u + (alongV ? 0 : a) + fu * off, v + (alongV ? a : 0) + fv * off, alongV ? dep : l, h, alongV ? l : dep, y);
+        for (let k = 1; k < 4; k++) front(-span / 2 + (k * span) / 4, depth / 2, 0.012, FY + 0.05, 1.7, m.bars);
+        if (this.detailed) {
+          for (let k = 0; k < 4; k++) {
+            const c = -span / 2 + ((k + 0.5) * span) / 4;
+            // Tres ranuras finas de ventilación arriba de cada puerta.
+            for (const y of [1.52, 1.56, 1.6]) front(c, depth / 2, span / 4 - 0.2, FY + y, 0.012, m.bars, 0.008);
+            front(c + span / 8 - 0.07, depth / 2 + 0.01, 0.02, FY + 0.95, 0.12, m.metal, 0.03);
+          }
+        }
         break;
       }
       // ------------------------------------------------ recorrido 2020
@@ -1342,12 +1907,18 @@ export class SchoolBuilder {
         const y = FY + (it.y ?? 2.35);
         const [nu, nv] = faceDir(it.face);
         this.box(m.frame, u - nu * 0.05, v - nv * 0.05, 0.08, 0.2, 0.08, y - 0.1);
-        this.box(m.frame, u + nu * 0.12, v + nv * 0.12, alongV ? 0.08 : 0.46, 0.46, alongV ? 0.46 : 0.08, y - 0.02);
+        // Motor y rejilla redonda (antes, una placa cuadrada de 46 cm).
+        this.box(m.frame, u + nu * 0.04, v + nv * 0.04, 0.12, 0.14, 0.12, y + 0.14);
+        const g = toWorld(this.f, u + nu * 0.14, v + nv * 0.14);
+        this.farm.add('cylinder', m.frame, new Vector3(g.x, y + 0.21, g.z), new Vector3(0.46, 0.09, 0.46), 0, alongV ? 0 : Math.PI / 2, alongV ? Math.PI / 2 : 0);
         break;
       }
       case 'ac': {
         const y = FY + (it.y ?? 2.45);
         this.box(m.frame, u, v, alongV ? 0.22 : 0.86, 0.29, alongV ? 0.86 : 0.22, y);
+        // Boca de salida del aire, oscura, en el frente inferior del split.
+        const [nu, nv] = faceDir(it.face);
+        if (this.detailed) this.box(m.metalDark, u + nu * 0.1, v + nv * 0.1, alongV ? 0.03 : 0.7, 0.03, alongV ? 0.7 : 0.03, y + 0.03);
         break;
       }
       case 'projector': {
@@ -1362,12 +1933,10 @@ export class SchoolBuilder {
       case 'tv':
         this.box(m.metalDark, u, v, alongV ? 0.06 : w, it.h ?? 0.62, alongV ? w : 0.06, FY + (it.y ?? 1.5));
         break;
-      case 'blackboard': {
-        const [bw, bd] = alongV ? [0.04, d] : [w, 0.04];
-        this.box(m.frame, u, v, alongV ? 0.05 : w + 0.08, (it.h ?? 1.2) + 0.08, alongV ? d + 0.08 : 0.05, FY + (it.y ?? 0.9) - 0.04);
-        this.box(this.mat(it.color, m.chalk), u, v, bw + 0.01, it.h ?? 1.2, bd + 0.01, FY + (it.y ?? 0.9));
+      case 'blackboard':
+        // Pizarrón de tiza con marco de aluminio y bandeja de tizas.
+        this.wallBoard(it, this.mat(it.color, m.chalk), m.frame, FY + (it.y ?? 0.9), it.h ?? 1.2);
         break;
-      }
       case 'roundColumn':
         this.cyl(this.mat(it.color, m.red), u, v, w, it.h ?? 3.1, FY);
         break;
@@ -1427,15 +1996,20 @@ export class SchoolBuilder {
         }
         break;
       }
-      case 'laserCutter':
-        this.box(m.blue, u, v, w, 0.26, d, FY + 0.76);
-        this.box(m.board, u, v, w * 0.96, 0.08, d * 0.96, FY + 1.02);
-        this.box(m.metalDark, u, v, w * 0.5, 0.01, d * 0.5, FY + 1.1);
+      case 'laserCutter': {
+        // Apoyada sobre la mesa de trabajo (antes se hundía 2 cm en la tapa).
+        const b = FY + FURNITURE.benchTop;
+        this.box(m.blue, u, v, w, 0.26, d, b);
+        this.box(m.board, u, v, w * 0.96, 0.08, d * 0.96, b + 0.26);
+        this.box(m.metalDark, u, v, w * 0.5, 0.01, d * 0.5, b + 0.34);
         break;
-      case 'printer3d':
-        this.box(m.metalDark, u, v, w, w, d, FY + 0.76);
-        this.box(m.blue, u, v, w * 1.02, 0.06, d * 1.02, FY + 0.76);
+      }
+      case 'printer3d': {
+        const b = FY + FURNITURE.benchTop;
+        this.box(m.metalDark, u, v, w, w, d, b);
+        this.box(m.blue, u, v, w * 1.02, 0.06, d * 1.02, b);
         break;
+      }
       case 'buffetLine': {
         // Mostrador de acero inoxidable con mampara de vidrio.
         this.box(m.metal, u, v, w, 0.9, d, FY);
@@ -1497,7 +2071,7 @@ export class SchoolBuilder {
         break;
       }
       case 'greenWall':
-        this.box(m.grass, u, v, alongV ? 0.08 : w, it.h ?? 1.8, alongV ? w : 0.08, FY + (it.y ?? 1.0));
+        this.box(m.green, u, v, alongV ? 0.08 : w, it.h ?? 1.8, alongV ? w : 0.08, FY + (it.y ?? 1.0));
         break;
       case 'bamboo': {
         this.box(m.metalDark, u, v, 0.35, 0.45, 0.35, FY);
@@ -1534,7 +2108,9 @@ export class SchoolBuilder {
         // Reja de barrotes verticales.
         const mat = this.mat(it.color, m.red);
         const hgt = it.h ?? 2.1;
-        const n = Math.max(3, Math.round(Math.max(w, d) / 0.12));
+        // Barandas bajas: barrotes más espaciados (y aún más en VR).
+        const step = (it.h ?? 2.1) < 1.3 ? (this.detailed ? 0.18 : 0.3) : this.detailed ? 0.12 : 0.2;
+        const n = Math.max(3, Math.round(Math.max(w, d) / step));
         for (let k = 0; k <= n; k++) {
           const t = k / n - 0.5;
           this.box(mat, u + (alongV ? 0 : t * w), v + (alongV ? t * d : 0), 0.025, hgt, 0.025, FY);
@@ -1623,9 +2199,14 @@ export class SchoolBuilder {
         this.box(this.mat(it.color, m.red), u, v, alongV ? 0.1 : w, it.h ?? 2.0, alongV ? w : 0.1, FY + (it.y ?? 0));
         break;
       case 'padPilaster':
-        // Pilastra del polideportivo: protección verde abajo y roja arriba.
-        this.box(m.chairGreen, u, v, w, 1.2, d, FY + 0.1);
-        this.box(m.red, u, v, w, 1.35, d, FY + 1.3);
+        // Pilastra del polideportivo: verde abajo y roja arriba en el lateral
+        // norte; toda roja en el de Laprida (9:22–9:32).
+        if (it.face === 'n') {
+          this.box(m.red, u, v, w, 2.7, d, FY + 0.1);
+        } else {
+          this.box(m.chairGreen, u, v, w, 1.3, d, FY + 0.1);
+          this.box(m.red, u, v, w, 1.4, d, FY + 1.4);
+        }
         break;
       case 'flagpole':
         this.cyl(m.metal, u, v, 0.07, it.h ?? 6.5, FY);
@@ -1676,7 +2257,8 @@ export class SchoolBuilder {
           if (w >= d) this.box(frame, u + s * w / 2, v, 0.08, 2.2, 0.08, FY);
           else this.box(frame, u, v + s * d / 2, 0.08, 2.2, 0.08, FY);
         }
-        this.box(frame, u, v, w >= d ? w : 0.08, 0.08, w >= d ? 0.08 : d, FY + 2.2);
+        // Travesaño rojo arriba (9:52).
+        this.box(m.red, u, v, w >= d ? w : 0.08, 0.08, w >= d ? 0.08 : d, FY + 2.2);
         for (const s of [-0.25, 0.25]) {
           const su = u + (w >= d ? s * w : 0);
           const sv = v + (w >= d ? 0 : s * d);
@@ -1689,7 +2271,8 @@ export class SchoolBuilder {
         this.box(this.mat(it.color, m.white), u, v, w, it.h ?? 1.0, d, FY + (it.y ?? 0));
         break;
       case 'floorPatch':
-        this.box(this.mat(it.color, m.metalDark), u, v, w, 0.008, d, FY + 0.002);
+        // `y` levanta un parche sobre otro (líneas sobre el vinílico) sin z-fighting.
+        this.box(this.mat(it.color, m.metalDark), u, v, w, 0.008, d, FY + 0.002 + (it.y ?? 0));
         break;
       case 'hoop': {
         // Aro de básquet chico: tablero rojo, aro naranja y red blanca.
@@ -1711,7 +2294,131 @@ export class SchoolBuilder {
       case 'palm':
         this.palm(u, v, it.h ?? 6, FY + (it.y ?? 0));
         break;
+      case 'playTower': {
+        // Torre de madera rojiza con techo, baranda y dos toboganes (9:44).
+        const tw = Math.min(w, d) * 0.55;
+        for (const su of [-1, 1]) {
+          for (const sv of [-1, 1]) this.box(m.timberDark, u + (su * tw) / 2, v + (sv * tw) / 2, 0.1, 2.6, 0.1, FY);
+        }
+        this.box(m.timberDark, u, v, tw, 0.08, tw, FY + 1.3);
+        this.box(m.timber, u, v, tw, 0.5, 0.04, FY + 1.38);
+        this.box(m.red, u, v, tw + 0.3, 0.08, tw + 0.3, FY + 2.6);
+        for (const s of [-1, 1]) {
+          const p = toWorld(this.f, u + s * (tw / 2 + 0.75), v);
+          this.farm.add('box', s > 0 ? m.yellow : m.lime, new Vector3(p.x, FY + 0.65, p.z), new Vector3(1.7, 0.05, 0.5), this.yaw(1, 0), 0, s * 0.72);
+        }
+        break;
+      }
+      case 'aviary': {
+        // Jaula de malla con marco de color y techo de chapa.
+        const frame = this.mat(it.color, m.red);
+        for (const su of [-1, 1]) {
+          for (const sv of [-1, 1]) this.box(frame, u + (su * w) / 2, v + (sv * d) / 2, 0.06, 2.0, 0.06, FY);
+        }
+        this.box(m.metal, u, v, w + 0.2, 0.05, d + 0.2, FY + 2.0);
+        this.box(m.mesh, u, v + d / 2, w, 1.9, 0.01, FY + 0.05);
+        this.box(frame, u, v + d / 2, w, 0.05, 0.05, FY + 1.0);
+        break;
+      }
+      case 'hut':
+        // Choza de paja sobre parantes, contra la medianera azul.
+        for (const su of [-1, 1]) {
+          for (const sv of [-1, 1]) this.box(m.timberDark, u + (su * w) / 2.4, v + (sv * d) / 2.4, 0.1, 1.9, 0.1, FY);
+        }
+        this.cyl(m.timber, u, v, Math.max(w, d) * 0.9, 0.7, FY + 1.9);
+        this.cyl(m.timber, u, v, Math.max(w, d) * 0.5, 0.45, FY + 2.55);
+        break;
+      case 'climber': {
+        // Domo trepador: aros de caño de colores.
+        const p = toWorld(this.f, u, v);
+        for (let k = 0; k < 4; k++) {
+          const a = (k / 4) * Math.PI;
+          this.farm.add('box', [m.red, m.blue, m.yellow, m.lime][k], new Vector3(p.x, FY + 0.6, p.z), new Vector3(w, 0.05, 0.05), a, 0, 0);
+        }
+        this.cyl(m.red, u, v, w * 0.7, 0.05, FY + 1.15);
+        break;
+      }
+      case 'bikeRack':
+        for (let k = 0; k < 5; k++) {
+          const t = (k / 4 - 0.5) * (alongV ? d : w);
+          this.box(m.metal, u + (alongV ? 0 : t), v + (alongV ? t : 0), alongV ? 0.5 : 0.04, 0.75, alongV ? 0.04 : 0.5, FY);
+        }
+        break;
+      case 'waterTank':
+        // Tanque de agua negro sobre una base, en la azotea.
+        this.box(m.slab, u, v, w + 0.2, 0.3, d + 0.2, FY + (it.y ?? 0));
+        this.cyl(m.metalDark, u, v, w, 1.4, FY + (it.y ?? 0) + 0.3);
+        break;
+      case 'bareTree': {
+        // Árbol pelado de invierno: tronco y cinco ramas abiertas (2:01–2:13).
+        this.box(m.soil, u, v, 1.1, 0.04, 1.1, FY);
+        this.cyl(m.timberDark, u, v, 0.16, 2.6, FY);
+        const p = toWorld(this.f, u, v);
+        for (let k = 0; k < 5; k++) {
+          const a = (k / 5) * Math.PI * 2 + 0.4;
+          const lean = 0.55 + (k % 2) * 0.15;
+          const len = 2.0 + (k % 3) * 0.3;
+          this.farm.add(
+            'box',
+            m.timberDark,
+            new Vector3(p.x + Math.sin(a) * Math.sin(lean) * len * 0.5, FY + 2.2 + Math.cos(lean) * len * 0.5, p.z + Math.cos(a) * Math.sin(lean) * len * 0.5),
+            new Vector3(0.07, len, 0.07),
+            a,
+            lean,
+          );
+        }
+        break;
+      }
+      case 'hedge': {
+        const p = toWorld(this.f, u, v);
+        this.nature.shrub(p.x, p.z, 1.6, FY);
+        break;
+      }
+      case 'condenser': {
+        // Unidad exterior blanca con la rejilla del ventilador y su ménsula.
+        const y = FY + (it.y ?? 3.6);
+        const [nu, nv] = faceDir(it.face);
+        this.box(m.frame, u, v, alongV ? 0.3 : 0.8, 0.55, alongV ? 0.8 : 0.3, y);
+        this.cyl(m.metalDark, u + nu * 0.16 + (alongV ? 0 : 0.12), v + nv * 0.16 + (alongV ? 0.12 : 0), 0.38, 0.03, y + 0.27);
+        this.box(m.metalDark, u, v, alongV ? 0.32 : 0.86, 0.03, alongV ? 0.86 : 0.32, y - 0.04);
+        break;
+      }
+      case 'louvredDoor':
+        this.box(m.metalDark, u, v, alongV ? 0.05 : w, 2.05, alongV ? w : 0.05, FY);
+        break;
     }
+  }
+
+  /**
+   * Pizarra o pizarrón colgado: paño, marco perimetral que sobresale 1 cm y
+   * bandeja abajo, todo hacia el lado al que mira (`face`). Antes el marco
+   * era una caja del mismo espesor que el paño, centradas en el mismo plano:
+   * las dos caras frontales coincidían y titilaban (la "mancha" de ruido del
+   * pizarrón del Aula 1). En las que miraban al oeste o al norte, además, el
+   * paño quedaba detrás del marco y la pizarra se veía gris oscura.
+   */
+  private wallBoard(it: Item, panel: Material, rim: Material, y0: number, hgt: number): void {
+    const { u, v } = it;
+    const alongV = it.face === 'e' || it.face === 'w';
+    const len = alongV ? it.d : it.w;
+    const [fu, fv] = faceDir(it.face);
+    // Pieza a lo largo del muro: `a` corrido sobre el muro, `off` hacia el frente.
+    const part = (mat: Material, a: number, off: number, l: number, depth: number, y: number, h: number) =>
+      this.box(mat, u + (alongV ? 0 : a) + fu * off, v + (alongV ? a : 0) + fv * off, alongV ? depth : l, h, alongV ? l : depth, y);
+    // Paño: de −1,5 a +0,5 cm respecto del plano del objeto.
+    part(panel, 0, -0.005, len, 0.02, y0, hgt);
+    if (!this.detailed) {
+      // VR: un solo marco detrás, más grande, en vez de cuatro listones.
+      part(rim, 0, -0.012, len + 0.05, 0.016, y0 - 0.025, hgt + 0.05);
+      return;
+    }
+    // Marco: de −2 a +1,5 cm (sobresale 1 cm del paño). Los laterales van de
+    // punta a punta y el de arriba y el de abajo entre ellos, sin encimarse.
+    for (const s of [-1, 1]) part(rim, (s * (len + 0.025)) / 2, -0.0025, 0.025, 0.035, y0 - 0.025, hgt + 0.05);
+    part(rim, 0, -0.0025, len, 0.035, y0 + hgt, 0.025);
+    part(rim, 0, -0.0025, len, 0.035, y0 - 0.025, 0.025);
+    // Bandeja de tizas/fibrones bajo el paño.
+    part(rim, 0, 0.03, len * 0.9, 0.06, y0 - 0.045, 0.02);
   }
 
   /** Material por clave, con uno por defecto. */
@@ -1719,19 +2426,44 @@ export class SchoolBuilder {
     return (key && this.m[key]) || fallback;
   }
 
-  /** Silla escolar: asiento, respaldo y dos patines. `face` es hacia dónde mira. */
-  private chair(mat: Material, u: number, v: number, face: Item['face'], scale = 1): void {
+  /**
+   * Silla escolar de caño: asiento y respaldo de multilaminado, cuatro patas
+   * y dos parantes que sostienen el respaldo. `face` es hacia dónde mira, o
+   * una dirección cualquiera del plano (las sillas alrededor de una mesa
+   * redonda miran a su centro). Antes eran dos placas macizas bajo el
+   * asiento (se leía como un bloque).
+   */
+  private chair(mat: Material, u: number, v: number, face: Item['face'] | readonly [number, number], scale = 1): void {
     const s = scale;
     const FY = this.fy;
-    const back: P = face === 'w' ? [0.2, 0] : face === 'e' ? [-0.2, 0] : face === 'n' ? [0, 0.2] : [0, -0.2];
-    this.box(mat, u, v, 0.42 * s, 0.04, 0.42 * s, FY + 0.44 * s);
-    const bw = back[0] !== 0 ? 0.03 : 0.42 * s;
-    const bd = back[0] !== 0 ? 0.42 * s : 0.03;
-    this.box(mat, u + back[0] * s, v + back[1] * s, bw, 0.36 * s, bd, FY + 0.5 * s);
-    for (const k of [-1, 1]) {
-      if (back[0] !== 0) this.box(this.m.metalDark, u, v + k * 0.17 * s, 0.38 * s, 0.44 * s, 0.03, FY);
-      else this.box(this.m.metalDark, u + k * 0.17 * s, v, 0.03, 0.44 * s, 0.38 * s, FY);
+    // Adelante (hacia donde mira quien se sienta) y costado, en el plano.
+    const [fu, fv] = typeof face === 'string' ? faceDir(face) : face;
+    const su = -fv;
+    const sv = fu;
+    const rot = this.yaw(su, sv);
+    // Caja con el ancho sobre el costado y la profundidad hacia adelante.
+    const part = (m: Material, ahead: number, side: number, w: number, h: number, d: number, y: number) => {
+      const p = toWorld(this.f, u + fu * ahead + su * side, v + fv * ahead + sv * side);
+      this.farm.addBoxOnGround(m, p.x, p.z, w, h, d, y, rot);
+    };
+    // Asiento a `FURNITURE.seat` (la gente se sienta a esa altura).
+    const legs = (FURNITURE.seat - 0.04) * s;
+    part(mat, 0, 0, 0.42 * s, 0.04 * s, 0.42 * s, FY + legs);
+    if (!this.detailed) {
+      part(mat, -0.2 * s, 0, 0.42 * s, 0.36 * s, 0.025, FY + legs + 0.06 * s);
+      // Un solo pie central bajo el asiento.
+      part(this.m.metalDark, 0, 0, 0.3 * s, legs, 0.3 * s, FY);
+      return;
     }
+    // Respaldo curvo separado del asiento (como el de las sillas reales).
+    part(mat, -0.2 * s, 0, 0.42 * s, 0.22 * s, 0.025, FY + legs + 0.18 * s);
+    const leg = 0.022;
+    const k = 0.18 * s;
+    for (const a of [-1, 1]) {
+      for (const b of [-1, 1]) part(this.m.metalDark, a * k, b * k, leg, legs, leg, FY);
+    }
+    // Parantes del respaldo: del asiento al borde superior.
+    for (const t of [-1, 1]) part(this.m.metalDark, -0.2 * s * 0.92, t * k, leg, 0.38 * s, leg, FY + legs + 0.02 * s);
   }
 
   /** Tubos fluorescentes en todos los ambientes cubiertos. */
@@ -1740,7 +2472,7 @@ export class SchoolBuilder {
       if (!r.roofed || r.id === 'gimnasio' || r.id === 'escalera' || r.id === 'nicho') continue;
       const kind = STYLES[r.id]?.lights ?? 'tube';
       if (kind === 'none') continue;
-      const ceil = LEVEL_Y[roomLevel(r)] + 3.1;
+      const ceil = LEVEL_Y[roomLevel(r)] + (CEILING_H[r.id] ?? (STYLES[r.id]?.ceiling === null ? 2.9 : 3.1));
       const y = ceil - 0.05;
       let u0 = Infinity;
       let u1 = -Infinity;
@@ -1753,6 +2485,18 @@ export class SchoolBuilder {
         v1 = Math.max(v1, v);
       }
       const step = 2.9;
+      const own: Fixture[] | null = SWITCHABLE_ROOMS.has(r.id) && kind !== 'dome' ? [] : null;
+      if (own) this.switchable.set(r.id, own);
+      // Luminaria: en las aulas con interruptor, marco acá y luz en el juego.
+      const lamp = (u: number, v: number, w: number, h: number, d: number, yb: number) => {
+        if (!own) {
+          this.box(this.m.light, u, v, w, h, d, yb);
+          return;
+        }
+        this.box(this.m.board, u, v, w + 0.04, h - 0.01, d + 0.04, yb + 0.01);
+        const p = toWorld(this.f, u, v);
+        own.push({ x: p.x, y: yb + h / 2, z: p.z, sx: w, sy: h, sz: d });
+      };
       const nu = Math.max(1, Math.round((u1 - u0) / step));
       const nv = Math.max(1, Math.round((v1 - v0) / step));
       const long = u1 - u0 >= v1 - v0;
@@ -1763,14 +2507,14 @@ export class SchoolBuilder {
           if (!inPoly(r.poly, u, v)) continue;
           if (kind === 'panel') {
             // Panel LED de 60 × 60 embutido en el cielorraso de placas.
-            this.box(this.m.light, u, v, 0.6, 0.03, 0.6, y + 0.02);
+            lamp(u, v, 0.6, 0.03, 0.6, y + 0.02);
           } else if (kind === 'dome') {
             // Campana blanca colgada de un cable, como las del hall.
             this.box(this.m.metalDark, u, v, 0.012, 0.6, 0.012, ceil - 0.6);
             this.cyl(this.m.board, u, v, 0.34, 0.16, ceil - 0.76);
             this.cyl(this.m.light, u, v, 0.26, 0.02, ceil - 0.775);
           } else {
-            this.box(this.m.light, u, v, long ? 1.2 : 0.16, 0.05, long ? 0.16 : 1.2, y);
+            lamp(u, v, long ? 1.2 : 0.16, 0.05, long ? 0.16 : 1.2, y);
           }
         }
       }
@@ -1787,36 +2531,75 @@ export class SchoolBuilder {
    */
   private portal(): void {
     const m = this.m;
-    const u0 = 32.95;
-    const u1 = 41.9;
+    const u0 = 33.55;
+    const u1 = 41.3;
     const uc = (u0 + u1) / 2;
     const w = u1 - u0;
-    this.box(m.portal, uc, 0.3, w, 7.75 - 4.25, 0.36, 4.25);
+    // El portal sobresale ~0,85 m de la fachada y sube a ~8,2 m (0:09–0:16).
+    // Arriba es un marco gris grafito que deja ver las tres ventanas enrejadas
+    // del primer piso (la Secretaría y 6° BD), con su retiro hasta el muro.
+    const front = 0.85;
+    const depth = 0.2;
+    const vf = front - depth / 2;
+    const y0 = 4.0;
+    const top = 8.2;
+    const wins: Array<[number, number]> = [
+      [34.6, 36.0],
+      [36.8, 38.2],
+      [39.1, 40.5],
+    ];
+    const wy0 = H + 1.45;
+    const wy1 = H + 2.85;
+    // Paño frontal, cortado alrededor de las ventanas.
+    this.box(m.portal, uc, vf, w, top - wy1, depth, wy1);
+    this.box(m.portal, uc, vf, w, wy0 - y0, depth, y0);
+    let prev = u0;
+    for (const [a, b] of wins) {
+      this.box(m.portal, (prev + a) / 2, vf, a - prev, wy1 - wy0, depth, wy0);
+      prev = b;
+    }
+    this.box(m.portal, (prev + u1) / 2, vf, u1 - prev, wy1 - wy0, depth, wy0);
+    // Laterales y retiros de las ventanas hasta la fachada.
+    // Los laterales son del gris claro de las aulas (0:12, Street View).
+    for (const u of [u0 + 0.1, u1 - 0.1]) this.box(m.facade, u, front / 2, 0.2, top - y0, front, y0);
+    for (const [a, b] of wins) {
+      this.box(m.portal, (a + b) / 2, front / 2, b - a, 0.08, front - depth, wy0 - 0.08);
+      this.box(m.portal, (a + b) / 2, front / 2, b - a, 0.08, front - depth, wy1);
+      for (const u of [a + 0.04, b - 0.04]) this.box(m.portal, u, front / 2, 0.08, wy1 - wy0, front - depth, wy0);
+      // Reja negra en el plano del frente y un marco saliente gris.
+      for (let k = 1; k < 6; k++) this.box(m.bars, a + ((b - a) * k) / 6, front + 0.03, 0.025, wy1 - wy0, 0.025, wy0);
+      for (const y of [wy0 + 0.4, wy1 - 0.4]) this.box(m.bars, (a + b) / 2, front + 0.03, b - a, 0.03, 0.025, y);
+      this.box(m.portal, (a + b) / 2, front + 0.03, b - a + 0.3, 0.15, 0.06, wy1);
+      this.box(m.portal, (a + b) / 2, front + 0.03, b - a + 0.3, 0.15, 0.06, wy0 - 0.15);
+    }
+    // Losa inferior del volumen saliente y franjas rojo-blanco-azul arriba.
+    this.box(m.portal, uc, front / 2, w, 0.12, front, y0 - 0.12);
     for (const [y, mat] of [
-      [7.2, m.red],
-      [7.36, m.slab],
-      [7.5, m.navy],
+      [7.25, m.red],
+      [7.42, m.slab],
+      [7.59, m.navy],
     ] as const) {
-      this.box(mat, uc, 0.5, w, 0.14, 0.04, y);
+      this.box(mat, uc, front + 0.02, w, 0.14, 0.04, y);
     }
-    // Tres ventanas enrejadas del primer piso.
-    for (const u of [uc - 2.75, uc, uc + 2.75]) {
-      this.box(m.frame, u, 0.49, 1.7, 1.45, 0.04, 4.9);
-      this.box(m.glassDark, u, 0.52, 1.55, 1.3, 0.02, 4.97);
-      for (let k = -2; k <= 2; k++) this.box(m.bars, u + k * 0.28, 0.56, 0.025, 1.3, 0.025, 4.97);
+    // Marquesina roja con filetes (2,45–3,85 m); el texto va en el atlas.
+    this.box(m.red, 37.425, front - 0.15, 8.25, 1.4, 0.3, 2.45);
+    // Banda roja del primer piso del edificio de bloque, al este del portal (0:15).
+    this.box(m.red, 46.125, 0.17, 8.35, 0.6, 0.04, 3.05);
+    // Planta baja: dos pilares revestidos en granito y tres columnas azul
+    // marino, con la reja de malla cuadrada de toda la altura (2020) y su
+    // portón abierto frente a las puertas.
+    const g0 = 32.95;
+    const g1 = 41.9;
+    for (const pu of [g0 + 0.4, g1 - 0.4]) this.box(m.stone, pu, front / 2, 0.8, 2.45, front, 0);
+    for (const u of [33.7, 37.5, 41.0]) this.box(m.navy, u, front - 0.2, 0.3, 2.45, 0.3, 0.12);
+    for (let u = g0 + 0.85; u < g1 - 0.8; u += 0.15) {
+      if (u > 35.6 && u < 39.3) continue;
+      this.box(m.bars, u, front - 0.05, 0.02, 2.3, 0.02, 0.12);
     }
-    // Marquesina roja con filetes; el texto va en el atlas.
-    this.box(m.red, uc, 0.42, w - 0.4, 1.5, 0.3, 2.75);
-    this.box(m.slab, uc, 0.58, w - 0.4, 0.07, 0.02, 4.1);
-    this.box(m.navy, uc, 0.58, w - 0.4, 0.07, 0.02, 2.8);
-    // Pilares revestidos en piedra y columnas azules del acceso.
-    for (const [pu, pw] of [
-      [33.15, 0.5],
-      [41.4, 1.0],
-    ] as const) {
-      this.box(m.stone, pu, 0.18, pw, 2.75, 0.4, 0);
+    for (const y of [0.2, 1.3, 2.38]) {
+      this.box(m.bars, (g0 + 0.85 + 35.6) / 2, front - 0.05, 35.6 - g0 - 0.85, 0.03, 0.02, y);
+      this.box(m.bars, (39.3 + g1 - 0.8) / 2, front - 0.05, g1 - 0.8 - 39.3, 0.03, 0.02, y);
     }
-    for (const u of [33.62, 40.62]) this.box(m.navy, u, 0.3, 0.28, 2.75, 0.28, 0.12);
     // Escalinata de tres huellas hasta el nivel del vestíbulo.
     for (const [v0, v1, h] of [
       [1.4, 2.0, 0.08],
@@ -1826,36 +2609,87 @@ export class SchoolBuilder {
       this.box(m.slab, (33.4 + 40.85) / 2, (v0 + v1) / 2, 40.85 - 33.4, h, v1 - v0, 0);
     }
     // Mástil inclinado con la bandera, a la izquierda del portal.
-    const p = toWorld(this.f, 33.35, 0.7);
+    const p = toWorld(this.f, 33.35, 1.1);
     this.farm.add('box', m.metal, new Vector3(p.x, 5.35, p.z + 0.35), new Vector3(0.06, 0.06, 1.9), 0, -0.6);
   }
 
   /**
-   * Franja de frente: canteros rojos con cubos azules, palmeras de la vereda
-   * y zócalo de las aulas, como en las tomas de Street View.
+   * Fachada del jardín sobre la calle de atrás (10:38–10:41): banda vertical
+   * azul marino con "CIMDIP" hasta el pretil gris, marquesina roja de
+   * "Educación Inicial" sobre las puertas y un pilar rojo entre ventanas.
+   */
+  private jardinFacade(): void {
+    const m = this.m;
+    const v = V.top - 0.21;
+    // Banda azul marino con CIMDIP en el extremo oeste (a la derecha de quien
+    // mira desde la calle), marquesina roja saliente con su cielorraso gris,
+    // pilar rojo entre las ventanas del primer piso, antepecho rojo del
+    // segundo, pretil gris y columna de borde gris al este.
+    this.box(m.navy, 58.525, v, 1.75, 8.9, 0.1, 0);
+    this.box(m.red, 63.3, V.top - 0.55, 8.2, 0.9, 0.8, 2.75);
+    this.box(m.slab, 63.3, V.top - 0.55, 8.2, 0.04, 0.8, 2.71);
+    this.box(m.red, 62.3, v + 0.15, 0.4, 1.3, 0.08, H + 0.95);
+    this.box(m.jardinRed, 63.2, V.top - 0.2, 7.6, 1.9, 0.1, 5.6);
+    this.box(m.facade, 62.525, V.top - 0.18, 9.75, 1.0, 0.06, 8.9);
+    this.box(m.facade, 67.2, v, 0.4, 9.9, 0.12, 0);
+  }
+
+  /**
+   * Franja de frente: cerco negro sobre muro rojo, canteros azul y rojo del
+   * lado de la vereda, las dos palmeras y el remate de sierra.
    */
   private frontage(): void {
     const m = this.m;
     for (const r of FRONT_PLANTERS) {
       const uc = (r.u0 + r.u1) / 2;
       const vc = (r.v0 + r.v1) / 2;
-      this.box(m.red, uc, vc, r.u1 - r.u0, 0.55, r.v1 - r.v0, 0.06);
-      this.box(m.soil, uc, vc, r.u1 - r.u0 - 0.2, 0.03, r.v1 - r.v0 - 0.2, 0.6);
+      // Canteros alternados azul marino y rojo (0:04–0:08).
+      const n = Math.max(1, Math.round((r.u1 - r.u0) / 3.2));
+      for (let k = 0; k < n; k++) {
+        const a = r.u0 + ((r.u1 - r.u0) * k) / n;
+        const b = r.u0 + ((r.u1 - r.u0) * (k + 1)) / n;
+        this.box(k % 2 === 0 ? m.navy : m.red, (a + b) / 2, vc, b - a - 0.04, 0.5, r.v1 - r.v0, 0.06);
+      }
+      this.box(m.soil, uc, vc, r.u1 - r.u0 - 0.2, 0.03, r.v1 - r.v0 - 0.2, 0.55);
+      if (r.u0 > 42 && r.u0 < 43) {
+        // Cantero del edificio de bloque: matas de pasto ornamental seco, no
+        // arbustos (0:09–0:16). Hojas finas abiertas en abanico.
+        for (const u of [43.2, 44.6, 46.0, 47.4, 48.8]) {
+          const p = toWorld(this.f, u, vc);
+          const n = this.detailed ? 8 : 5;
+          for (let k = 0; k < n; k++) {
+            const a = (k / n) * Math.PI * 2 + this.rng.range(-0.3, 0.3);
+            const tilt = this.rng.range(0.12, 0.36);
+            const len = this.rng.range(1.0, 1.35);
+            this.farm.add(
+              'box',
+              m.tuft,
+              new Vector3(p.x + Math.sin(a) * Math.sin(tilt) * len * 0.5, 0.57 + Math.cos(tilt) * len * 0.5, p.z + Math.cos(a) * Math.sin(tilt) * len * 0.5),
+              new Vector3(0.035, len, 0.035),
+              a,
+              tilt,
+            );
+          }
+        }
+        continue;
+      }
       for (let u = r.u0 + 1.2; u < r.u1 - 0.6; u += 1.6) {
         const pt = toWorld(this.f, u, vc);
-        this.nature.shrub(pt.x, pt.z, this.rng.range(0.45, 0.75), 0.62);
+        this.nature.shrub(pt.x, pt.z, this.rng.range(0.45, 0.75), 0.57);
       }
-      for (let u = r.u0 + 2.4; u < r.u1 - 1; u += 4.6) this.box(m.blue, u, vc + 0.15, 0.95, 0.75, 0.95, 0.06);
     }
-    // Palmeras: esquina de Miguel Cané y vereda de Laprida.
+    // Palmeras: esquina de Miguel Cané, las dos de la vereda de las aulas
+    // (0:04) y la del frente del edificio de bloque.
     for (const [u, v, h] of [
       [-2.6, 0.6, 7.5],
-      [15.8, 3.3, 8.6],
-      [27.2, 3.3, 7.8],
-      [45.9, 3.3, 7.2],
+      [7.5, 2.6, 6.2],
+      [17.0, 2.6, 6.0],
     ] as const) {
       this.palm(u, v, h);
     }
+    // Árbol de hoja ancha frente al edificio de bloque (0:12).
+    const tree = toWorld(this.f, 47.0, 3.0);
+    this.nature.broadleaf(tree.x, tree.z, 0.8, 0.06);
     // Cartel de salida de emergencia sobre el ochavo.
     this.box(m.exitSign, 0.2, -8.2, 0.05, 0.22, 0.45, 2.45);
     // Poste de los carteles de calle (Laprida y Miguel Cané) y del punto de
@@ -1863,19 +2697,24 @@ export class SchoolBuilder {
     this.cyl(m.metalDark, -6.3, 3.3, 0.07, 3.35, 0);
     this.cyl(m.metalDark, MEETING_POINT[0], MEETING_POINT[1] - 0.02, 0.06, 2.35, 0);
 
-    // Remate en zigzag de la fachada sobre Laprida: el perfil "de sierra" de
-    // chapa que se ve en todas las tomas de la calle. Cada diente es una caja
-    // girada 45°: media queda dentro del pretil y asoma el triángulo.
-    const top = SCHOOL.upperTop + 0.55;
-    for (const [u0, u1] of [
-      [U.w + 0.3, U.east1 - 0.2],
-      [U.salonW + 0.3, U.gymW - 0.3],
+    // Remate de sierra: las puntas de las chapas onduladas del techo asoman
+    // sobre los muros (0:04, 2:01–2:07). Sobre Laprida sube 0,75 m en u ≈ 11,1.
+    const tooth = (u: number, v: number, y: number, alongU: boolean) => {
+      const p = toWorld(this.f, u, v);
+      const size = new Vector3(alongU ? 0.4 : 0.1, 0.4, alongU ? 0.1 : 0.4);
+      this.farm.add('box', m.slab, new Vector3(p.x, y, p.z), size, 0, alongU ? 0 : Math.PI / 4, alongU ? Math.PI / 4 : 0);
+    };
+    for (const [a, b, y] of [
+      [U.w + 0.3, CREST.step, H + CREST.west],
+      [CREST.step, U.east1 - 0.2, H + CREST.east],
     ] as const) {
-      for (let u = u0; u <= u1; u += 0.9) {
-        const p = toWorld(this.f, u, 0.05);
-        this.farm.add('box', m.slab, new Vector3(p.x, top, p.z), new Vector3(0.6, 0.6, 0.12), 0, 0, Math.PI / 4);
-      }
+      for (let u = a; u <= b; u += 0.86) tooth(u, 0.05, y, true);
     }
+    // Hacia el patio oeste: pasillo de lockers, sector nuevo y galería.
+    const parapet = 2 * H + 0.55;
+    for (let u = U1.wing + 0.3; u < U1.gallery; u += 0.86) tooth(u, V.corrS - 0.05, parapet, true);
+    for (let u = U.patioW + 0.3; u < U.bufW; u += 0.86) tooth(u, V.corrN + 0.05, parapet, true);
+    for (let v = V.corrS - 0.3; v > V.corrN; v -= 0.86) tooth(U1.wing + 0.05, v, parapet, false);
   }
 
   private palm(u: number, v: number, h: number, base = 0): void {
@@ -1884,21 +2723,25 @@ export class SchoolBuilder {
     this.cyl(trunk, u, v, 0.26, h * 0.45, base + h * 0.55);
     const frond = this.mats.foliage(PALETTE.leafMid);
     const p = toWorld(this.f, u, v);
-    for (let k = 0; k < 9; k++) {
-      const a = (k / 9) * Math.PI * 2 + this.rng.range(-0.15, 0.15);
-      const len = this.rng.range(2.1, 2.7);
-      const droop = this.rng.range(0.35, 0.6);
+    // Una palmera joven tiene hojas más cortas: con las de una adulta, la del
+    // patio este metía las frondas dentro del salón.
+    const scale = Math.min(1, h / 6);
+    for (let k = 0; k < 14; k++) {
+      const a = (k / 14) * Math.PI * 2 + this.rng.range(-0.15, 0.15);
+      const len = this.rng.range(2.8, 3.3) * scale;
+      const droop = this.rng.range(0.6, 0.9);
       const cx = p.x + Math.sin(a) * len * 0.45;
       const cz = p.z + Math.cos(a) * len * 0.45;
       // Hoja: caja chata girada hacia afuera y caída en la punta.
-      this.farm.add('box', frond, new Vector3(cx, base + h - 0.25, cz), new Vector3(0.45, 0.05, len), a, droop);
+      this.farm.add('box', frond, new Vector3(cx, base + h - 0.25, cz), new Vector3(0.35, 0.05, len), a, droop);
     }
   }
 
   private fences(): void {
     const m = this.m;
     for (const [a, b] of FENCES) {
-      this.piece(m.stone, a, b, 0.3, 0, 0.45);
+      // Muro bajo rojo bajo el cerco negro (0:04–0:08).
+      this.piece(m.red, a, b, 0.3, 0, 0.45);
       this.piece(m.bars, a, b, 0.06, 1.95, 2.02);
       this.piece(m.bars, a, b, 0.05, 0.95, 1.0);
       const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -1918,10 +2761,11 @@ export class SchoolBuilder {
   private utilityLines(): void {
     const m = this.m;
     const poleV = SCHOOL.front + 3.2;
-    const poles = [-4, 20, 44, 66];
+    // Postes de hormigón con su cruceta (Street View).
+    const poles = [-4, 12.1, 20, 44, 66];
     for (const u of poles) {
-      this.cyl(m.metalDark, u, poleV, 0.2, 9.6, 0);
-      this.box(m.metalDark, u, poleV, 1.4, 0.1, 0.1, 8.5);
+      this.cyl(m.slab, u, poleV, 0.22, 9.6, 0);
+      this.box(m.slab, u, poleV, 1.4, 0.1, 0.1, 8.5);
     }
     for (let i = 0; i < poles.length - 1; i++) {
       const u0 = poles[i];

@@ -5,12 +5,14 @@ import { Rng } from '../utils/rng';
 import { generateCityPlan, type CityPlan, type LayoutOptions } from './CityLayout';
 import { NatureBuilder } from './builders/NatureBuilder';
 import { BuildingBuilder } from './builders/BuildingBuilder';
+import { NeighborhoodBuilder } from './builders/NeighborhoodBuilder';
 import { InfraBuilder } from './builders/InfraBuilder';
 import { StreetLevel } from './builders/StreetLevel';
 import { CityIndex } from './CityIndex';
 import { PALETTE } from './Palette';
 import { SchoolIdentity } from './SchoolIdentity';
 import { SchoolBuilder } from './builders/SchoolBuilder';
+import type { Fixture } from './SchoolLights';
 import type { Block } from './CityLayout';
 import type { SchoolFrame } from './SchoolLayout';
 import type { Mesh } from '@babylonjs/core/Meshes/mesh';
@@ -33,6 +35,8 @@ export interface CityStats {
   drawCalls: number;
   materials: number;
   buildTimeMs: number;
+  /** Parte de `buildTimeMs` que se fue en pintar texturas (color, normales, detalle). */
+  textureMs: number;
 }
 
 export interface CityOptions extends LayoutOptions {
@@ -59,6 +63,8 @@ export class City {
   readonly school: Block;
   /** Marco local del campus: orientación y coordenadas de la escuela. */
   readonly schoolFrame: SchoolFrame;
+  /** Luminarias de las aulas con interruptor (las enciende el juego). */
+  readonly lightFixtures: ReadonlyMap<string, Fixture[]>;
   private readonly farm: InstanceFarm;
   private readonly mats: Materials;
   private readonly schoolIdentity: SchoolIdentity;
@@ -75,7 +81,12 @@ export class City {
     this.school = school;
     this.schoolFrame = this.index.school;
     this.farm = new InstanceFarm(scene);
-    this.mats = new Materials(scene);
+    // Relieve de superficie por perfil: escritorio con relieve (normales y
+    // rugosidad) en todas las texturas y capa de gran escala; VR y "baja"
+    // (sin detalle de calle) sólo con el relieve de pisos, bloque, ladrillo,
+    // chapa y cortinas (ver Materials).
+    const fine = options.highDetailStreet ?? true;
+    this.mats = new Materials(scene, { normals: fine ? 'all' : 'lite', detail: fine });
 
     const rng = new Rng(seed ^ 0x9e3779b9);
     const nature = new NatureBuilder(
@@ -91,7 +102,9 @@ export class City {
       options.highDetailStreet ?? true,
     );
     const buildings = new BuildingBuilder(this.farm, this.mats, rng, nature, street);
-    const schoolBuilder = new SchoolBuilder(this.farm, this.mats, rng, nature, street);
+    const neighborhood = new NeighborhoodBuilder(this.farm, this.mats, rng, nature, street, options.highDetailStreet ?? true);
+    // En VR la escuela usa mobiliario y herrería más livianos (misma arquitectura).
+    const schoolBuilder = new SchoolBuilder(this.farm, this.mats, rng, nature, street, options.highDetailStreet ?? true);
     const infra = new InfraBuilder(
       this.farm,
       this.mats,
@@ -107,6 +120,9 @@ export class City {
 
     for (const block of this.plan.blocks) {
       switch (block.kind) {
+        case 'houses':
+          neighborhood.build(block, this.plan);
+          break;
         case 'park':
           infra.park(block);
           break;
@@ -130,6 +146,7 @@ export class City {
 
     this.farm.commit();
     this.schoolIdentity = new SchoolIdentity(scene, this.schoolFrame);
+    this.lightFixtures = schoolBuilder.switchable;
 
     const schoolTris = this.schoolMeshes.reduce((n, m) => n + m.getTotalIndices() / 3, 0);
     this.stats = {
@@ -140,6 +157,7 @@ export class City {
       drawCalls: this.farm.drawCalls,
       materials: this.mats.count,
       buildTimeMs: Math.round(performance.now() - t0),
+      textureMs: Math.round(this.mats.textureStats.ms),
     };
   }
 

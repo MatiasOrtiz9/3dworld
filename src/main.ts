@@ -8,20 +8,22 @@ import '@babylonjs/core/Meshes/thinInstanceMesh';
 import '@babylonjs/core/Culling/ray';
 
 import { City } from './world/City';
-import { Environment, formatHour } from './world/Environment';
+import { DEFAULT_HOUR, Environment, formatHour } from './world/Environment';
 import { QualityManager, TIER_ORDER, type QualityTier } from './core/QualityManager';
 import { createFlyCamera } from './player/FlyCamera';
 import { RenderPipeline } from './core/RenderPipeline';
 import { PlayerController, type MoveMode } from './player/PlayerController';
 import { Life } from './world/Life';
-import { Crowd } from './world/Crowd';
-import { Inspector } from './ui/Inspector';
+import { Population } from './world/people/Population';
 import { Soundscape } from './audio/Soundscape';
+import { acousticsAtWorld } from './audio/schoolAcoustics';
 import { isVrSupported } from './vr/isVrSupported';
-import type { WebXRDefaultExperience } from '@babylonjs/core/XR/webXRDefaultExperience';
+import type { XRControls } from './vr/XRSetup';
 import { seedFromString } from './utils/rng';
-import { ChallengeSystem } from './game/ChallengeSystem';
-import { LEVEL_Y, SCHOOL, levelOf, roomAt, roomLabel as roomTitle, toLocal, toWorld } from './world/SchoolLayout';
+import { Hud } from './ui/Hud';
+import { GameDirector } from './game/GameDirector';
+import type { PlayerApi, WorldPoint } from './game/contracts';
+import { SCHOOL, toWorld } from './world/SchoolLayout';
 
 // ---------------------------------------------------------------- referencias
 
@@ -30,19 +32,14 @@ const boot = document.getElementById('boot') as HTMLDivElement;
 const bootMsg = document.getElementById('boot-msg') as HTMLParagraphElement;
 const bootBar = document.getElementById('boot-bar') as HTMLElement;
 const statsEl = document.getElementById('stats') as HTMLDivElement;
-const helpEl = document.getElementById('help') as HTMLDivElement;
 const btnVr = document.getElementById('btn-vr') as HTMLButtonElement;
 const btnQuality = document.getElementById('btn-quality') as HTMLButtonElement;
 const timeSlider = document.getElementById('time-slider') as HTMLInputElement;
 const timeLabel = document.getElementById('time-label') as HTMLSpanElement;
-const btnRegen = document.getElementById('btn-regen') as HTMLButtonElement;
 const btnMode = document.getElementById('btn-mode') as HTMLButtonElement;
-const btnEnergy = document.getElementById('btn-energy') as HTMLButtonElement;
 const btnSound = document.getElementById('btn-sound') as HTMLButtonElement;
-const energyEl = document.getElementById('energy') as HTMLDivElement;
 const helpWalk = document.getElementById('help-walk') as HTMLDivElement;
 const helpFly = document.getElementById('help-fly') as HTMLDivElement;
-const roomLabel = document.getElementById('room-label') as HTMLDivElement;
 
 const progress = (pct: number, msg?: string) => {
   bootBar.style.width = `${pct}%`;
@@ -51,27 +48,27 @@ const progress = (pct: number, msg?: string) => {
   return new Promise((r) => requestAnimationFrame(() => r(undefined)));
 };
 
+/** Altura de los ojos sobre los pies en escritorio (la misma del controlador). */
+const EYE = 1.62;
+
 // -------------------------------------------------------------------- estado
 
 let city: City | null = null;
 let environment: Environment | null = null;
 let life: Life | null = null;
-let crowd: Crowd | null = null;
+let people: Population | null = null;
 let player: PlayerController | null = null;
-let inspector: Inspector | null = null;
-let challenge: ChallengeSystem | null = null;
-let xrExperience: WebXRDefaultExperience | null = null;
-let disposeXR: (() => void) | null = null;
-let hour = 13;
-// La semilla se puede fijar por URL (?seed=1234 o ?seed=cualquier-texto).
-// Sirve para volver a una ciudad concreta: comparar cambios, sacar capturas
-// equivalentes, o llevar a una exposición siempre la misma ciudad.
+let director: GameDirector | null = null;
+let xr: XRControls | null = null;
+let hour = DEFAULT_HOUR;
+// La semilla se puede fijar por URL (?seed=1234 o ?seed=cualquier-texto). Sólo
+// cambia el barrio de alrededor (casas, autos): la escuela es siempre la misma.
 const seedParam = new URLSearchParams(location.search).get('seed');
-let seed = seedParam
+const seed = seedParam
   ? /^\d+$/.test(seedParam)
     ? Number(seedParam) >>> 0
     : seedFromString(seedParam)
-  : seedFromString(`ciudad-2050-${Date.now() % 100000}`);
+  : seedFromString('cimdip-miguel-cane');
 
 // -------------------------------------------------------------------- arranque
 
@@ -84,7 +81,7 @@ const engine = new Engine(canvas, true, {
 engine.setHardwareScalingLevel(1);
 
 const scene = new Scene(engine);
-// La ciudad es estática: avisarle a Babylon ahorra mucho trabajo por cuadro.
+// El barrio es estático: avisarle a Babylon ahorra mucho trabajo por cuadro.
 scene.autoClear = true;
 scene.autoClearDepthAndStencil = true;
 // Se activa recién después de armar la escena: si se bloquea antes, los
@@ -104,27 +101,72 @@ const camera = createFlyCamera(scene, canvas);
 const renderPipeline = new RenderPipeline(scene, camera);
 
 // El audio arranca suspendido: ningún navegador deja sonar nada hasta que haya
-// un gesto del usuario. Se reanuda con el primer clic o tecla.
-const sound = new Soundscape();
-const wakeAudio = () => void sound.resume();
-window.addEventListener('pointerdown', wakeAudio, { once: true });
-window.addEventListener('keydown', wakeAudio, { once: true });
+// un gesto del usuario. El Soundscape se despierta solo con el primer clic.
+const sound = new Soundscape({ lowPower: initialTier === 'vr' });
+
+// El HUD vive toda la sesión: cada director nuevo (al cambiar la calidad) se
+// vuelve a enganchar al mismo.
+const hud = new Hud();
+
+const inXR = (): boolean => Boolean(xr && scene.activeCamera?.getClassName() === 'WebXRCamera');
+
+/** El jugador, tal como lo ve el juego: escritorio o visor, el mismo contrato. */
+const playerApi: PlayerApi = {
+  feet(): WorldPoint {
+    const cam = scene.activeCamera ?? camera;
+    const p = cam.globalPosition;
+    // En el visor los ojos están a la altura real de cada persona; la caminata
+    // VR sabe dónde están los pies.
+    const y = inXR() ? xr!.debug().feet : p.y - EYE;
+    return { x: p.x, y, z: p.z };
+  },
+  forward(): WorldPoint {
+    const d = (scene.activeCamera ?? camera).getDirection(Vector3.Forward());
+    return { x: d.x, y: d.y, z: d.z };
+  },
+  setPaused(paused: boolean): void {
+    player?.setPaused(paused);
+  },
+  teleport(p: WorldPoint, lookAt?: WorldPoint): void {
+    const look = lookAt
+      ? new Vector3(lookAt.x, lookAt.y, lookAt.z)
+      : new Vector3(p.x, p.y + EYE, p.z + 1);
+    if (inXR()) {
+      xr!.placeAt(new Vector3(p.x, p.y + EYE, p.z), look, p.y);
+      return;
+    }
+    camera.position.set(p.x, p.y + EYE, p.z);
+    camera.setTarget(look);
+  },
+  get inVR(): boolean {
+    return inXR();
+  },
+};
 
 // Gancho de depuración: deja que herramientas externas (tools/shoot.mjs) muevan
-// la cámara para capturar la ciudad desde ángulos concretos.
+// la cámara para capturar la escuela desde ángulos concretos.
 Object.assign(window as unknown as Record<string, unknown>, {
   __scene: scene,
   __BABYLON_Vector3: Vector3,
-  // El plano, para que las herramientas puedan encuadrar una manzana concreta
-  // por tipo en vez de adivinar coordenadas a mano.
+  // El plano, para que las herramientas puedan encuadrar una manzana concreta.
   __plan: () => city?.plan ?? null,
   // Marco de la escuela: las capturas se encuadran en coordenadas del plano (u, v).
   __schoolFrame: () => city?.schoolFrame ?? null,
+  // Colisión y pisos: tools/test-vr.mjs verifica con el mismo índice que el juego.
+  __index: () => city?.index ?? null,
+  // Estado de la caminata VR (pies, cabeza, movimiento) para tools/test-vr.mjs.
+  __xr: () => xr?.debug() ?? null,
+  // Gente y juego, para las herramientas de verificación.
+  __people: () => people,
+  __director: () => director,
+  __player: playerApi,
+  __sound: sound,
   // Conmutadores para medir por ablación cuánto cuesta cada efecto. Sin esto,
   // atribuir el coste entre sombras, oclusión ambiental y bloom es adivinar.
   __setShadows: (on: boolean) => {
     if (!environment || !city) return;
-    if (on) environment.enableShadows(city.shadowCasters, quality.profile.shadowResolution || 1024);
+    const p = quality.profile;
+    if (on) environment.enableShadows(city.shadowCasters, p.shadowResolution || 1024, p.shadowMode, p.shadowFilter);
     else environment.disableShadows();
     environment.setAdaptiveLevel(quality.adaptiveLevel);
   },
@@ -132,15 +174,18 @@ Object.assign(window as unknown as Record<string, unknown>, {
   __windClock: () => city?.windClock ?? -1,
 });
 
+// El director vigente (cambia al reconstruir), para guiones de prueba.
+Object.defineProperty(window, '__game', { get: () => director, configurable: true });
+
 window.addEventListener('pagehide', (event) => {
   if (event.persisted) return;
-  disposeXR?.();
+  xr?.dispose();
   engine.stopRenderLoop();
+  director?.dispose();
   life?.dispose();
-  crowd?.dispose();
+  people?.dispose();
   player?.dispose();
-  inspector?.dispose();
-  challenge?.dispose();
+  hud.dispose();
   renderPipeline.dispose();
   environment?.dispose();
   city?.dispose();
@@ -156,21 +201,37 @@ function startView(c: City): { eye: Vector3; look: Vector3 } {
   return { eye: new Vector3(eye.x, 1.7, eye.z), look: new Vector3(look.x, 3.6, look.z) };
 }
 
-/** Construye (o reconstruye) la ciudad completa. */
+/**
+ * Dónde aparece el visor al entrar: donde estaba el jugador de escritorio,
+ * mirando hacia el mismo lado. Antes de empezar (título), frente al portal.
+ */
+function xrSpawn(): { eye: Vector3; look: Vector3 } {
+  if (!city) throw new Error('sin escuela');
+  if (!director || director.atTitle || player?.mode !== 'walk') return startView(city);
+  const f = camera.getDirection(Vector3.Forward());
+  const flat = new Vector3(f.x, 0, f.z);
+  if (flat.lengthSquared() < 1e-4) flat.set(0, 0, 1);
+  flat.normalize();
+  const eye = camera.position.clone();
+  return { eye, look: eye.add(flat.scale(4)) };
+}
+
+/** Construye (o reconstruye) la escuela y su barrio. */
 async function buildCity(newSeed: number): Promise<void> {
-  await progress(10, 'Trazando la ciudad…');
+  await progress(10, 'Abriendo la escuela…');
+
+  // Al cambiar la calidad se reconstruye todo: el jugador sigue donde estaba.
+  const keep = city ? { pos: camera.position.clone(), target: camera.getTarget().clone() } : null;
 
   scene.blockMaterialDirtyMechanism = false;
+  director?.dispose();
   life?.dispose();
-  crowd?.dispose();
+  people?.dispose();
   player?.dispose();
-  inspector?.dispose();
-  challenge?.dispose();
+  director = null;
   life = null;
-  crowd = null;
+  people = null;
   player = null;
-  inspector = null;
-  challenge = null;
   city?.dispose();
   environment?.dispose();
   city = null;
@@ -178,7 +239,7 @@ async function buildCity(newSeed: number): Promise<void> {
 
   const profile = quality.profile;
 
-  await progress(30, 'Levantando edificios y vegetación…');
+  await progress(30, 'Levantando la escuela y el barrio…');
   city = new City(scene, newSeed, {
     gridSize: profile.gridSize,
     greenDensity: profile.greenDensity,
@@ -188,20 +249,27 @@ async function buildCity(newSeed: number): Promise<void> {
   // La fachada es la primera vista y también debe orientar el calentamiento
   // selectivo de shaders que sigue más abajo.
   const start = startView(city);
-  camera.position = start.eye;
-  camera.setTarget(start.look);
+  camera.position = keep?.pos ?? start.eye;
+  camera.setTarget(keep?.target ?? start.look);
 
   await progress(55, 'Calculando el cielo…');
   environment = new Environment(scene, city.plan.extent);
+  // La sombra estática gasta su resolución en la escuela, no en el barrio.
+  const centre = toWorld(city.schoolFrame, 34, -20);
+  environment.setFocus({ x: centre.x, z: centre.z }, 95);
+  // Mapa de luz natural de los interiores (ventanas, fondos de aula, debajo
+  // de mesas y escaleras) y adaptación de la exposición al entrar: sin esto,
+  // las aulas quedan con la luz pareja de antes.
+  environment.setSchool(city.schoolFrame);
   applyTime(hour);
 
   if (profile.shadows) {
     await progress(65, 'Proyectando sombras…');
-    environment.enableShadows(city.shadowCasters, profile.shadowResolution);
+    environment.enableShadows(city.shadowCasters, profile.shadowResolution, profile.shadowMode, profile.shadowFilter);
     environment.setAdaptiveLevel(quality.adaptiveLevel);
   }
 
-  // IBL desde la propia ciudad: sin esto los metales salen negros.
+  // IBL desde el propio cielo: sin esto los metales salen negros.
   environment.captureEnvironment();
 
   // Post-procesado (oclusión ambiental, bloom). Antes de precompilar: añade
@@ -228,45 +296,39 @@ async function buildCity(newSeed: number): Promise<void> {
     console.log(`[precompile] ${warm.compiled}/${warm.total} en ${warm.ms} ms`);
   }
 
-  // Vida: tranvías y pájaros. Una ciudad quieta se lee como maqueta.
+  // Autos por las calles del barrio y pájaros.
   life = new Life(scene, city.plan, newSeed);
-  life.setOnTramStop((x, z) => {
-    const camPos = scene.activeCamera?.position;
-    if (!camPos) return;
-    const dist = Math.hypot(camPos.x - x, camPos.z - z);
-    if (dist < 110) {
-      sound.tramChime(Math.max(0.12, 1 - dist / 110));
-    }
-  });
 
-  // Gente. Es lo que más cambia la percepción del espacio: una ciudad con
-  // locales, bancos y bicicleteros pero sin nadie sigue siendo una maqueta.
-  crowd = new Crowd(scene, city.plan, city.index, newSeed, profile.crowdSize);
-  crowd.setAdaptiveLevel(quality.adaptiveLevel);
+  // Alumnos, docentes, familias y personal: la escuela viva.
+  people = new Population(scene, city.plan, city.index, city.schoolFrame, newSeed, {
+    crowdSize: profile.crowdSize,
+    detailed: profile.highDetailStreet,
+  });
+  people.setAdaptiveLevel(quality.adaptiveLevel);
+  people.setSchoolPhase('entrada');
 
   // Jugador con colisión y modo caminar/volar.
   player = new PlayerController(scene, camera, city.index);
   player.onModeChanged(updateModeButton);
   player.onFootstep((running) => sound.step(running));
 
-  // Clic para inspeccionar manzanas.
-  inspector = new Inspector(scene, camera, city.index, canvas);
-  challenge = new ChallengeSystem(
+  // El juego: historia, personajes, actividades, HUD y panel del visor.
+  director = new GameDirector({
     scene,
     camera,
-    city.schoolFrame,
-    (paused) => player?.setPaused(paused),
-    () => player?.mode === 'walk',
-  );
-  if (xrExperience) await challenge.connectXR(xrExperience);
+    school: city.schoolFrame,
+    index: city.index,
+    population: people,
+    audio: sound,
+    player: playerApi,
+    hud,
+    // E sube mientras se vuela: sólo se interactúa caminando.
+    canInteract: () => player?.mode === 'walk',
+    fixtures: city.lightFixtures,
+  });
+  if (xr) await director.connectXR(xr.experience, xr);
 
-  updateEnergyPanel();
   quality.applyRuntime();
-
-  // La primera mirada debe explicar el lugar: la fachada de la escuela sobre
-  // Laprida, con el portal y su marquesina y la ciudad detrás. Del otro lado
-  // de la calle, un poco corrido hacia la esquina de Miguel Cané:
-  // entran en cuadro el portal, las aulas con sus rejas y las palmeras.
   player.setMode('walk');
 
   await progress(100, 'Lista');
@@ -281,45 +343,33 @@ async function buildCity(newSeed: number): Promise<void> {
   }
 }
 
-/**
- * "Usted está aquí": el nombre del ambiente del plano de evacuación en el que
- * está el jugador. Se consulta el mismo trazado que levanta la escuela.
- */
-let lastRoom = '';
-function updateRoomLabel(): void {
-  const cam = scene.activeCamera;
-  const school = city?.schoolFrame;
-  let name = '';
-  // Ojos a 1,68 m: los pies dicen en qué piso está (planta baja, primero o segundo).
-  const feet = (cam?.position.y ?? 0) - 1.68;
-  if (cam && school && feet < LEVEL_Y[2] + 3) {
-    const { u, v } = toLocal(school, cam.position.x, cam.position.z);
-    const room = roomAt(u, v, levelOf(feet));
-    name = room ? roomTitle(room) : '';
-  }
-  if (name === lastRoom) return;
-  lastRoom = name;
-  roomLabel.classList.toggle('hidden', !name);
-  roomLabel.innerHTML = name ? `Estás en: <b>${name}</b>` : '';
-}
-
-/** Panel de métricas: es la herramienta de trabajo, no adorno. */
+/** Panel de métricas (Ajustes → Métricas): es la herramienta de trabajo, no adorno. */
 function updateStats(): void {
-  if (!city) return;
+  if (!city || !document.body.classList.contains('metrics')) return;
   const s = city.stats;
   const fmt = (n: number) => n.toLocaleString('es-AR');
   // Draw calls REALES: la granja de instancias más todo lo que se dibuja fuera
-  // de ella (gente, tranvías, pájaros, cielo). Antes se informaba sólo la
-  // granja, así que la cifra subestimaba el coste justo cuando se agregaba
-  // movimiento — que es cuando más importa saberlo.
-  const drawn = scene.meshes.filter((m) => m.isEnabled() && m.material).length;
+  // de ella (gente, autos, pájaros, cielo, juego).
+  const drawn = scene.meshes.filter((m) => m.isEnabled() && m.isVisible && m.material).length;
   statsEl.innerHTML = [
     `${engine.getFps().toFixed(0)} fps`,
     `${fmt(s.instances)} objetos · ${fmt(Math.round(s.triangles / 1000))}k tris`,
-    `${drawn} draw calls · ${s.materials} materiales`,
-    `${crowd?.population ?? 0} personas activas · semilla ${s.seed} · ${s.buildTimeMs} ms`,
+    `${drawn} mallas · ${s.materials} materiales`,
+    `${people?.population ?? 0} personas · ${people?.drawn ?? 0} dibujadas · ${s.buildTimeMs} ms`,
   ].join('<br>');
 }
+
+/** Ambiente sonoro y piso bajo los pies, 4 veces por segundo. */
+let acousticsMs = 0;
+scene.onBeforeRenderObservable.add(() => {
+  if (!city) return;
+  if ((acousticsMs -= engine.getDeltaTime()) > 0) return;
+  acousticsMs = 250;
+  const f = playerApi.feet();
+  const a = acousticsAtWorld(city.schoolFrame, f.x, f.z, f.y);
+  sound.setZone(a.zone);
+  sound.setSurface(a.surface);
+});
 
 // ------------------------------------------------------------------ controles
 
@@ -334,7 +384,7 @@ btnQuality.addEventListener('click', async () => {
 });
 
 async function rebuildFor(_tier: QualityTier): Promise<void> {
-  // La densidad de verde y el tamaño de grilla son datos de generación:
+  // La densidad de verde, el detalle y la multitud son datos de generación:
   // cambiarlos exige reconstruir. El resto se aplica en caliente.
   await buildCity(seed);
 }
@@ -358,20 +408,6 @@ function applyTime(h: number): void {
   timeSlider.value = String(h);
 }
 
-btnRegen.addEventListener('click', async () => {
-  seed = (Math.random() * 0xffffffff) >>> 0;
-  btnRegen.disabled = true;
-  boot.classList.remove('hidden');
-  await buildCity(seed);
-  boot.classList.add('hidden');
-  btnRegen.disabled = false;
-});
-
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'h' || e.key === 'H') helpEl.classList.toggle('hidden');
-  if (e.key === 'Escape') inspector?.hide();
-});
-
 btnMode.addEventListener('click', () => {
   player?.toggleMode();
   sound.click(520);
@@ -379,10 +415,14 @@ btnMode.addEventListener('click', () => {
 
 btnSound.addEventListener('click', () => {
   const muted = sound.toggleMute();
-  btnSound.textContent = muted ? 'Sonido: off' : 'Sonido';
-  btnSound.setAttribute('aria-pressed', String(!muted));
+  showSoundState(muted);
   if (!muted) sound.click(780);
 });
+
+function showSoundState(muted: boolean): void {
+  btnSound.textContent = muted ? 'Sonido: off' : 'Sonido';
+  btnSound.setAttribute('aria-pressed', String(!muted));
+}
 
 function updateModeButton(mode: MoveMode): void {
   btnMode.textContent = mode === 'walk' ? 'Modo: Caminar' : 'Modo: Volar';
@@ -390,36 +430,15 @@ function updateModeButton(mode: MoveMode): void {
   helpFly.hidden = mode === 'walk';
 }
 
-/** Panel de energía: totales estimados de la ciudad generada. */
-function updateEnergyPanel(): void {
-  if (!city) return;
-  const t = city.index.totals();
-  // Consumo residencial de referencia: ~6 kWh por persona y día, que es el
-  // orden de magnitud de un hogar urbano argentino repartido per cápita.
-  const demand = t.people * 6;
-  const cover = demand > 0 ? Math.round((t.kwhDay / demand) * 100) : 0;
-  energyEl.innerHTML = `
-    <div class="row"><span>Habitantes</span><b>${t.people.toLocaleString('es-AR')}</b></div>
-    <div class="row"><span>Superficie solar</span><b>${t.solarM2.toLocaleString('es-AR')} m²</b></div>
-    <div class="row"><span>Generación</span><b>${Math.round(t.kwhDay / 1000).toLocaleString('es-AR')} MWh/día</b></div>
-    <div class="row"><span>Demanda est.</span><b>${Math.round(demand / 1000).toLocaleString('es-AR')} MWh/día</b></div>
-    <div class="bar"><i style="width:${Math.min(100, cover)}%"></i></div>
-    <div class="cover"><b>${cover}%</b> de la demanda cubierta con sol</div>
-  `;
-}
-
 // ---------------------------------------------------------------------- inicio
 
 async function start(): Promise<void> {
   updateQualityButton();
-  btnEnergy.addEventListener('click', () => {
-    const open = energyEl.classList.toggle('open');
-    btnEnergy.setAttribute('aria-pressed', String(open));
-    sound.click(open ? 700 : 480);
-  });
   if (!sound.available) {
     btnSound.disabled = true;
     btnSound.textContent = 'Sin audio';
+  } else {
+    showSoundState(sound.isMuted);
   }
 
   await buildCity(seed);
@@ -438,75 +457,118 @@ async function start(): Promise<void> {
       scene.activeCamera?.getClassName().includes('WebXR') ?? false,
     );
     if (adaptiveLevel !== null) {
-      crowd?.setAdaptiveLevel(adaptiveLevel);
+      people?.setAdaptiveLevel(adaptiveLevel);
       environment?.setAdaptiveLevel(adaptiveLevel);
       renderPipeline.setAdaptiveLevel(adaptiveLevel);
+      // En el visor la escala de resolución del canvas no cuenta: la palanca
+      // equivalente es la foveación fija.
+      xr?.setPerformanceLevel(adaptiveLevel);
       updateQualityButton();
     }
     scene.render();
   });
   window.addEventListener('resize', () => engine.resize());
   setInterval(updateStats, 500);
-  setInterval(updateRoomLabel, 250);
 
   boot.classList.add('hidden');
-  setTimeout(() => helpEl.classList.remove('hidden'), 400);
 
   // VR en segundo plano: si no hay visor, la experiencia de escritorio ya funciona.
   if (await isVrSupported()) {
     try {
       // Import dinámico: WebXR y todas sus dependencias de Babylon salen del
-      // paquete principal y se descargan SÓLO si hay un visor de verdad. Para
-      // la enorme mayoría de visitantes —que entran desde una computadora— es
-      // peso que ya no viaja por la red.
+      // paquete principal y se descargan SÓLO si hay un visor de verdad.
       const { setupXR } = await import('./vr/XRSetup');
-      const { experience, dispose } = await setupXR(
-        scene,
-        city!.plan.extent,
-        () => startView(city!),
-        (x, z) => Boolean(city && !city.index.isPedestrianBlocked(x, z)),
-      );
-      xrExperience = experience;
-      await challenge?.connectXR(experience);
-      // En VR los pies siguen el piso real: escalones y planta alta de la escuela.
-      const { followFloors } = await import('./vr/XRFloorFollow');
-      const stopFloors = followFloors(scene, experience, () => city?.index ?? null);
-      disposeXR = () => {
-        stopFloors();
-        dispose();
+      const { WebXRState } = await import('@babylonjs/core/XR/webXRTypes');
+      xr = await setupXR(scene, {
+        worldExtent: city!.plan.extent,
+        spawn: xrSpawn,
+        // El punto y un radio de cuerpo alrededor (el de la caminata VR): un
+        // destino pegado a una fachada dejaba la cabeza dentro del muro.
+        canTeleportTo: (x, z) => {
+          const idx = city?.index;
+          if (!idx) return false;
+          const r = 0.3;
+          return [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]].every(([dx, dz]) => !idx.isPedestrianBlocked(x + dx, z + dz));
+        },
+        // Se pide en cada cuadro: la escuela se reconstruye al cambiar la calidad.
+        index: () => city?.index ?? null,
+        onStep: (running) => sound.step(running),
+      });
+      const controls = xr;
+      const base = controls.experience.baseExperience;
+      await director?.connectXR(controls.experience, controls);
+
+      // Calidad con la que se venía en escritorio: al salir del visor se vuelve a ella.
+      let tierBeforeVr: QualityTier | null = null;
+      const vrIdle = (text = 'Entrar en VR'): void => {
+        btnVr.disabled = false;
+        btnVr.textContent = text;
       };
-      btnVr.disabled = false;
-      btnVr.textContent = 'Entrar en VR';
+      base.onStateChangedObservable.add((state) => {
+        if (state === WebXRState.IN_XR) {
+          // El visor tiene su propio plano lejano y foveación: aplicar el
+          // nivel adaptativo vigente desde el primer cuadro.
+          controls.setPerformanceLevel(quality.adaptiveLevel);
+          sound.setLowPower(true);
+          vrIdle('Salir de VR');
+        } else if (state === WebXRState.NOT_IN_XR) {
+          vrIdle();
+          sound.setLowPower(quality.current === 'vr');
+          const previous = tierBeforeVr;
+          tierBeforeVr = null;
+          if (previous && previous !== quality.current) {
+            quality.set(previous);
+            updateQualityButton();
+            boot.classList.remove('hidden');
+            void rebuildFor(previous).finally(() => boot.classList.add('hidden'));
+          }
+        }
+      });
+      vrIdle();
+
       btnVr.addEventListener('click', async () => {
+        // Con el visor de PC puesto, el botón del escritorio también sirve para salir.
+        if (base.state === WebXRState.IN_XR) {
+          await base.exitXRAsync();
+          return;
+        }
+        if (base.state !== WebXRState.NOT_IN_XR) return;
         btnVr.disabled = true;
+        btnVr.textContent = 'Preparando…';
         boot.classList.remove('hidden');
         try {
-          // El perfil VR cambia tamaño de grilla, follaje y multitud. Aplicar
-          // sólo los ajustes de runtime conservaba por error la ciudad "Alta"
-          // dentro del visor, justo donde el presupuesto de cuadro es menor.
+          // El perfil VR cambia el follaje, la multitud y quita el post-proceso
+          // (que dentro del visor dejaba los colores sin mapeo tonal).
           if (quality.current !== 'vr') {
+            tierBeforeVr = quality.current;
             quality.set('vr');
             updateQualityButton();
             await rebuildFor('vr');
           }
-          await experience.baseExperience.enterXRAsync('immersive-vr', 'local-floor');
+          await base.enterXRAsync('immersive-vr', 'local-floor');
+        } catch (err) {
+          // Típicamente: el navegador exige que la sesión se pida pegada al
+          // clic, y reconstruir la escuela tardó demasiado. Ya quedó en perfil
+          // VR, así que el segundo intento entra de inmediato.
+          console.warn('[cimdip] No se pudo entrar en VR:', err);
+          vrIdle('Tocá de nuevo para entrar');
         } finally {
           boot.classList.add('hidden');
-          btnVr.disabled = false;
+          if (base.state === WebXRState.NOT_IN_XR && btnVr.disabled) vrIdle();
         }
       });
     } catch (err) {
-      console.warn('[ciudad-2050] No se pudo inicializar WebXR:', err);
+      console.warn('[cimdip] No se pudo inicializar WebXR:', err);
       btnVr.textContent = 'VR no disponible';
     }
   } else {
     btnVr.textContent = 'VR no disponible';
     btnVr.title =
-      'WebXR necesita un visor y un contexto seguro (HTTPS o localhost). En escritorio podés recorrer la ciudad con WASD.';
+      'WebXR necesita un visor y un contexto seguro (HTTPS o localhost). En escritorio podés recorrer la escuela con WASD.';
   }
 }
 
 start().catch((err) => {
   console.error(err);
-  bootMsg.textContent = 'Error al generar la ciudad — ver la consola.';
+  bootMsg.textContent = 'Error al abrir la escuela — ver la consola.';
 });

@@ -1,7 +1,16 @@
 import type { Scene } from '@babylonjs/core/scene';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture';
 import { Texture } from '@babylonjs/core/Materials/Textures/texture';
-import { Rng } from '../utils/rng';
+import { Rng, seedFromString } from '../utils/rng';
+import {
+  PAINTED_KINDS,
+  PERIOD_M,
+  paintMacro,
+  paintSurfaceMaps,
+  reliefMap,
+  type PaintedKind,
+  type PaintedSurface,
+} from './TexturePainter';
 
 export type SurfaceKind =
   | 'concrete'
@@ -22,7 +31,16 @@ export type SurfaceKind =
   | 'lattice'
   | 'panels'
   | 'marble'
-  | 'block';
+  | 'block'
+  // Chapa acanalada (la galería roja sobre el comedor, el testero azul del
+  // polideportivo) y ladrillo pintado a la cal (planta alta y edificio de bloque).
+  | 'corrugated'
+  | 'brick'
+  // Látex sobre revoque, tela de cortina y goma de piso (ver TexturePainter).
+  | 'plaster'
+  | 'fabric'
+  | 'rubber'
+  | 'aggregate';
 
 /**
  * Texturas generadas por código.
@@ -32,8 +50,10 @@ export type SurfaceKind =
  * o como maqueta, por buena que sea la iluminación. Las superficies reales
  * tienen grano, veta, juntas, manchas.
  *
- * Se generan en un canvas 2D al cargar, en escala de grises, y se usan como
- * mapa de detalle multiplicando el color base del material. Ventajas frente a
+ * Se generan al cargar, en escala de grises, y se usan como mapa de detalle
+ * multiplicando el color base del material. Las superficies con piezas y
+ * juntas (pisos, ladrillo, bloque, chapa, hormigón, madera) se pintan píxel a
+ * píxel en `TexturePainter`; las demás, con el canvas 2D. Ventajas frente a
  * descargar texturas:
  *
  *  - **No pesan nada en la red.** El proyecto sigue sin un solo archivo externo.
@@ -41,9 +61,21 @@ export type SurfaceKind =
  *  - **Se pueden reteñir**: una sola textura de hormigón sirve para los siete
  *    tonos de fachada, porque el color lo pone el material.
  *
- * Coste: ~6 texturas de 256×256 generadas una vez, unos pocos milisegundos.
+ * Coste: una textura de 256² por tipo usado (~16) más su relieve (otra de
+ * 256², ver `relief`) y dos capas de gran escala de 128², generadas una vez
+ * y compartidas por todos los materiales de ese tipo; con mipmaps. Pintarlas
+ * lleva ~150-230 ms en escritorio (tres o cuatro veces más en un visor
+ * autónomo), una sola vez durante la carga.
+ *
+ * Variantes MÉTRICAS (`metric = true`): las usan casi todos los materiales
+ * (todos salvo los paneles solares), que calculan la UV desde la posición en
+ * el mundo (ver `Materials`), en metros.
+ * Su repetición es `1 / PERIOD_M`: el bloque mide 40 × 20 cm en cualquier
+ * muro, sea un antepecho de 30 cm o un paño de 6 m. Con la UV 0..1 de la caja
+ * unitaria, la misma textura se estiraba distinto en cada pieza (la fachada
+ * se veía como un revestimiento de tablas horizontales).
  */
-/** Repeticiones de la textura de detalle, por tipo de superficie. */
+
 /**
  * Repeticiones por tipo de superficie.
  *
@@ -77,183 +109,206 @@ const UV_SCALE: Record<SurfaceKind, number> = {
   // da piezas de mármol de ~60 cm y bloques de ~40 × 20 cm en muros comunes.
   marble: 3,
   block: 5,
+  // Onda de chapa cada ~8 cm y ladrillo de ~25 × 7,5 cm en tramos de muro comunes.
+  corrugated: 4,
+  brick: 3,
+  plaster: 3,
+  fabric: 2,
+  rubber: 6,
+  aggregate: 6,
 };
 
-/** Textura base de la que deriva cada variante de escala. */
-const BASE_KIND: Partial<Record<SurfaceKind, SurfaceKind>> = {
-  concreteXL: 'concrete',
-  timberXL: 'timber',
-  pavementXL: 'pavement',
+/**
+ * Período en metros de las texturas que no pinta `TexturePainter` (las de
+ * canvas 2D), para su variante métrica. Las pintadas usan `PERIOD_M`.
+ */
+const CANVAS_PERIOD_M: Partial<Record<SurfaceKind, number>> = {
+  grass: 2,
+  solar: 1.6,
+  metal: 1,
+  lattice: 0.5,
 };
+
+/**
+ * Período de la capa de gran escala (`macro`), en metros. No es múltiplo de
+ * ningún período base (0,5-2,4 m): cada paño de piso o de pared cae sobre
+ * otra parte de ella y la repetición de la textura base deja de leerse.
+ */
+const MACRO_PERIOD_M = 7.3;
+
+/**
+ * Textura base de la que deriva cada variante de escala.
+ *
+ * Las XL son las superficies enormes (fachadas, suelo, calzadas) y se
+ * aplican siempre en metros (ver `Materials.AUTO_METRIC`): la fachada es
+ * revoque pintado y el suelo un árido fino sin juntas. Con la UV 0..1 de una
+ * caja de 250 m, la loseta y la junta de encofrado se estiraban en tablones.
+ */
+const BASE_KIND: Partial<Record<SurfaceKind, SurfaceKind>> = {
+  concreteXL: 'plaster',
+  timberXL: 'timber',
+  pavementXL: 'aggregate',
+};
+
+/**
+ * Superficies que se miran de cerca y en ángulo rasante: los pisos. Filtrado
+ * anisotrópico 8× para que la junta del granito no se convierta en una
+ * mancha gris a tres metros (el resto se queda en 4×). QualityManager lo
+ * escala hacia abajo con el nivel adaptativo.
+ */
+const FLOOR_KINDS = new Set<SurfaceKind>(['granite', 'checker', 'parquet', 'ceramic', 'pavement', 'pavementXL', 'rubber', 'aggregate']);
+
+const PAINTED = new Set<string>(PAINTED_KINDS);
+
+/** ¿El tipo tiene relieve pintado (y por lo tanto mapa de normales)? */
+export function hasRelief(kind: SurfaceKind): boolean {
+  return PAINTED.has(BASE_KIND[kind] ?? kind);
+}
 
 export class Textures {
   private readonly cache = new Map<string, Texture>();
+  /** Color y altura de cada superficie pintada: el mapa de normales la reusa. */
+  private readonly painted = new Map<PaintedKind, PaintedSurface>();
+  /** Tiempo total de generación (ms) y texturas creadas, para el informe de carga. */
+  readonly stats = { ms: 0, count: 0 };
 
   constructor(private readonly scene: Scene) {}
 
-  get(kind: SurfaceKind): Texture {
-    const hit = this.cache.get(kind);
+  /**
+   * Textura de color de un tipo. `metric`: variante para UV en metros (la
+   * escuela); si no, la escala de repetición de `UV_SCALE` (UV 0..1 por cara).
+   */
+  get(kind: SurfaceKind, metric = false): Texture {
+    // En metros, una variante de escala es su textura base: misma textura.
+    if (metric) kind = BASE_KIND[kind] ?? kind;
+    const key = metric ? `${kind}@m` : kind;
+    const hit = this.cache.get(key);
     if (hit) return hit;
+    const t0 = performance.now();
 
     // Las variantes de escala comparten el dibujo de su textura base.
     const drawKind = BASE_KIND[kind] ?? kind;
     const size = drawKind === 'grass' ? 128 : 256;
-    const tex = new DynamicTexture(`tex_${kind}`, { width: size, height: size }, this.scene, true);
+    const tex = new DynamicTexture(`tex_${key}`, { width: size, height: size }, this.scene, true);
     const ctx = tex.getContext() as unknown as CanvasRenderingContext2D;
-    const rng = new Rng(0xc17d + drawKind.length * 977);
+    const rng = new Rng(seedFromString(`tex:${drawKind}`));
 
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, size, size);
-
-    switch (drawKind) {
-      case 'concrete':
-        this.drawConcrete(ctx, size, rng);
-        break;
-      case 'timber':
-        this.drawTimber(ctx, size, rng);
-        break;
-      case 'pavement':
-        this.drawPavement(ctx, size, rng);
-        break;
-      case 'grass':
-        this.drawGrass(ctx, size, rng);
-        break;
-      case 'solar':
-        this.drawSolar(ctx, size);
-        break;
-      case 'metal':
-        this.drawMetal(ctx, size, rng);
-        break;
-      case 'granite':
-        this.drawGranite(ctx, size, rng);
-        break;
-      case 'checker':
-        this.drawChecker(ctx, size, rng);
-        break;
-      case 'parquet':
-        this.drawParquet(ctx, size, rng);
-        break;
-      case 'ceramic':
-        this.drawCeramic(ctx, size, rng);
-        break;
-      case 'lattice':
-        this.drawLattice(ctx, size);
-        break;
-      case 'panels':
-        this.drawPanels(ctx, size, rng);
-        break;
-      case 'marble':
-        this.drawMarble(ctx, size, rng);
-        break;
-      case 'block':
-        this.drawBlock(ctx, size, rng);
-        break;
+    if (PAINTED.has(drawKind)) {
+      // Superficies con piezas, juntas y grano: se pintan píxel a píxel (ver
+      // TexturePainter). Unos 5-10 ms por textura, una sola vez; las
+      // variantes de escala reusan los píxeles ya pintados.
+      const image = ctx.createImageData(size, size);
+      image.data.set(this.paint(drawKind as PaintedKind).rgba);
+      ctx.putImageData(image, 0, 0);
+    } else {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, size, size);
+      switch (drawKind) {
+        case 'grass':
+          this.drawGrass(ctx, size, rng);
+          break;
+        case 'solar':
+          this.drawSolar(ctx, size);
+          break;
+        case 'metal':
+          this.drawMetal(ctx, size, rng);
+          break;
+        case 'lattice':
+          this.drawLattice(ctx, size);
+          break;
+      }
     }
 
-    tex.update(false);
-    tex.wrapU = Texture.WRAP_ADDRESSMODE;
-    tex.wrapV = Texture.WRAP_ADDRESSMODE;
-    tex.anisotropicFilteringLevel = 4;
     // La repeticion se fija aca, una sola vez, porque es constante por tipo de
     // superficie. Antes cada material clonaba la textura para ponerle su escala:
     // con ~110 materiales eso eran 110 clones de un canvas de 256x256, un coste
     // enorme y completamente evitable, ya que todos usaban el mismo valor.
-    const scale = UV_SCALE[kind];
-    tex.uScale = scale;
-    tex.vScale = scale;
-    this.cache.set(kind, tex);
+    this.finish(tex, key, this.scaleOf(kind, metric), FLOOR_KINDS.has(kind) ? 8 : 4, t0);
     return tex;
   }
 
-  /** Hormigón: grano fino + manchas suaves + alguna veta de encofrado. */
-  private drawConcrete(ctx: CanvasRenderingContext2D, size: number, rng: Rng): void {
-    // Manchas grandes de humedad/envejecimiento.
-    for (let i = 0; i < 26; i++) {
-      const r = rng.range(size * 0.08, size * 0.3);
-      const g = ctx.createRadialGradient(
-        rng.range(0, size),
-        rng.range(0, size),
-        0,
-        rng.range(0, size),
-        rng.range(0, size),
-        r,
-      );
-      const v = rng.range(0.86, 1);
-      g.addColorStop(0, `rgba(${v * 255},${v * 255},${v * 255},0.5)`);
-      g.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, size, size);
-    }
-    // Juntas de encofrado en LOS DOS sentidos y muy tenues.
-    //
-    // Antes eran sólo horizontales: al estirarse sobre un muro ancho se
-    // convertían en franjas gruesas y el hormigón parecía chapa ondulada.
-    // Cruzadas y suaves, el patrón se lee como paños de encofrado en cualquier
-    // proporción de estiramiento.
-    ctx.strokeStyle = 'rgba(150,150,150,0.16)';
-    ctx.lineWidth = 1;
-    for (let i = 0; i < size; i += size / 4) {
-      ctx.beginPath();
-      ctx.moveTo(0, i);
-      ctx.lineTo(size, i);
-      ctx.moveTo(i, 0);
-      ctx.lineTo(i, size);
-      ctx.stroke();
-    }
-    this.speckle(ctx, size, rng, 2600, 0.1, 0.9);
+  /**
+   * Relieve de un tipo pintado (normales + rugosidad, formato `detailMap`,
+   * ver `reliefMap`), con la MISMA repetición métrica que su textura de
+   * color: la junta del relieve cae sobre la junta dibujada. Sale de la
+   * altura que el pintor ya calculó junto con el color, así que cuesta sólo
+   * la pasada de diferencias (~1-2 ms).
+   */
+  relief(kind: SurfaceKind): Texture | null {
+    const drawKind = BASE_KIND[kind] ?? kind;
+    if (!PAINTED.has(drawKind)) return null;
+    const key = `${drawKind}@m:relief`;
+    const hit = this.cache.get(key);
+    if (hit) return hit;
+    const t0 = performance.now();
+    const size = 256;
+    const surface = this.paint(drawKind as PaintedKind);
+    const tex = new DynamicTexture(`tex_${key}`, { width: size, height: size }, this.scene, true);
+    const ctx = tex.getContext() as unknown as CanvasRenderingContext2D;
+    const image = ctx.createImageData(size, size);
+    image.data.set(reliefMap(drawKind as PaintedKind, surface.height, size));
+    ctx.putImageData(image, 0, 0);
+    // Una normal no es un color: sin corrección de gamma.
+    tex.gammaSpace = false;
+    this.finish(tex, key, this.scaleOf(kind, true), FLOOR_KINDS.has(drawKind) ? 8 : 4, t0);
+    return tex;
   }
 
-  /** Madera: veta longitudinal con nudos ocasionales. */
-  private drawTimber(ctx: CanvasRenderingContext2D, size: number, rng: Rng): void {
-    for (let i = 0; i < 150; i++) {
-      const y = rng.range(0, size);
-      const v = rng.range(0.74, 1);
-      ctx.strokeStyle = `rgba(${v * 255},${v * 240},${v * 220},${rng.range(0.15, 0.55)})`;
-      ctx.lineWidth = rng.range(0.6, 2.6);
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      // Veta ligeramente ondulada: una línea recta se ve impresa, no crecida.
-      for (let x = 0; x <= size; x += 16) {
-        ctx.lineTo(x, y + Math.sin((x / size) * Math.PI * 2 + i) * 2.2);
-      }
-      ctx.stroke();
-    }
-    // Nudos.
-    for (let i = 0; i < 3; i++) {
-      const cx = rng.range(0, size);
-      const cy = rng.range(0, size);
-      for (let r = 7; r > 0; r--) {
-        ctx.strokeStyle = `rgba(120,95,70,${0.09 * r})`;
-        ctx.lineWidth = 1.1;
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, r * 1.7, r, 0, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-    }
+  /**
+   * Capa de gran escala en formato ORM (oclusión ambiente y rugosidad, ver
+   * `paintMacro`), en metros y compartida por los materiales métricos.
+   * `traffic`: la variante de pisos, con marcas de uso.
+   */
+  macro(traffic: boolean): Texture {
+    const key = traffic ? 'macro:floor' : 'macro:wall';
+    const hit = this.cache.get(key);
+    if (hit) return hit;
+    const t0 = performance.now();
+    const size = 128;
+    const tex = new DynamicTexture(`tex_${key}`, { width: size, height: size }, this.scene, true);
+    const ctx = tex.getContext() as unknown as CanvasRenderingContext2D;
+    const image = ctx.createImageData(size, size);
+    image.data.set(paintMacro(size, traffic));
+    ctx.putImageData(image, 0, 0);
+    tex.gammaSpace = false;
+    this.finish(tex, key, 1 / MACRO_PERIOD_M, 4, t0);
+    return tex;
   }
 
-  /** Solado: baldosas grandes con junta y desgaste. */
-  private drawPavement(ctx: CanvasRenderingContext2D, size: number, rng: Rng): void {
-    const tile = size / 4;
-    ctx.strokeStyle = 'rgba(120,120,115,0.5)';
-    ctx.lineWidth = 2;
-    for (let i = 0; i <= 4; i++) {
-      ctx.beginPath();
-      ctx.moveTo(i * tile, 0);
-      ctx.lineTo(i * tile, size);
-      ctx.moveTo(0, i * tile);
-      ctx.lineTo(size, i * tile);
-      ctx.stroke();
+  /**
+   * Suelta las alturas pintadas (≈4 MB): sólo hacen falta mientras se crean
+   * los mapas de relieve. Se llama al congelar los materiales.
+   */
+  trim(): void {
+    this.painted.clear();
+  }
+
+  private paint(kind: PaintedKind): PaintedSurface {
+    let hit = this.painted.get(kind);
+    if (!hit) {
+      hit = paintSurfaceMaps(kind, 256);
+      this.painted.set(kind, hit);
     }
-    // Cada baldosa con un tono levemente distinto: evita el patrón obvio.
-    for (let x = 0; x < 4; x++) {
-      for (let y = 0; y < 4; y++) {
-        const v = rng.range(0.93, 1);
-        ctx.fillStyle = `rgba(${v * 255},${v * 255},${v * 252},0.55)`;
-        ctx.fillRect(x * tile + 1, y * tile + 1, tile - 2, tile - 2);
-      }
-    }
-    this.speckle(ctx, size, rng, 1800, 0.08, 0.88);
+    return hit;
+  }
+
+  private scaleOf(kind: SurfaceKind, metric: boolean): number {
+    if (!metric) return UV_SCALE[kind];
+    const drawKind = BASE_KIND[kind] ?? kind;
+    const period = PAINTED.has(drawKind) ? PERIOD_M[drawKind as PaintedKind] : (CANVAS_PERIOD_M[drawKind] ?? 1);
+    return 1 / period;
+  }
+
+  private finish(tex: DynamicTexture, key: string, scale: number, aniso: number, t0: number): void {
+    tex.update(false);
+    tex.wrapU = Texture.WRAP_ADDRESSMODE;
+    tex.wrapV = Texture.WRAP_ADDRESSMODE;
+    tex.anisotropicFilteringLevel = aniso;
+    tex.uScale = scale;
+    tex.vScale = scale;
+    this.cache.set(key, tex);
+    this.stats.ms += performance.now() - t0;
+    this.stats.count++;
   }
 
   /** Césped: motas de dos verdes para romper la alfombra plana. */
@@ -297,102 +352,6 @@ export class Textures {
     }
   }
 
-  /**
-   * Granito reconstituido de pasillos y hall: 4 × 4 paños con grano mezclado
-   * claro y oscuro y junta fina, como el de los pisos del recorrido.
-   */
-  private drawGranite(ctx: CanvasRenderingContext2D, size: number, rng: Rng): void {
-    const tile = size / 4;
-    for (let x = 0; x < 4; x++) {
-      for (let y = 0; y < 4; y++) {
-        const v = rng.range(0.9, 1);
-        ctx.fillStyle = `rgba(${v * 255},${v * 255},${v * 252},1)`;
-        ctx.fillRect(x * tile, y * tile, tile, tile);
-      }
-    }
-    this.speckle(ctx, size, rng, 5200, 0.35, 0.35);
-    this.speckle(ctx, size, rng, 2600, 0.25, 0.85);
-    ctx.strokeStyle = 'rgba(95,95,92,0.45)';
-    ctx.lineWidth = 1.2;
-    for (let i = 0; i <= 4; i++) {
-      ctx.beginPath();
-      ctx.moveTo(i * tile, 0);
-      ctx.lineTo(i * tile, size);
-      ctx.moveTo(0, i * tile);
-      ctx.lineTo(size, i * tile);
-      ctx.stroke();
-    }
-  }
-
-  /** Damero gris oscuro y gris claro del comedor (4 × 4 baldosas). */
-  private drawChecker(ctx: CanvasRenderingContext2D, size: number, rng: Rng): void {
-    const tile = size / 4;
-    for (let x = 0; x < 4; x++) {
-      for (let y = 0; y < 4; y++) {
-        const dark = (x + y) % 2 === 0;
-        const v = dark ? rng.range(0.3, 0.34) : rng.range(0.82, 0.88);
-        ctx.fillStyle = `rgb(${v * 255},${v * 255},${v * 255})`;
-        ctx.fillRect(x * tile, y * tile, tile, tile);
-      }
-    }
-    this.speckle(ctx, size, rng, 1400, 0.06, 0.8);
-    ctx.strokeStyle = 'rgba(70,70,70,0.6)';
-    ctx.lineWidth = 1;
-    for (let i = 0; i <= 4; i++) {
-      ctx.beginPath();
-      ctx.moveTo(i * tile, 0);
-      ctx.lineTo(i * tile, size);
-      ctx.moveTo(0, i * tile);
-      ctx.lineTo(size, i * tile);
-      ctx.stroke();
-    }
-  }
-
-  /** Parquet de tablillas en cesta (aula de danzas). */
-  private drawParquet(ctx: CanvasRenderingContext2D, size: number, rng: Rng): void {
-    const cell = size / 4;
-    const slat = cell / 4;
-    for (let x = 0; x < 4; x++) {
-      for (let y = 0; y < 4; y++) {
-        const vertical = (x + y) % 2 === 0;
-        for (let k = 0; k < 4; k++) {
-          const v = rng.range(0.78, 1);
-          ctx.fillStyle = `rgb(${v * 255},${v * 236},${v * 212})`;
-          if (vertical) ctx.fillRect(x * cell + k * slat, y * cell, slat, cell);
-          else ctx.fillRect(x * cell, y * cell + k * slat, cell, slat);
-          ctx.strokeStyle = 'rgba(110,80,50,0.35)';
-          ctx.lineWidth = 1;
-          if (vertical) ctx.strokeRect(x * cell + k * slat + 0.5, y * cell + 0.5, slat - 1, cell - 1);
-          else ctx.strokeRect(x * cell + 0.5, y * cell + k * slat + 0.5, cell - 1, slat - 1);
-        }
-      }
-    }
-    this.speckle(ctx, size, rng, 900, 0.05, 0.8);
-  }
-
-  /** Cerámico claro de 33 cm con pastina (planta alta, jardín). */
-  private drawCeramic(ctx: CanvasRenderingContext2D, size: number, rng: Rng): void {
-    const tile = size / 2;
-    for (let x = 0; x < 2; x++) {
-      for (let y = 0; y < 2; y++) {
-        const v = rng.range(0.94, 1);
-        ctx.fillStyle = `rgb(${v * 255},${v * 255},${v * 252})`;
-        ctx.fillRect(x * tile, y * tile, tile, tile);
-      }
-    }
-    this.speckle(ctx, size, rng, 500, 0.04, 0.85);
-    ctx.strokeStyle = 'rgba(120,115,105,0.55)';
-    ctx.lineWidth = 2;
-    for (let i = 0; i <= 2; i++) {
-      ctx.beginPath();
-      ctx.moveTo(i * tile, 0);
-      ctx.lineTo(i * tile, size);
-      ctx.moveTo(0, i * tile);
-      ctx.lineTo(size, i * tile);
-      ctx.stroke();
-    }
-  }
-
   /** Cielorraso de listones de madera en retícula (comedor). */
   private drawLattice(ctx: CanvasRenderingContext2D, size: number): void {
     ctx.fillStyle = 'rgb(40,32,26)';
@@ -411,104 +370,9 @@ export class Textures {
     }
   }
 
-  /** Cerámico símil mármol: placas apaisadas con vetas grises. */
-  private drawMarble(ctx: CanvasRenderingContext2D, size: number, rng: Rng): void {
-    const h = size / 4;
-    for (let r = 0; r < 4; r++) {
-      const v = rng.range(0.92, 1);
-      ctx.fillStyle = `rgb(${v * 255},${v * 250},${v * 244})`;
-      ctx.fillRect(0, r * h, size, h);
-    }
-    ctx.strokeStyle = 'rgba(110,100,92,0.45)';
-    for (let k = 0; k < 22; k++) {
-      ctx.lineWidth = rng.range(0.5, 1.8);
-      ctx.beginPath();
-      let x = rng.range(0, size);
-      let y = rng.range(0, size);
-      ctx.moveTo(x, y);
-      for (let j = 0; j < 6; j++) {
-        x += rng.range(-30, 40);
-        y += rng.range(-14, 14);
-        ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-    ctx.strokeStyle = 'rgba(130,120,110,0.6)';
-    ctx.lineWidth = 1.5;
-    for (let r = 0; r <= 4; r++) {
-      ctx.beginPath();
-      ctx.moveTo(0, r * h);
-      ctx.lineTo(size, r * h);
-      ctx.stroke();
-    }
-    for (let r = 0; r < 4; r++) {
-      const x = (r % 2) * (size / 2);
-      ctx.beginPath();
-      ctx.moveTo(x, r * h);
-      ctx.lineTo(x, (r + 1) * h);
-      ctx.stroke();
-    }
-  }
-
-  /** Bloque de hormigón a la vista: hiladas trabadas con junta marcada. */
-  private drawBlock(ctx: CanvasRenderingContext2D, size: number, rng: Rng): void {
-    const rows = 4;
-    const h = size / rows;
-    const w = size / 2;
-    for (let r = 0; r < rows; r++) {
-      for (let c = -1; c < 3; c++) {
-        const x = c * w + (r % 2) * (w / 2);
-        const v = rng.range(0.86, 1);
-        ctx.fillStyle = `rgb(${v * 255},${v * 255},${v * 250})`;
-        ctx.fillRect(x + 2, r * h + 2, w - 4, h - 4);
-      }
-    }
-    this.speckle(ctx, size, rng, 2400, 0.12, 0.75);
-    ctx.strokeStyle = 'rgba(80,78,74,0.75)';
-    ctx.lineWidth = 3;
-    for (let r = 0; r <= rows; r++) {
-      ctx.beginPath();
-      ctx.moveTo(0, r * h);
-      ctx.lineTo(size, r * h);
-      ctx.stroke();
-    }
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < 3; c++) {
-        const x = c * w + (r % 2) * (w / 2);
-        ctx.beginPath();
-        ctx.moveTo(x, r * h);
-        ctx.lineTo(x, (r + 1) * h);
-        ctx.stroke();
-      }
-    }
-  }
-
-  /** Cielorraso de placas de 60 × 60 con perfilería. */
-  private drawPanels(ctx: CanvasRenderingContext2D, size: number, rng: Rng): void {
-    this.speckle(ctx, size, rng, 3000, 0.08, 0.86);
-    ctx.strokeStyle = 'rgba(160,160,160,0.9)';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(1.5, 1.5, size - 3, size - 3);
-  }
-
-  /** Grano fino, común a varias superficies. */
-  private speckle(
-    ctx: CanvasRenderingContext2D,
-    size: number,
-    rng: Rng,
-    count: number,
-    alpha: number,
-    minValue: number,
-  ): void {
-    for (let i = 0; i < count; i++) {
-      const v = rng.range(minValue, 1);
-      ctx.fillStyle = `rgba(${v * 255},${v * 255},${v * 255},${alpha + rng.next() * alpha})`;
-      ctx.fillRect(rng.range(0, size), rng.range(0, size), rng.range(1, 2.2), rng.range(1, 2.2));
-    }
-  }
-
   dispose(): void {
     for (const t of this.cache.values()) t.dispose();
     this.cache.clear();
+    this.painted.clear();
   }
 }

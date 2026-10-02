@@ -188,7 +188,15 @@ export interface Opening {
   ht?: number;
   /** Material de hojas y marcos (clave del constructor), si no es el del tipo. */
   color?: string;
+  /**
+   * Protección exterior de una ventana a la calle o al patio: rejas negras
+   * (planta baja, por defecto), rejas blancas (pisos altos, por defecto),
+   * malla romboidal, parasoles horizontales o nada.
+   */
+  grille?: Grille;
 }
+
+export type Grille = 'bars' | 'whiteBars' | 'mesh' | 'louvre' | 'none';
 
 export type WallKind = 'ext' | 'int' | 'medianera';
 
@@ -207,6 +215,14 @@ export interface Wall {
    * de bloque del polideportivo.
    */
   finish?: Readonly<Record<string, string>>;
+  /** Terminación de la cara exterior (por defecto, el revoque gris de fachada). */
+  ext?: string;
+  /**
+   * Terminación de la parte alta de un muro de dos plantas (por encima de la
+   * losa) del lado que no es el ambiente alto: el bloque del primer piso
+   * detrás del testero del polideportivo.
+   */
+  upper?: string;
 }
 
 /** Aberturas transitables: el resto del muro es sólido. */
@@ -216,7 +232,7 @@ export const WALKABLE: ReadonlySet<OpeningType> = new Set(['door', 'double', 'pa
  * Vano: desde, hasta (en el eje dominante del muro), tipo y, opcionales,
  * antepecho, dintel y material de hojas y marcos.
  */
-export type Op = readonly [number, number, OpeningType, number?, number?, string?];
+export type Op = readonly [number, number, OpeningType, number?, number?, string?, Grille?];
 
 export function seg(a: P, b: P, kind: WallKind, ops: readonly Op[] = [], h: number = SCHOOL.storey, level: Level = 0): Wall {
   const du = b[0] - a[0];
@@ -229,13 +245,14 @@ export function seg(a: P, b: P, kind: WallKind, ops: readonly Op[] = [], h: numb
   const from = alongU ? a[0] : a[1];
   const span = alongU ? du : dv;
   const openings = ops
-    .map(([c0, c1, type, hb, ht, color]): Opening => {
+    .map(([c0, c1, type, hb, ht, color, grille]): Opening => {
       const t0 = ((c0 - from) / span) * len;
       const t1 = ((c1 - from) / span) * len;
       const o: Opening = { t0: Math.max(0, Math.min(t0, t1)), t1: Math.min(len, Math.max(t0, t1)), type };
       if (hb !== undefined) o.hb = hb;
       if (ht !== undefined) o.ht = ht;
       if (color !== undefined) o.color = color;
+      if (grille !== undefined) o.grille = grille;
       return o;
     })
     .sort((x, y) => x.t0 - y.t0);
@@ -275,9 +292,11 @@ export type Floor =
   | 'dark'
   | 'checker'
   | 'ceramic'
+  | 'ceramicTan'
   | 'rubber'
   | 'terracotta'
-  | 'hallStone';
+  | 'hallStone'
+  | 'dance';
 
 export interface Room {
   id: string;
@@ -305,6 +324,14 @@ export interface Volume {
   poly: readonly P[];
   /** Plantas por encima de la baja: 1 (dos plantas) o 2 (tres plantas). */
   floors: 1 | 2;
+  /** Azotea plana con pretil (no la tiene lo que queda bajo la bóveda del gimnasio). */
+  roof?: boolean;
+  /** Cerramiento genérico donde un nivel no tiene ambientes (no en la torre de la escalera). */
+  shell?: boolean;
+  /** Cornisa entre plantas (no en la fachada lisa del jardín). */
+  cornice?: boolean;
+  /** Material de la azotea, si no es la chapa gris común. */
+  roofMat?: string;
 }
 
 // ================================================================ escaleras
@@ -319,11 +346,15 @@ export interface Stair {
   /** Alturas de arranque y de llegada, sobre el piso de planta baja. */
   y0: number;
   y1: number;
+  /** Escalera de chapa con luz por debajo aunque arranque del suelo (la exterior del comedor). */
+  hollow?: boolean;
 }
 
 /** Descanso: plataforma horizontal entre tramos, a `y` sobre el piso de planta baja. */
 export interface Landing extends Rect {
   y: number;
+  /** Losa con luz por debajo (un descanso sobre un ambiente), no macizo hasta el piso. */
+  hollow?: boolean;
 }
 
 // ================================================================== equipamiento
@@ -403,7 +434,17 @@ export type ItemKind =
   | 'floorPatch' // pintura o vinílico sobre el piso (con color)
   | 'hoop' // aro de básquet de pared
   | 'ceilingFan' // ventilador de techo
-  | 'palm'; // palmera (alto en `h`, apoyada a `y`)
+  | 'palm' // palmera (alto en `h`, apoyada a `y`)
+  | 'playTower' // torre de juegos de madera con dos toboganes
+  | 'aviary' // jaula/aviario con techo de chapa (con color del marco)
+  | 'hut' // choza con techo de paja
+  | 'climber' // domo trepador
+  | 'bikeRack' // bicicletero
+  | 'waterTank' // tanque de agua sobre una azotea
+  | 'louvredDoor' // puerta de chapa con celosía (bajo la escalera exterior)
+  | 'condenser' // unidad exterior de aire acondicionado colgada de la fachada
+  | 'bareTree' // árbol sin hojas (el video es de invierno)
+  | 'hedge'; // mata de cañas/arbustos de un cerco vivo
 
 /** Hacia dónde mira el frente del objeto (o la cara útil de algo contra un muro). */
 export type Facing = 'n' | 's' | 'e' | 'w';
@@ -426,6 +467,93 @@ export interface Item {
   y?: number;
   /** Alto, para lo que tiene tamaño variable (paneles, gradas, columnas). */
   h?: number;
+}
+
+/**
+ * Medidas de mobiliario que comparten el constructor (lo que se dibuja), la
+ * gente (a qué altura se sienta) y el QA de `tests/schoolProps` (que las
+ * compara con las de un aula real). Alturas sobre el piso terminado.
+ */
+export const FURNITURE = {
+  /** Tapa del pupitre (talle 6 de la norma escolar: 0,71–0,76 m). */
+  deskTop: 0.74,
+  /** Tapa de mesas de aula, de profesores y de biblioteca. */
+  tableTop: 0.76,
+  /** Asiento de la silla escolar: 28 cm debajo del pupitre. */
+  seat: 0.46,
+  /** Mesas redondas bajas de primer grado y del jardín (talle 3). */
+  smallTable: 0.6,
+  /** Escala de las sillitas de esas mesas (asiento a ~0,35 m). */
+  smallScale: 0.75,
+  /** Tapa de las mesas de trabajo del Aula Maker. */
+  benchTop: 0.78,
+  /** Pizarra blanca: borde inferior y superior del paño. */
+  boardBottom: 0.9,
+  boardTop: 2.1,
+  /** Fondo negro de los escenarios, sobre la tarima de 0,62 m. */
+  backdrop: 2.3,
+} as const;
+
+/**
+ * Alto libre hasta el cielorraso de cada ambiente, cuando no es el de la
+ * planta (3,1 m). Lo usan el constructor (cielorrasos y luminarias) y el QA
+ * del equipamiento (nada puede atravesar el cielorraso).
+ */
+export const CEILING_H: Readonly<Record<string, number>> = {
+  pasilloL1: 2.75,
+  pasilloNorteL1: 2.75,
+  rellanoNorte: 2.75,
+  pasilloOesteL1: 2.75,
+  pasilloTrofeos: 2.85,
+  secretaria: 2.85,
+  aulaS1: 2.85,
+  aulaS2: 2.85,
+  aulaS3: 2.85,
+  aulaS4: 2.85,
+  aulaS5: 2.85,
+  banosS: 2.6,
+  banosN: 2.6,
+  aula6BD: 2.85,
+  aula6AC: 2.85,
+  aulaC1: 2.75,
+  aulaC2: 2.75,
+  biblioteca: 2.75,
+  bilingue: 2.75,
+  galeria: 2.5,
+  pasarela: 2.45,
+  dirSec: 2.75,
+  precepSec: 2.75,
+  aulaSec: 2.75,
+  pasilloBloque: 2.7,
+  aulaBloqueD: 2.7,
+  aulaBloqueC: 2.7,
+  aulaBloqueA: 2.7,
+  jardinRecepcion: 2.8,
+  jardinGaleria: 2.8,
+  salaAmarilla: 2.8,
+  jardinHall1: 2.8,
+  salaCeleste: 2.8,
+  jardinGaleria1: 2.8,
+  salaRosa: 2.8,
+  salaRoja: 2.8,
+  jardinHall2: 2.8,
+  espacioMusica: 2.8,
+  sum: 3.0,
+};
+
+/**
+ * Salas del jardín de infantes: mesas y sillas de talle chico (las sillas
+ * del plano miden 36 cm). Lo usan el constructor y el QA del equipamiento.
+ */
+export const KINDER_ROOMS: ReadonlySet<string> = new Set(['salaAmarilla', 'salaCeleste', 'salaRosa', 'salaRoja']);
+
+/** Ambientes bajo una bóveda (polideportivo y aula de danzas): sin cielorraso plano. */
+export const VAULTED: ReadonlySet<string> = new Set(['gimnasio', 'aulaDanzas', 'hallDanzas']);
+
+/** Alto libre de un ambiente sobre su piso (la bóveda cuenta como muy alta). */
+export function ceilingHeight(r: { id: string }): number {
+  if (VAULTED.has(r.id)) return 6;
+  return CEILING_H[r.id] ?? 3.1;
 }
 
 export const item = (kind: ItemKind, u: number, v: number, w: number, d: number, face: Facing = 's', solid = true): Item => ({

@@ -34,8 +34,13 @@ export class WindPlugin extends MaterialPluginBase {
 
   constructor(material: Material) {
     // El nombre debe ser único por material; 120 es la prioridad (después del
-    // procesamiento base), y `true` lo deja activo desde el principio.
-    super(material, 'Wind', 120, { WIND: true }, true);
+    // procesamiento base). Los dos `true` son distintos y hacen falta los
+    // dos: el primero registra el plugin en el material, el segundo lo
+    // ACTIVA. Con sólo el primero —como estaba— el define WIND llegaba al
+    // shader (su valor por omisión es true) pero Babylon no inyectaba el
+    // código ni llamaba a bindForSubMesh: el follaje no se movía y la prueba
+    // que mira el define pasaba igual.
+    super(material, 'Wind', 120, { WIND: true }, true, true);
   }
 
   override getClassName(): string {

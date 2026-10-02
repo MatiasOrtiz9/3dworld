@@ -7,27 +7,107 @@ import '@babylonjs/core/Rendering/prePassRendererSceneComponent';
 
 export type RenderQuality = 'off' | 'lite' | 'balanced' | 'high';
 
+/** Parámetros de cada nivel; exportados para poder probarlos sin GPU. */
+export interface PostSettings {
+  bloomThreshold: number;
+  bloomWeight: number;
+  bloomKernel: number;
+  /** Multimuestreo del búfer HDR (bordes de rejas y barandas). 1 = sin MSAA. */
+  msaa: number;
+  fxaa: boolean;
+  sharpen: number;
+  vignette: number;
+  ssao: null | {
+    ratio: number;
+    samples: number;
+    radius: number;
+    strength: number;
+    base: number;
+    maxZ: number;
+    /** Filtro bilateral configurable (bordes limpios) en vez del heredado. */
+    bilateral: boolean;
+  };
+}
+
+/**
+ * Ajustes por nivel.
+ *
+ * El "velo lechoso" de los interiores tenía tres causas, y las tres están
+ * corregidas acá o en Environment:
+ *
+ *  1. **SSAO con radio de 2,6 m** en ambientes de 3 m de alto: cada punto de
+ *     un muro "veía" el muro de enfrente y el cielorraso como oclusores, y con
+ *     12-16 muestras y el desenfoque heredado eso se convertía en manchas
+ *     grises grandes y blandas sobre toda superficie lisa. Ahora el SSAO es
+ *     sólo de CONTACTO (radio ~0,55 m): el pie de sillas y mesas, zócalos,
+ *     marcos. La oclusión a escala de ambiente —rincones, el fondo de un
+ *     aula, bajo las mesas y escaleras— la da el mapa de luz natural de la
+ *     escuela (Environment.bakeSchoolDaylight), que también ve el visor. Con
+ *     el radio de 1 m y fuerza 1,4 el efecto no se veía (se aplica después
+ *     del mapeo tonal y la base 0,1 lo aclaraba): sin base y con fuerza 2,2
+ *     las patas de los muebles por fin apoyan.
+ *  2. **Bloom con umbral 0,82** sobre la imagen HDR lineal: los muros
+ *     blancos con luz rebotada rondan ese valor, así que el resplandor salía
+ *     de todo el interior y lo cubría con una neblina. Umbral 1,6 (en
+ *     luminancia ya expuesta): brillan las luminarias, el sol, las nubes
+ *     doradas y las ventanas encendidas (Materials.GLOW_GAIN), no las paredes
+ *     ni la vereda al sol.
+ *  3. **IBL con colores de pantalla** en el visor (ver Sky.ts): la luz
+ *     ambiente salía el doble de fuerte.
+ */
+export const POST_SETTINGS: Record<Exclude<RenderQuality, 'off'>, PostSettings> = {
+  // Bloom y antialiasing, sin oclusión ambiental: lo barato se queda, lo caro
+  // se va (medido: bloom + FXAA 0,11 ms; SSAO 2,2-7,3 ms).
+  lite: {
+    bloomThreshold: 1.6,
+    bloomWeight: 0.12,
+    bloomKernel: 32,
+    msaa: 1,
+    fxaa: true,
+    sharpen: 0.15,
+    vignette: 0.8,
+    ssao: null,
+  },
+  balanced: {
+    bloomThreshold: 1.6,
+    bloomWeight: 0.14,
+    bloomKernel: 48,
+    msaa: 1,
+    fxaa: true,
+    sharpen: 0.18,
+    vignette: 0.8,
+    // Filtro bilateral también acá: el heredado dejaba manchas grises
+    // moteadas a lo largo de los encuentros de muro y cielorraso.
+    ssao: { ratio: 0.5, samples: 12, radius: 0.6, strength: 1.8, base: 0.04, maxZ: 120, bilateral: true },
+  },
+  high: {
+    bloomThreshold: 1.6,
+    bloomWeight: 0.16,
+    bloomKernel: 64,
+    // MSAA en el búfer HDR: las rejas, mallas y barandas de la escuela son
+    // líneas de pocos píxeles que el FXAA sólo difumina; con 4 muestras se
+    // leen continuas y quietas al moverse.
+    msaa: 4,
+    fxaa: false,
+    sharpen: 0.15,
+    vignette: 0.8,
+    ssao: { ratio: 0.5, samples: 16, radius: 0.55, strength: 2.2, base: 0, maxZ: 140, bilateral: true },
+  },
+};
+
 /**
  * Pipeline de post-procesado.
  *
- * Esta es la capa que más acerca el resultado a "render" y menos cuesta en
- * tiempo de carga, porque no descarga absolutamente nada: son shaders sobre la
- * imagen ya renderizada.
- *
  * Dos efectos hacen casi todo el trabajo:
  *
- *  - **SSAO (oclusión ambiental en espacio de pantalla).** Es EL efecto que
- *    hace que la arquitectura se vea real. Oscurece los rincones donde la luz
- *    ambiental no llega: el encuentro de un árbol con el piso, el hueco bajo un
- *    balcón, la esquina interior de un patio. Sin él, todo parece flotar sobre
- *    el suelo en vez de apoyarse; con él, los objetos pesan.
+ *  - **SSAO (oclusión ambiental en espacio de pantalla).** Oscurece los
+ *    rincones donde la luz ambiental no llega. Sin él, todo parece flotar
+ *    sobre el suelo en vez de apoyarse.
+ *  - **Bloom.** Las fuentes de luz derraman luz sobre lo que las rodea, como
+ *    en una cámara real: el sol, las luminarias, las ventanas encendidas.
  *
- *  - **Bloom.** El sol y las superficies muy iluminadas derraman luz sobre lo
- *    que las rodea, como en una cámara real. Da sensación de aire y de
- *    intensidad lumínica que el rango dinámico de un monitor no puede mostrar.
- *
- * En VR ambos se apagan: son dos pasadas de pantalla completa POR OJO, y el
- * presupuesto de 11 ms para dos ojos no las tolera.
+ * En VR ambos se apagan: son pasadas de pantalla completa POR OJO, y el
+ * post-proceso además desviaba el color dentro del visor (ver QualityManager).
  */
 export class RenderPipeline {
   private pipeline: DefaultRenderingPipeline | null = null;
@@ -44,57 +124,42 @@ export class RenderPipeline {
     this.dispose();
     this.quality = quality;
     this.adaptiveLevel = 0;
-    if (quality === 'off') return;
+    if (quality === 'off') {
+      // La viñeta vive en la configuración de imagen de la ESCENA, que sin
+      // post-proceso se compila dentro de cada material. Si quedaba prendida
+      // de un perfil anterior, el visor la dibujaba centrada en el búfer de
+      // los dos ojos: un oscurecimiento corrido en cada ojo.
+      this.scene.imageProcessingConfiguration.vignetteEnabled = false;
+      return;
+    }
 
-    const high = quality === 'high';
-    // 'lite': bloom y antialiasing, sin oclusión ambiental.
-    //
-    // Existe por una medición: con GPU real, el post-proceso alto cuesta
-    // 7,6 ms por cuadro y el medio 2,6 ms, contra 2,2 ms de TODA la geometría
-    // de la ciudad. La oclusión ambiental es la parte cara; el bloom es barato.
-    // Este nivel conserva lo barato y tira lo caro, que es lo que hace falta
-    // cuando el presupuesto de cuadro hay que repartirlo entre dos ojos.
-    const lite = quality === 'lite';
-
-    // --- imagen general ---
+    const s = POST_SETTINGS[quality];
     const pipe = new DefaultRenderingPipeline('main', true, this.scene, [this.camera]);
-
-    pipe.fxaaEnabled = true;
+    pipe.samples = s.msaa;
+    pipe.fxaaEnabled = s.fxaa;
 
     pipe.bloomEnabled = true;
-    pipe.bloomThreshold = 0.82; // sólo los altos: no queremos niebla lechosa
-    pipe.bloomWeight = high ? 0.32 : 0.22;
-    pipe.bloomKernel = high ? 48 : 32;
+    pipe.bloomThreshold = s.bloomThreshold;
+    pipe.bloomWeight = s.bloomWeight;
+    pipe.bloomKernel = s.bloomKernel;
     pipe.bloomScale = 0.5;
 
-    // Un toque de nitidez compensa el suavizado del FXAA y del SSAO.
+    // Un toque de nitidez compensa el suavizado del FXAA y del SSAO. Poco:
+    // más genera halos claros en los bordes contra el cielo.
     pipe.sharpenEnabled = true;
-    pipe.sharpen.edgeAmount = 0.22;
+    pipe.sharpen.edgeAmount = s.sharpen;
     pipe.sharpen.colorAmount = 1;
 
-    // Una viñeta apenas perceptible concentra la mirada sin convertir el
-    // recorrido en una cámara de acción. La aberración cromática y el grano se
-    // quitaron: en fachadas claras generaban bordes de color y ruido que hacían
-    // que el mundo se viera menos nítido, no más cinematográfico.
+    // Viñeta apenas perceptible: concentra la mirada sin convertir el
+    // recorrido en una cámara de acción. Sin aberración ni grano: en
+    // fachadas claras generaban bordes de color y ruido.
     pipe.imageProcessing.vignetteEnabled = true;
-    pipe.imageProcessing.vignetteWeight = 0.75;
-    pipe.imageProcessing.vignetteStretch = 0.4;
+    pipe.imageProcessing.vignetteWeight = s.vignette;
+    pipe.imageProcessing.vignetteStretch = 0.5;
     pipe.imageProcessingEnabled = true;
 
     this.pipeline = pipe;
-    if (lite) return;
-
-    // --- oclusión ambiental ---
-    //
-    // Los parámetros se ajustaron con mediciones en GPU real, no a ojo. La
-    // configuración original de 'high' (ratio 0,75 · 24 muestras · blur caro)
-    // costaba **7,28 ms por cuadro**, contra 2,18 ms de la media y 2,52 ms de
-    // TODA la geometría de la ciudad junta. Pagaba 5 ms extra por una
-    // diferencia visual que hay que buscar con lupa.
-    //
-    // El ratio es la palanca dominante: la oclusión se calcula a esa fracción
-    // de la resolución de pantalla, así que su coste crece con el cuadrado.
-    this.createSsao(high);
+    if (s.ssao) this.createSsao(s.ssao);
   }
 
   /** Reduce efectos costosos sólo al cambiar de nivel adaptativo. */
@@ -102,41 +167,60 @@ export class RenderPipeline {
     this.adaptiveLevel = Math.max(0, Math.min(3, level));
     if (this.quality === 'off' || !this.pipeline) return;
 
-    const high = this.quality === 'high';
-    const lite = this.quality === 'lite';
-    if (!lite && this.adaptiveLevel >= 3 && this.ssao) {
+    const s = POST_SETTINGS[this.quality];
+    if (s.ssao && this.adaptiveLevel >= 3 && this.ssao) {
       this.ssao.dispose();
       this.ssao = null;
-    } else if (!lite && this.adaptiveLevel < 3 && !this.ssao) {
-      this.createSsao(high);
+    } else if (s.ssao && this.adaptiveLevel < 3 && !this.ssao) {
+      this.createSsao(s.ssao);
     }
 
+    const full = this.adaptiveLevel === 0;
     this.pipeline.bloomEnabled = this.adaptiveLevel < 2;
     this.pipeline.sharpenEnabled = this.adaptiveLevel < 2;
-    this.pipeline.imageProcessing.vignetteEnabled = this.adaptiveLevel === 0;
-    this.pipeline.bloomWeight = this.adaptiveLevel === 0 ? (high ? 0.32 : 0.22) : 0.12;
-    this.pipeline.bloomKernel = this.adaptiveLevel === 0 ? (high ? 48 : 32) : 16;
-    if (this.ssao) {
-      this.ssao.samples = this.adaptiveLevel === 0 ? (high ? 16 : 12) : 8;
+    this.pipeline.imageProcessing.vignetteEnabled = full;
+    this.pipeline.bloomWeight = full ? s.bloomWeight : s.bloomWeight * 0.75;
+    this.pipeline.bloomKernel = full ? s.bloomKernel : 24;
+    // El MSAA es lo primero que se va: cuadruplica el ancho de banda del
+    // búfer HDR, y el FXAA cubre casi lo mismo por una fracción.
+    this.pipeline.samples = full ? s.msaa : 1;
+    this.pipeline.fxaaEnabled = s.fxaa || !full;
+    if (this.ssao && s.ssao) {
+      this.ssao.samples = full ? s.ssao.samples : 8;
       this.ssao.bypassBlur = this.adaptiveLevel >= 2;
-      this.ssao.maxZ = this.adaptiveLevel === 0 ? 220 : 120;
+      // Sin desenfoque el ruido de 8 muestras se ve como grano: más suave.
+      this.ssao.totalStrength = this.adaptiveLevel >= 2 ? s.ssao.strength * 0.6 : s.ssao.strength;
+      this.ssao.maxZ = full ? s.ssao.maxZ : 80;
     }
   }
 
-  private createSsao(high: boolean): void {
+  private createSsao(s: NonNullable<PostSettings['ssao']>): void {
     const ssao = new SSAO2RenderingPipeline(
       'ssao',
       this.scene,
-      { ssaoRatio: high ? 0.6 : 0.5, blurRatio: 1 },
+      { ssaoRatio: s.ratio, blurRatio: s.bilateral ? 0.5 : 1 },
       [this.camera],
       true,
     );
-    ssao.samples = high ? 16 : 12;
-    ssao.radius = 2.6;
-    ssao.totalStrength = 1.15;
-    ssao.base = 0.12;
-    ssao.expensiveBlur = false;
-    ssao.maxZ = 220;
+    ssao.samples = s.samples;
+    ssao.radius = s.radius;
+    ssao.totalStrength = s.strength;
+    ssao.base = s.base;
+    ssao.maxZ = s.maxZ;
+    // Un poco más de tolerancia de auto-oclusión: en losas y muros lisos el
+    // valor por omisión dejaba un moteado fino.
+    ssao.epsilon = 0.03;
+    ssao.expensiveBlur = s.bilateral;
+    if (s.bilateral) {
+      // A media resolución el filtro bilateral alcanza con pocas muestras;
+      // la tolerancia evita que la sombra de un rincón se corra al muro de
+      // enfrente.
+      ssao.bilateralSamples = 12;
+      // Tolerancia baja: con 0,4 la oclusión de la pata de una silla se
+      // corría al piso de atrás y dejaba un halo gris alrededor de la gente.
+      ssao.bilateralSoften = 0.1;
+      ssao.bilateralTolerance = 0.12;
+    }
     this.ssao = ssao;
   }
 

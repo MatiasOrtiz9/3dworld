@@ -7,6 +7,8 @@ import { CreateCylinder } from '@babylonjs/core/Meshes/Builders/cylinderBuilder'
 import { CreateSphere } from '@babylonjs/core/Meshes/Builders/sphereBuilder';
 import { CreatePlane } from '@babylonjs/core/Meshes/Builders/planeBuilder';
 import { CreateIcoSphere } from '@babylonjs/core/Meshes/Builders/icoSphereBuilder';
+import { VertexBuffer } from '@babylonjs/core/Buffers/buffer';
+import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData';
 
 export type Primitive = 'box' | 'cylinder' | 'cone' | 'sphere' | 'plane' | 'blob' | 'blobHi';
 
@@ -199,7 +201,8 @@ export class InstanceFarm {
         // cristal. Es un LOD decidido por tamaño en vez de por distancia:
         // funciona porque la ciudad es estática y los árboles grandes son
         // pocos comparados con arbustos y relleno.
-        mesh = CreateIcoSphere(name, { radius: 0.5, subdivisions: 2, flat: false }, this.scene);
+        mesh = CreateIcoSphere(name, { radius: 0.5, subdivisions: 3, flat: false }, this.scene);
+        lumpy(mesh, 0.16);
         break;
       case 'blob':
         // Icoesfera de subdivisión 1: un icosaedro de SOLO 20 triángulos.
@@ -211,7 +214,12 @@ export class InstanceFarm {
         // triángulos, la copa pasa de leerse como un cristal facetado a leerse
         // como una masa redondeada. Es la mejora visual más barata del proyecto:
         // cuesta cero triángulos.
-        mesh = CreateIcoSphere(name, { radius: 0.5, subdivisions: 1, flat: false }, this.scene);
+        //
+        // Con el barrio chico (unas 800 copas, no 8.000) alcanza para 80
+        // triángulos abollados: la silueta deja de ser un poliedro y se lee
+        // como follaje — racimos de hojas que sobresalen — sin texturas.
+        mesh = CreateIcoSphere(name, { radius: 0.5, subdivisions: 2, flat: false }, this.scene);
+        lumpy(mesh, 0.2);
         break;
       case 'plane':
         mesh = CreatePlane(name, { size: 1 }, this.scene);
@@ -221,4 +229,65 @@ export class InstanceFarm {
     mesh.isPickable = false;
     return mesh;
   }
+}
+
+/**
+ * Abolla una esfera unitaria: cada vértice se aleja o se acerca al centro
+ * según un ruido suave de su dirección. Determinista (todas las copas comparten
+ * la malla; la variedad la ponen la escala y la rotación de cada instancia).
+ */
+function lumpy(mesh: Mesh, amount: number): void {
+  const pos = mesh.getVerticesData(VertexBuffer.PositionKind);
+  const idx = mesh.getIndices();
+  if (!pos || !idx) return;
+  for (let i = 0; i < pos.length; i += 3) {
+    const x = pos[i];
+    const y = pos[i + 1];
+    const z = pos[i + 2];
+    const l = Math.hypot(x, y, z) || 1;
+    const nx = x / l;
+    const ny = y / l;
+    const nz = z / l;
+    // Tres octavas de senos cruzados: bultos grandes y algunos chicos.
+    const n =
+      Math.sin(nx * 5.1 + ny * 2.3) * Math.cos(nz * 4.7 - nx * 1.3) * 0.55 +
+      Math.sin(ny * 9.3 + nz * 7.1 + 1.7) * 0.3 +
+      Math.cos(nx * 13.7 - nz * 11.9 + ny * 3.1) * 0.15;
+    // La base se aplana un poco: las copas reales cuelgan menos por debajo.
+    const flatten = ny < -0.35 ? 0.88 : 1;
+    const r = 0.5 * (1 + n * amount) * flatten;
+    pos[i] = nx * r;
+    pos[i + 1] = ny * r;
+    pos[i + 2] = nz * r;
+  }
+  const normals: number[] = [];
+  VertexData.ComputeNormals(pos, idx, normals);
+  // La icoesfera repite vértices en las costuras: sin soldar las normales
+  // cada cara queda con la suya y la copa se ve facetada como un cristal.
+  const groups = new Map<string, number[]>();
+  for (let i = 0; i < pos.length; i += 3) {
+    const key = `${Math.round(pos[i] * 1e4)},${Math.round(pos[i + 1] * 1e4)},${Math.round(pos[i + 2] * 1e4)}`;
+    const g = groups.get(key);
+    if (g) g.push(i);
+    else groups.set(key, [i]);
+  }
+  for (const g of groups.values()) {
+    let nx = 0;
+    let ny = 0;
+    let nz = 0;
+    for (const i of g) {
+      nx += normals[i];
+      ny += normals[i + 1];
+      nz += normals[i + 2];
+    }
+    const l = Math.hypot(nx, ny, nz) || 1;
+    for (const i of g) {
+      normals[i] = nx / l;
+      normals[i + 1] = ny / l;
+      normals[i + 2] = nz / l;
+    }
+  }
+  mesh.setVerticesData(VertexBuffer.PositionKind, pos);
+  mesh.setVerticesData(VertexBuffer.NormalKind, normals);
+  mesh.refreshBoundingInfo();
 }

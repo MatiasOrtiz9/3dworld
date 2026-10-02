@@ -176,13 +176,13 @@ describe('escuela CIMDIP & Miguel Cané — planta del plano de evacuación', ()
     // Hall → patio este por la puerta del testero norte.
     expect(walkable(index, f, [[36.65, -9], [36.65, -18]])).toBe(true);
     // Hall → pasaje → gimnasio por la puerta doble.
-    expect(walkable(index, f, [[39, -10.1], [52, -10.1]])).toBe(true);
+    expect(walkable(index, f, [[39, -9.8], [52, -9.8]])).toBe(true);
     // Gimnasio → salida a Laprida.
-    expect(walkable(index, f, [[53, -3], [53, 4]])).toBe(true);
+    expect(walkable(index, f, [[51.8, -3], [51.8, 4]])).toBe(true);
     // Patio este → pasillo del gimnasio → V. Damas.
     expect(walkable(index, f, [[48, -21.7], [61, -21.7], [61, -25.95], [64, -25.95]])).toBe(true);
-    // Pasillo → jardín por su puerta.
-    expect(walkable(index, f, [[60.7, -22.5], [60.7, -32]])).toBe(true);
+    // Pasillo → jardín por su puerta, por la galería hasta la recepción.
+    expect(walkable(index, f, [[61.4, -22.5], [61.4, -36.5]])).toBe(true);
     // Pasillo norte → pasillo de bloque → Aula Maker por su puerta vidriada.
     expect(walkable(index, f, [[18.7, -24.3], [14.95, -24.3], [14.95, -30.4], [17.0, -31.2], [22.0, -31.2]])).toBe(true);
     // Pasillo oeste → Administración → baño (por sus puertas al pasillo).

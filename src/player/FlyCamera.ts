@@ -27,8 +27,16 @@ export function createFlyCamera(scene: Scene, canvas: HTMLCanvasElement): Univer
 
   camera.inertia = 0.82;
   camera.angularSensibility = 1600;
-  camera.minZ = 0.15;
-  camera.fov = 1.05;
+  // Plano cercano de 10 cm, igual que en el visor. La colisión deja el ojo a
+  // ≥ 20 cm de cualquier muro (margen de la grilla de la escuela), pero con
+  // 15 cm la esquina del plano cercano llegaba a 23 cm del ojo: al rozar un
+  // marco de puerta o la baranda de una escalera y girar la cabeza se veía
+  // a través del muro. Con 10 cm la esquina queda a ~15 cm. La precisión de
+  // profundidad sigue sobrada: ~6 mm a 100 m con el búfer de 24 bits.
+  camera.minZ = 0.1;
+  // Campo vertical de ~56° (≈ 87° horizontales en 16:9): el de 60° estiraba
+  // a la gente y los pupitres en los bordes del cuadro como un gran angular.
+  camera.fov = 0.98;
 
   return camera;
 }

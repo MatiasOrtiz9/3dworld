@@ -5,7 +5,10 @@ import type { CityIndex } from '../world/CityIndex';
 
 export type MoveMode = 'walk' | 'fly';
 
-const EYE_HEIGHT = 1.68;
+// Ojos de un adulto de ~1,73 m. Con 1,68 (un adulto de 1,80) el jugador veía
+// por encima de la cabeza de la maestra (1,68 m de alto) y los pupitres de
+// 0,74 m parecían de juguete.
+const EYE_HEIGHT = 1.62;
 const WALK_SPEED = 4.2; // m/s — paso rápido de persona
 const RUN_SPEED = 8.5;
 const FLY_SPEED = 18;
@@ -25,7 +28,7 @@ const RIGHT = new Vector3(1, 0, 0);
  * Dos modos, y el cambio entre ellos es la diferencia entre "mirar una maqueta"
  * y "estar en un lugar":
  *
- *  - **Caminar**: altura de ojos fija a 1,68 m, gravedad, salto y colisión
+ *  - **Caminar**: altura de ojos fija a 1,62 m, gravedad, salto y colisión
  *    contra los edificios. Es el modo que da escala. Un espacio urbano sólo se
  *    entiende cuando no podés atravesar las paredes y tenés que rodear la
  *    manzana.

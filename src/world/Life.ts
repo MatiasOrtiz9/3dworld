@@ -4,7 +4,7 @@ import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
 import { CreateBox } from '@babylonjs/core/Meshes/Builders/boxBuilder';
 import { CreateCylinder } from '@babylonjs/core/Meshes/Builders/cylinderBuilder';
-import { CreateSphere } from '@babylonjs/core/Meshes/Builders/sphereBuilder';
+import { CreateIcoSphere } from '@babylonjs/core/Meshes/Builders/icoSphereBuilder';
 import { PBRMetallicRoughnessMaterial } from '@babylonjs/core/Materials/PBR/pbrMetallicRoughnessMaterial';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import type { CityPlan } from './CityLayout';
@@ -26,6 +26,8 @@ interface Pod {
   at: number;
   /** Tramos donde la calle no existe (predio escolar): ahí el pod da la vuelta. */
   gaps?: Array<[number, number]>;
+  /** Tramo en el que existe la calle (el barrio): fuera de él no se circula. */
+  span?: [number, number];
   laneOffset: number;
   pos: number;
   dir: 1 | -1;
@@ -281,10 +283,12 @@ export class Life {
           axis: st.axis,
           at: st.at,
           gaps: st.gaps,
+          span: st.span,
           laneOffset,
-          pos: rng.range(-this.plan.extent, this.plan.extent),
+          pos: st.span ? rng.range(st.span[0], st.span[1]) : rng.range(-this.plan.extent, this.plan.extent),
           dir,
-          speed: rng.range(5.5, 9.5),
+          // Calle de barrio frente a una escuela: despacio.
+          speed: rng.range(4.0, 6.5),
           stopped: 0,
           wheelPhase: 0,
         });
@@ -292,8 +296,8 @@ export class Life {
     }
 
     const podBodyMat = new PBRMetallicRoughnessMaterial('podBodyMat', this.scene);
-    podBodyMat.baseColor = Color3.FromHexString('#f4f2ea');
-    podBodyMat.roughness = 0.28;
+    podBodyMat.baseColor = Color3.FromHexString('#c9cccf');
+    podBodyMat.roughness = 0.3;
     podBodyMat.metallic = 0.3;
 
     const podGlassMat = new PBRMetallicRoughnessMaterial('podGlassMat', this.scene);
@@ -302,12 +306,12 @@ export class Life {
     podGlassMat.metallic = 0.7;
 
     const chassisMat = new PBRMetallicRoughnessMaterial('podChassisMat', this.scene);
-    chassisMat.baseColor = Color3.FromHexString('#38534f');
+    chassisMat.baseColor = Color3.FromHexString('#2b2e33');
     chassisMat.roughness = 0.75;
     chassisMat.metallic = 0.2;
 
     const podHeadMat = new StandardMaterial('podHeadMat', this.scene);
-    podHeadMat.emissiveColor = Color3.FromHexString('#8eecff');
+    podHeadMat.emissiveColor = Color3.FromHexString('#fff2d2');
     podHeadMat.disableLighting = true;
 
     const podTailMat = new StandardMaterial('podTailMat', this.scene);
@@ -407,16 +411,16 @@ export class Life {
     wingMat.emissiveColor = Color3.FromHexString('#4b4d54').scale(0.32);
 
     // Cuerpo aerodinámico del ave
-    this.birdBody = CreateSphere('birdBodySrc', { diameter: 1, segments: 6 }, this.scene);
+    this.birdBody = CreateIcoSphere('birdBodySrc', { radius: 0.5, subdivisions: 1 }, this.scene);
     this.birdBody.material = birdBodyMat;
     this.birdBody.isPickable = false;
 
     // Alas izquierda y derecha articuladas
-    this.birdWingL = CreateSphere('birdWingLSrc', { diameter: 1, segments: 6 }, this.scene);
+    this.birdWingL = CreateIcoSphere('birdWingLSrc', { radius: 0.5, subdivisions: 1 }, this.scene);
     this.birdWingL.material = wingMat;
     this.birdWingL.isPickable = false;
 
-    this.birdWingR = CreateSphere('birdWingRSrc', { diameter: 1, segments: 6 }, this.scene);
+    this.birdWingR = CreateIcoSphere('birdWingRSrc', { radius: 0.5, subdivisions: 1 }, this.scene);
     this.birdWingR.material = wingMat;
     this.birdWingR.isPickable = false;
 
@@ -557,8 +561,12 @@ export class Life {
           p.stopped = 1.6;
         }
 
-        if (p.pos > limit) p.pos = -limit;
-        if (p.pos < -limit) p.pos = limit;
+        // Las calles del barrio terminan donde termina el barrio: el auto sale
+        // por una punta y vuelve a entrar por la otra, lejos del jugador.
+        const lo = p.span ? p.span[0] : -limit;
+        const hi = p.span ? p.span[1] : limit;
+        if (p.pos > hi) p.pos = lo;
+        if (p.pos < lo) p.pos = hi;
         // Calle cortada por el predio escolar: al llegar, pega la vuelta y
         // sigue por el otro carril, como en una calle sin salida.
         if (p.gaps) {

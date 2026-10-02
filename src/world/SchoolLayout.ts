@@ -19,6 +19,7 @@ import {
   roomWindows,
   seg,
   vw,
+  type Facing,
   type Item,
   type Level,
   type Op,
@@ -32,9 +33,27 @@ import {
   type Wall,
 } from './SchoolBase';
 
+import { JARDIN_ITEMS, JARDIN_LANDINGS, JARDIN_ROOMS, JARDIN_STAIRS, JARDIN_VOIDS, JARDIN_WALLS } from './SchoolJardin';
+import {
+  CREST,
+  U1,
+  UPPER_ITEMS,
+  UPPER_LANDINGS,
+  UPPER_ROOMS,
+  UPPER_STAIRS,
+  UPPER_VOIDS,
+  UPPER_VOLUMES,
+  UPPER_WALLS,
+  V1,
+} from './SchoolUpper';
+
 export * from './SchoolBase';
+export { CREST, U1, V1 };
 
 const H = SCHOOL.storey;
+
+/** Muro con terminación propia sobre la cara de ciertos ambientes. */
+const wallFinish = (w: Wall, finish: Record<string, string>): Wall => ({ ...w, finish });
 
 /**
  * Planta baja de la escuela CIMDIP & Miguel Cané.
@@ -61,29 +80,51 @@ const H = SCHOOL.storey;
  */
 
 /** Claraboyas altas del polideportivo, entre pilastras (laterales norte y sur). */
-const GYM_CLERESTORY: Op[] = [
-  [51.4, 54.2, 'high'],
-  [55.0, 57.8, 'high'],
-  [58.6, 61.4, 'high'],
-  [62.2, 65.0, 'high'],
-];
+const GYM_BAY = (67.4 - 50.3) / 6;
+const GYM_CLERESTORY: Op[] = Array.from({ length: 6 }, (_, k): Op => {
+  // Una por paño, centrada entre pilastras, de tres cuartos del paño (9:22–9:28).
+  const c = 50.3 + GYM_BAY * (k + 0.5);
+  return [c - GYM_BAY * 0.375, c + GYM_BAY * 0.375, 'high', 4.5, 5.9];
+});
 
 
-export const WALLS: readonly Wall[] = [
+const WALLS_PB: Wall[] = [
   // --- Fachada sobre Laprida -------------------------------------------------
-  hw(V.facade, U.w, U.east1, 'ext', [
-    ...roomWindows(U.w, U.c2),
-    ...roomWindows(U.c2, U.c3),
-    ...roomWindows(U.c3, U.c4),
-    ...roomWindows(U.c4, U.c5),
-    ...roomWindows(U.c5, U.east1),
-  ]),
+  // Diez ventanas en los extremos de cada aula, medidas sobre la toma de la
+  // fachada (0:00–0:08): no están a un cuarto del aula sino cerca de los tabiques.
+  hw(
+    V.facade,
+    U.w,
+    U.east1,
+    'ext',
+    (
+      [
+        [0.27, 1.88],
+        [4.8, 6.4],
+        [7.17, 8.89],
+        [11.11, 12.81],
+        [13.51, 15.16],
+        [17.35, 19.02],
+        [19.73, 21.38],
+        [23.63, 25.3],
+        [26.0, 27.68],
+        [29.99, 31.68],
+      ] as const
+    ).map(([a, b]): Op => [a, b, 'window', 1.27, 2.29]),
+  ),
   hw(V.facade, U.east1, 33.35, 'ext'),
   hw(V.facade, 40.9, U.salonW, 'ext'),
-  hw(V.facade, U.salonW, U.gymW, 'ext', roomWindows(U.salonW, U.gymW)),
+  // Edificio de bloque sobre Laprida: ladrillo pintado de blanco y ventanas
+  // de marco negro con malla romboidal (0:12–0:16).
+  {
+    ...hw(V.facade, U.salonW, U.gymW, 'ext', roomWindows(U.salonW, U.gymW).map(([a, b, t]): Op => [a, b, t, undefined, undefined, 'metalDark', 'mesh'])),
+    ext: 'brickWhite',
+  },
   // Lateral sur del polideportivo (Laprida): salida de emergencia y la tira de
   // claraboyas entre las pilastras; adentro van las gradas.
-  hw(V.facade, U.gymW, U.e, 'ext', [[51.05, 54.8, 'exit'], ...GYM_CLERESTORY], SCHOOL.gymWall),
+  // La salida de emergencia del plano queda en el primer paño, entre la
+  // esquina y la primera pilastra.
+  hw(V.facade, U.gymW, U.e, 'ext', [[50.75, 52.85, 'exit'], ...GYM_CLERESTORY, [66.3, 67.2, 'door', undefined, undefined, 'red']], SCHOOL.gymWall),
 
   // --- Miguel Cané: ochavo, ala oeste y Tecnología --------------------------
   vw(U.w, V.classTop, V.facade, 'ext', [[-4.3, -2.7, 'window']]),
@@ -107,10 +148,14 @@ export const WALLS: readonly Wall[] = [
 
   // --- Medianera del fondo ----------------------------------------------------
   seg(APEX, rear(U.tecE), 'ext'),
-  seg(rear(U.tecE), rear(U.gymW), 'medianera', [], 3.6),
+  seg(rear(U.tecE), rear(41.5), 'medianera', [], 3.6),
+  // Detrás de las hamacas la medianera está pintada de azul francia, con los
+  // azulejos pintados por los chicos (9:52–9:58).
+  { ...seg(rear(41.5), rear(U.gymW), 'medianera', [], 3.6), ext: 'blue' },
   seg(rear(U.gymW), rear(U.teaE), 'ext'),
   // Dentro del predio del jardín la medianera vieja es su muro sur, con puerta.
-  seg(rear(U.teaE), rear(U.e), 'int', [[59.9, 61.6, 'door']]),
+  // Vano de 1,29 m: puerta de dos hojas (una sola hoja de ese ancho no existe).
+  seg(rear(U.teaE), rear(U.e), 'int', [[60.75, 62.0, 'double', undefined, undefined, 'frame']]),
 
   // --- Tecnología (Aula Maker) y bloque norte ---------------------------------
   // Testero este del Aula Maker: salida de emergencia en la esquina sur.
@@ -126,26 +171,29 @@ export const WALLS: readonly Wall[] = [
   ]),
   vw(U.epE, V.nBlockN, V.nBlockS),
   vw(U.stairE, V.nBlockN, V.nBlockS),
-  vw(U.east1, V.nBlockN, V.corrN),
+  // Al final del pasillo norte, puertas dobles vidriadas al patio este (3:28).
+  vw(U.east1, V.nBlockN, V.corrN, 'int', [[-23.65, -25.0, 'double', undefined, undefined, 'frame']]),
   hw(V.nBlockS, miguelCaneU(V.nBlockS), U.east1, 'int', [
     [14.15, 15.95, 'pass'],
     [17.6, 19.8, 'double'],
-    [27.0, 29.1, 'double'],
+    // Puerta de la escalera principal, al pie del primer tramo.
+    [20.4, 21.3, 'door', undefined, undefined, 'frame'],
+    // Corrida 10 cm al este: arrancaba dentro del muro de la escalera.
+    [27.1, 29.2, 'double'],
   ]),
 
   // --- Pasillo norte: cierre sur ----------------------------------------------
-  hw(V.corrN, miguelCaneU(V.corrN), 11.5, 'int', [[10.0, 11.35, 'door']]),
+  hw(V.corrN, miguelCaneU(V.corrN), 11.5, 'int', [[10.0, 11.35, 'double']]),
   // Lado norte del Espacio recreativo: cuatro ventanas sobre el cantero largo,
   // la puerta doble roja vidriada y una puerta roja simple junto a la esquina.
   hw(V.corrN, U.patioW, U.east1, 'int', [
-    [17.3, 18.8, 'window', 1.3, 2.15],
-    [19.1, 20.6, 'window', 1.3, 2.15],
-    [20.9, 22.4, 'window', 1.3, 2.15],
-    [22.7, 24.2, 'window', 1.3, 2.15],
-    [24.8, 26.6, 'double', undefined, undefined, 'red'],
-    [27.3, 28.1, 'door', undefined, undefined, 'red'],
+    [17.0, 19.0, 'window', 1.25, 2.2],
+    [19.6, 21.5, 'window', 1.25, 2.2],
+    [22.2, 24.1, 'window', 1.25, 2.2],
+    [24.4, 26.2, 'double', undefined, undefined, 'red'],
+    [26.4, 27.4, 'window', 1.25, 2.2],
+    [27.5, 28.3, 'door', undefined, undefined, 'red'],
   ]),
-  vw(U.closetW, V.nBlockS, V.corrN),
 
   // --- Ala oeste: ADM, PROF., DIR. PRIM ---------------------------------------
   hw(V.admB, miguelCaneU(V.admB), 11.5),
@@ -163,10 +211,12 @@ export const WALLS: readonly Wall[] = [
   ]),
   vw(U.wingE, V.grayB, V.profB),
   hw(V.profB, miguelCaneU(V.profB), U.wingE, 'int', [[11.8, 13.0, 'door']]),
-  hw(V.dirTop, miguelCaneU(V.dirTop), U.wingE, 'int', [
-    [5.0, 6.0, 'door'],
-    [10.6, 11.6, 'door'],
-  ]),
+  // Bajo el descanso de la escalera del ala oeste el muro llega sólo hasta la
+  // losa del descanso (2,08 m): entero, el descanso lo atravesaba y quien
+  // subía pasaba a través de la pared.
+  hw(V.dirTop, miguelCaneU(V.dirTop), U1.stairW, 'int', [[5.0, 6.0, 'door']]),
+  hw(V.dirTop, U1.stairW, 9.0, 'int', [], 2.08),
+  hw(V.dirTop, 9.0, U.wingE, 'int', [[12.25, 13.0, 'door', undefined, undefined, 'red']]),
   vw(U.dirDiv, V.dirTop, V.corrS),
   vw(U.wingE, V.dirTop, V.corrS),
   // Frente norte del pasillo sur: la puerta de Dirección junto a la salida y
@@ -179,10 +229,11 @@ export const WALLS: readonly Wall[] = [
   // --- Patio oeste y buffet ---------------------------------------------------
   // Pasillo oeste → patio: puerta doble roja vidriada y ventanas corredizas.
   vw(U.patioW, V.corrN, V.corrS, 'int', [
+    [-9.9, -11.3, 'window', 1.24, 2.3],
     [-11.6, -13.4, 'double', undefined, undefined, 'red'],
-    [-14.0, -15.8, 'window', 1.24, 2.4],
-    [-16.2, -18.0, 'window', 1.24, 2.4],
-    [-18.4, -20.2, 'window', 1.24, 2.4],
+    [-14.8, -16.8, 'window', 1.24, 2.4],
+    [-18.5, -20.6, 'window', 1.24, 2.4],
+    [-21.4, -22.8, 'window', 1.24, 2.4],
   ]),
   // Pasillo sur → patio: corredizas entre pilares y el paso abierto.
   hw(V.corrS, U.patioW, U.bufW, 'int', [
@@ -202,21 +253,25 @@ export const WALLS: readonly Wall[] = [
   ]),
   // Frente de la cantina al pasillo: puerta y paño vidriado sobre zócalo rojo.
   hw(V.corrS, U.bufW, U.east1, 'int', [
-    [28.6, 30.2, 'door'],
+    [28.6, 30.2, 'double'],
     [30.45, 32.65, 'window', 1.2, 2.6],
   ]),
+  // Frente del comedor al patio este (10:00–10:05): puerta de chapa bajo la
+  // escalera exterior, puerta vidriada y una tira de ventanas sobre un zócalo
+  // de bloque.
   vw(U.east1, V.corrN, V.corrS, 'int', [
-    [-21.6, -19.4, 'counter'],
-    [-18.2, -16.6, 'counter'],
+    [-15.2, -16.1, 'door', undefined, undefined, 'frame'],
+    [-19.6, -20.6, 'door', undefined, undefined, 'frame'],
+    [-20.75, -23.3, 'window', 1.08, 2.9],
   ]),
 
   // --- Aulas sobre Laprida ------------------------------------------------------
   hw(V.classTop, U.w, U.east1, 'int', [
-    [4.6, 6.2, 'double'],
-    [10.95, 12.55, 'double'],
-    [17.3, 18.9, 'double'],
-    [23.4, 25.0, 'double'],
-    [26.0, 27.6, 'double'],
+    [4.6, 6.2, 'double', undefined, undefined, 'frame'],
+    [10.95, 12.55, 'double', undefined, undefined, 'frame'],
+    [17.3, 18.9, 'double', undefined, undefined, 'frame'],
+    [23.4, 25.0, 'double', undefined, undefined, 'frame'],
+    [26.0, 27.6, 'double', undefined, undefined, 'frame'],
   ]),
   vw(U.c2, V.classTop, V.facade),
   vw(U.c3, V.classTop, V.facade),
@@ -224,29 +279,41 @@ export const WALLS: readonly Wall[] = [
   vw(U.c5, V.classTop, V.facade),
   vw(U.east1, V.classTop, V.facade),
 
-  // --- Hall de acceso (Recepción) y kiosco ----------------------------------
-  // Testero norte del hall (0:24-0:34, 4:16): dos puertas de aluminio blanco y
-  // un ventanal al patio cubierto, con antepecho sobre el zócalo de mármol.
-  hw(V.hallTop, U.east1, U.salonW, 'int', [
-    [34.5, 35.4, 'door', undefined, undefined, 'frame'],
-    [36.2, 37.1, 'door', undefined, undefined, 'frame'],
-    [37.8, 41.0, 'window', 1.4, 3.1],
-  ]),
+  // --- Hall de acceso (Recepción) y torre de la escalera --------------------
+  // Testero norte del hall (0:24-0:34, 4:16): la puerta de aluminio blanco y
+  // el ventanal al patio, con antepecho sobre el zócalo de mármol. Al oeste
+  // no hay muro: la escalera "Acceso al Nivel Secundario" sube por ahí a la
+  // caja que el plano dibuja al norte del hall (la torre de la escalera).
+  {
+    ...hw(V.hallTop, U1.towerE, U.salonW, 'int', [
+      [36.2, 37.1, 'door', undefined, undefined, 'frame'],
+      [37.8, 41.0, 'window', 1.4, 3.1],
+    ]),
+    // Del lado del jardincito el muro es verde oliva (10:08).
+    finish: { patioEste: 'olive' },
+  },
   // Oficina de recepción, a la izquierda al entrar: ventana corrediza sobre
   // un antepecho rojo, con las placas de bronce al lado.
   vw(U.recE, V.hallDoors, V.recN, 'int', [[-1.75, -3.0, 'window', 1.0, 2.1]]),
   hw(V.recN, U.east1, U.recE, 'int', [[33.2, 34.05, 'door', undefined, undefined, 'frame']]),
-  vw(U.kioskE, V.kiosk, V.hallTop),
-  hw(V.kiosk, U.east1, U.kioskE, 'int', [[33.7, 34.8, 'door']]),
+  // Torre de la escalera, de dos plantas: al norte llega la escalera exterior
+  // blanca del patio este, al este sale la pasarela vidriada (a la altura del
+  // descanso).
+  vw(U.kioskE, V.kiosk, V.hallTop, 'ext', [[-13.6, -14.8, 'pass', 2.45, 4.6]], 2 * H),
+  hw(V.kiosk, U.east1, U.kioskE, 'ext', [[33.0, 34.1, 'pass', 2.45, 4.6]], 2 * H),
   hw(V.hallDoors, U.east1, U.salonW, 'int', [[35.55, 39.35, 'entrance']]),
-  vw(U.salonW, V.gymTop, V.facade, 'int', [
-    [-19.6, -18.0, 'window'],
-    [-16.2, -14.6, 'window'],
-    [-12.8, -11.45, 'door'],
+  // Lado del patio este del aula de danzas (10:08–10:20): ventanas enrejadas
+  // y la puerta doble que da al jardincito con la palmera.
+  wallFinish(vw(U.salonW, V.gymTop, V.facade, 'int', [
+    [-19.3, -19.75, 'window', 1.2, 2.3],
+    [-17.8, -19.1, 'double', undefined, undefined, 'frame'],
+    [-15.7, -17.2, 'window', 1.2, 2.3],
+    [-13.45, -14.35, 'window', 1.2, 2.3],
+    [-12.8, -11.45, 'double'],
     // "Acceso al Polideportivo": puerta doble de aluminio blanco.
     [-10.85, -9.35, 'double', undefined, undefined, 'frame'],
-    [-8.4, -7.0, 'door', undefined, undefined, 'red'],
-  ]),
+    [-8.4, -7.0, 'double', undefined, undefined, 'red'],
+  ]), { patioEste: 'olive' }),
 
   // --- Salón de los espejos, pasaje y gimnasio -------------------------------
   // Testero norte del aula de danzas: piano, cómoda y afiches; sin ventanas.
@@ -259,11 +326,13 @@ export const WALLS: readonly Wall[] = [
     U.e,
     'int',
     [
-      [51.4, 53.2, 'band'],
-      [54.4, 56.2, 'band'],
-      [58.05, 60.5, 'double'],
-      [62.4, 64.2, 'band'],
-      [65.0, 66.8, 'band'],
+      // Sólo los paños 4 y 5 tienen aberturas bajas: tres ventanas oscuras y la
+      // puerta con el cartel de SALIDA (9:17, 9:24–9:26).
+      [59.0, 59.7, 'window', 1.05, 2.2],
+      [60.4, 61.3, 'window', 1.05, 2.2],
+      // Termina antes del muro de V. Damas (antes se metía 10 cm en él).
+      [61.75, 62.55, 'window', 1.05, 2.2],
+      [63.05, 63.85, 'door'],
       ...GYM_CLERESTORY,
     ],
     SCHOOL.gymWall,
@@ -279,25 +348,36 @@ export const WALLS: readonly Wall[] = [
       V.facade,
       'int',
       [
-        [-19.4, -17.6, 'band'],
-        [-15.6, -13.8, 'band'],
+        // Ventanas altas con vidrio armado del aula de danzas al polideportivo.
+        [-12.25, -13.5, 'band', 2.05, 2.95],
+        [-15.45, -16.7, 'band', 2.05, 2.95],
+        [-18.15, -19.4, 'band', 2.05, 2.95],
         [-11.0, -9.25, 'double'],
+        // Primer piso del edificio de bloque: ventanas con malla al polideportivo (9:21).
+        [-0.45, -2.1, 'window', 4.2, 5.3],
+        [-3.1, -4.65, 'window', 4.2, 5.3],
+        [-6.15, -7.8, 'window', 4.2, 5.3],
+        [-9.3, -10.9, 'window', 4.2, 5.3],
+        [-15.2, -16.8, 'window', 4.2, 5.3],
+        [-18.0, -19.6, 'window', 4.2, 5.3],
       ],
       SCHOOL.gymWall,
     ),
-    finish: { gimnasio: 'block', salon: 'block' },
+    // Bloque claro abajo y más oscuro a la altura del primer piso (9:22).
+    finish: { gimnasio: 'blockTwoTone', salon: 'block' },
+    upper: 'block',
   },
   // Testero este: muro ciego gris, con la bandera del escudo y las franjas.
   { ...vw(U.e, V.gymTop, V.facade, 'ext', [], SCHOOL.gymWall), finish: { gimnasio: 'gymWall' } },
 
   // --- Arte, Teatro, pasillo del gimnasio y V. Damas --------------------------
   vw(U.gymW, rearV(U.gymW), V.artB, 'int', [[-27.4, -25.8, 'window']]),
-  vw(U.gymW, V.artB, V.gymTop, 'int', [[-22.5, -20.95, 'door']]),
+  vw(U.gymW, V.artB, V.gymTop, 'int', [[-22.5, -20.95, 'double']]),
   vw(U.artE, rearV(U.artE), V.artB),
   vw(U.teaE, rearV(U.teaE), V.artB),
   hw(V.artB, U.gymW, U.teaE, 'int', [
-    [51.5, 53.2, 'door'],
-    [54.1, 56.0, 'door'],
+    [51.5, 53.2, 'double'],
+    [54.1, 56.0, 'double'],
   ]),
   vw(U.vdW, rearV(U.vdW), V.gymTop, 'int', [
     [-26.45, -25.45, 'door'],
@@ -306,22 +386,16 @@ export const WALLS: readonly Wall[] = [
   hw(V.vdB, U.vdW, U.e),
   vw(66.0, -21.85, V.gymTop),
   hw(-21.85, 66.0, U.e),
-  vw(U.e, V.top, rearV(U.e), 'ext', [
-    [-36.4, -34.8, 'window'],
-    [-32.6, -31.0, 'window'],
-  ]),
   vw(U.e, rearV(U.e), V.gymTop, 'ext', [[-24.6, -23.9, 'window']]),
-
-  // --- Jardín de infantes CIMPID ----------------------------------------------
-  vw(U.teaE, V.top, rearV(U.teaE), 'ext', [[-36.2, -34.6, 'window']]),
-  hw(V.top, U.teaE, U.e, 'ext', roomWindows(U.teaE, U.e)),
 ];
+
+export const WALLS: readonly Wall[] = [...WALLS_PB, ...UPPER_WALLS, ...JARDIN_WALLS];
 
 /**
  * Ambientes del plano. El orden importa sólo para `roomAt`: los recintos
  * chicos van antes que los que los rodean.
  */
-export const ROOMS: readonly Room[] = [
+const ROOMS_PB: Room[] = [
   { id: 'aula1', name: 'Aula', caption: 'Aula nivel primario', poly: rect(U.w, V.classTop, U.c2, V.facade), floor: 'tile', roofed: true },
   { id: 'aula2', name: 'Aula', caption: 'Aula nivel primario', poly: rect(U.c2, V.classTop, U.c3, V.facade), floor: 'tile', roofed: true },
   { id: 'aula3', name: 'Aula', caption: 'Aula nivel primario', poly: rect(U.c3, V.classTop, U.c4, V.facade), floor: 'tile', roofed: true },
@@ -335,7 +409,7 @@ export const ROOMS: readonly Room[] = [
     roofed: true,
   },
   { id: 'dirPrim', name: 'Dir. Prim', caption: 'Dirección primaria', poly: [mc(V.dirTop), [U.dirDiv, V.dirTop], [U.dirDiv, V.corrS], mc(V.corrS)], floor: 'terracotta', roofed: true },
-  { id: 'sala', name: '', poly: rect(U.dirDiv, V.dirTop, U.wingE, V.corrS), floor: 'tile', roofed: true },
+  { id: 'sala', name: 'Preceptoría', caption: 'Preceptoría primaria', poly: rect(U.dirDiv, V.dirTop, U.wingE, V.corrS), floor: 'terracotta', roofed: true },
   {
     id: 'hallOeste',
     name: 'Pasillo',
@@ -353,18 +427,20 @@ export const ROOMS: readonly Room[] = [
   {
     id: 'pasilloNorte',
     name: 'Pasillo',
-    poly: [mc(V.nBlockS), [U.closetW, V.nBlockS], [U.closetW, V.corrN], mc(V.corrN)],
+    // Llega hasta las puertas vidriadas al patio este (3:28).
+    poly: [mc(V.nBlockS), [U.east1, V.nBlockS], [U.east1, V.corrN], mc(V.corrN)],
     floor: 'tile',
     roofed: true,
   },
-  { id: 'deposito', name: '', poly: rect(U.closetW, V.nBlockS, U.east1, V.corrN), floor: 'tile', roofed: true },
   { id: 'pasilloMaker', name: 'Pasillo', caption: 'Hacia el Aula Maker', poly: rect(U.epW, V.nBlockN, U.epCorrE, V.nBlockS), floor: 'ceramic', roofed: true },
   { id: 'ep', name: 'E.P', poly: rect(U.epCorrE, V.nBlockN, U.epE, V.nBlockS), floor: 'tile', roofed: true },
   { id: 'escalera', name: 'Escalera', poly: rect(U.epE, V.nBlockN, U.stairE, V.nBlockS), floor: 'tile', roofed: true },
-  { id: 'salaNorte', name: '', poly: rect(U.stairE, V.nBlockN, U.east1, V.nBlockS), floor: 'tile', roofed: true },
+  // Entrada a los baños de alumnos desde el pasillo norte (3:22–3:28).
+  { id: 'salaNorte', name: 'Sanitarios', caption: 'Toilette alumnos', poly: rect(U.stairE, V.nBlockN, U.east1, V.nBlockS), floor: 'ceramic', roofed: true },
   { id: 'nicho', name: '', poly: [mc(V.nBlockN), [U.epW, V.nBlockN], [U.epW, V.nBlockS], mc(V.nBlockS)], floor: 'tile', roofed: true },
   { id: 'tecnologia', name: 'Tecnología', caption: 'Aula Maker', poly: [APEX, rear(U.tecE), [U.tecE, V.nBlockN], mc(V.nBlockN)], floor: 'green', roofed: true },
-  { id: 'kiosco', name: '', poly: rect(U.east1, V.kiosk, U.kioskE, V.hallTop), floor: 'tile', roofed: true },
+  // La caja al norte del hall es la torre de la escalera (0:24, 4:21–4:30).
+  { id: 'torreHall', name: 'Escalera', caption: 'Acceso al Nivel Secundario', poly: rect(U.east1, V.kiosk, U.kioskE, V.hallTop), floor: 'tile', roofed: true },
   { id: 'recepcionOf', name: '', caption: 'Oficina de recepción', poly: rect(U.east1, V.recN, U.recE, V.hallDoors), floor: 'tile', roofed: true },
   {
     id: 'hall',
@@ -400,13 +476,6 @@ export const ROOMS: readonly Room[] = [
     roofed: true,
   },
   {
-    id: 'jardin',
-    name: 'Jardín de infantes CIMPID',
-    poly: [[U.teaE, V.top], [U.e, V.top], rear(U.e), rear(U.teaE)],
-    floor: 'tile',
-    roofed: true,
-  },
-  {
     id: 'patioEste',
     name: 'Patio aire libre',
     poly: [
@@ -426,41 +495,22 @@ export const ROOMS: readonly Room[] = [
   },
 ];
 
+export const ROOMS: readonly Room[] = [...ROOMS_PB, ...UPPER_ROOMS, ...JARDIN_ROOMS];
+
 /** Cota de la azotea de un volumen. */
 export function volumeTop(vol: Volume): number {
   return (vol.floors + 1) * SCHOOL.storey;
 }
 
 /**
- * Volúmenes de dos plantas. La planta alta NO figura en el plano de
- * evacuación, así que no se inventa: se levanta como volumen cerrado con sus
- * ventanas, tal como se ve desde la calle y desde los patios en las fotos y en
- * el recorrido virtual. Las escaleras del plano quedan donde están.
+ * Volúmenes con plantas altas. La planta alta NO figura en el plano de
+ * evacuación: sale del recorrido virtual (ver `SchoolUpper`). El jardín de
+ * infantes tiene tres plantas (10:38–13:56).
  */
-const UPPER_POLYS: readonly (readonly P[])[] = [
-  // Aulas sobre Laprida, hall (portal) y aula junto al gimnasio.
-  [
-    [U.w, V.facade],
-    [U.gymW, V.facade],
-    [U.gymW, V.passN],
-    [U.salonW, V.passN],
-    [U.salonW, V.hallTop],
-    [U.east1, V.hallTop],
-    [U.east1, V.corrS],
-    mc(V.corrS),
-    [U.w, V.classTop],
-  ],
-  // Ala oeste y pasillo.
-  [mc(V.corrS), [U.patioW, V.corrS], [U.patioW, V.corrN], mc(V.corrN)],
-  // Bloque norte (E.P, escalera principal) y pasillo norte.
-  [mc(V.corrN), [U.east1, V.corrN], [U.east1, V.nBlockN], mc(V.nBlockN)],
-  // Buffet.
-  rect(U.bufW, V.corrN, U.east1, V.corrS),
-  // Jardín de infantes (tiene escalera propia en el recorrido).
-  [[U.teaE, V.top], [U.e, V.top], rear(U.e), rear(U.teaE)],
+export const UPPER: readonly Volume[] = [
+  ...UPPER_VOLUMES,
+  { poly: [[U.teaE, V.top], [U.e, V.top], rear(U.e), rear(U.teaE)], floors: 2, cornice: false, roofMat: 'jardinRoof' },
 ];
-
-export const UPPER: readonly Volume[] = UPPER_POLYS.map((poly) => ({ poly, floors: 1 }));
 
 /** Cubiertas de una sola planta. */
 export const ROOFS: ReadonlyArray<{ poly: readonly P[]; y: number }> = [
@@ -470,8 +520,12 @@ export const ROOFS: ReadonlyArray<{ poly: readonly P[]; y: number }> = [
     poly: [rear(U.teaE), rear(U.e), [U.e, V.gymTop], [U.gymW, V.gymTop], [U.gymW, V.artB], [U.teaE, V.artB]],
     y: H,
   },
-  { poly: rect(U.salonW, V.gymTop, U.gymW, V.passN), y: H },
-  { poly: rect(U.east1, V.kiosk, U.kioskE, V.hallTop), y: H },
+  // El pasillo oeste es de una sola planta (2:02–2:06): el ala alta está retirada.
+  { poly: rect(U1.wing, V.corrN, U.patioW, V.corrS), y: H },
+  // Patio de aire entre 6° AC y la pasarela: techo del hall con los equipos.
+  { poly: rect(U1.towerE, V.hallTop, U.salonW, V1.trophyN), y: H },
+  // Pasarela vidriada.
+  { poly: rect(U1.towerE, V1.walkN - 0.15, U.salonW, V1.walkS + 0.15), y: H + 2.65 },
 ];
 
 /**
@@ -480,26 +534,25 @@ export const ROOFS: ReadonlyArray<{ poly: readonly P[]; y: number }> = [
  */
 export const STAIRS: readonly Stair[] = [
   // Escalera principal del bloque norte (dos tramos, núcleo gris del plano).
-  { u0: 20.35, v0: -27.35, u1: 26.1, v1: -25.3, dir: 'u+', y0: 0, y1: 1.65 },
-  { u0: 20.35, v0: -29.65, u1: 26.1, v1: -27.6, dir: 'u-', y0: 1.65, y1: 3.3 },
-  // Escalera del hall oeste, frente a Dir. Prim.
-  { u0: 8.3, v0: -13.45, u1: 10.6, v1: -11.9, dir: 'u-', y0: 0, y1: 1.6 },
-  // "Acceso al Nivel Secundario": arranca en el piso del hall, contra el muro
-  // oeste, y sube hacia el norte 14 contrahuellas hasta el descanso (0:20,
-  // 4:16-4:24). El resto sube a la planta alta.
-  { u0: 33.05, v0: -12.1, u1: 34.3, v1: -8.6, dir: 'v-', y0: 0, y1: 2.3 },
-  // Escalera exterior del patio este, contra el bloque norte.
-  { u0: 33.05, v0: -29.7, u1: 34.35, v1: -26.7, dir: 'v-', y0: 0.3, y1: 3.3 },
+  { u0: 23.3, v0: -27.35, u1: 25.9, v1: -25.3, dir: 'u+', y0: 0, y1: 1.65 },
+  { u0: 23.3, v0: -29.65, u1: 25.9, v1: -27.6, dir: 'u-', y0: 1.65, y1: 3.3 },
+  // Escalera exterior del patio este, contra el bloque norte: sube al sur
+  // hasta la puerta del sector nuevo en el primer piso.
+  // Arranca 2 m más al norte: en 3 m los 19 escalones tenían huella de 16 cm.
+  { u0: 33.05, v0: -31.75, u1: 34.35, v1: -26.7, dir: 'v+', y0: 0, y1: 3.3 },
+  // Las del hall, el ala oeste, el comedor y el edificio de bloque.
+  ...UPPER_STAIRS,
+  ...JARDIN_STAIRS,
 ];
 
 /** Descansos de las escaleras. */
 export const LANDINGS: readonly Landing[] = [
-  // Descanso bajo de la escalera exterior.
-  { u0: 33.05, v0: -26.7, u1: 35.1, v1: -25.3, y: 0.3 },
+  // Descanso alto de la escalera exterior, frente a la puerta del primer piso.
+  { u0: 33.05, v0: -26.7, u1: 34.35, v1: -25.3, y: 3.3, hollow: true },
   // Descanso entre los dos tramos de la escalera principal.
-  { u0: 26.1, v0: -29.65, u1: 26.9, v1: -25.3, y: 1.65 },
-  // Descanso de la escalera del hall, contra el testero norte.
-  { u0: 33.05, v0: -13.2, u1: 34.3, v1: -12.1, y: 2.3 },
+  { u0: 25.9, v0: -29.65, u1: 26.9, v1: -25.3, y: 1.65 },
+  ...UPPER_LANDINGS,
+  ...JARDIN_LANDINGS,
 ];
 
 /**
@@ -509,7 +562,9 @@ export const LANDINGS: readonly Landing[] = [
  */
 export const VOIDS: ReadonlyArray<Rect & { level: Level }> = [
   // Escalera principal del bloque norte: los dos tramos y el descanso.
-  { u0: 20.35, v0: -29.65, u1: 26.9, v1: -25.3, level: 1 },
+  { u0: 23.3, v0: -29.65, u1: 26.9, v1: -25.3, level: 1 },
+  ...UPPER_VOIDS,
+  ...JARDIN_VOIDS,
 ];
 
 /** Huecos de losa de un nivel. */
@@ -524,12 +579,12 @@ function inVoid(level: Level, u: number, v: number): boolean {
 
 
 /** Columnas rojas del aula de danzas (a lo largo de v, sobre los dos laterales). */
-export const SALON_COLUMNS = [-12.75, -16.0, -19.25] as const;
+export const SALON_COLUMNS = [-14.75, -17.5, -20.0] as const;
 
 /** Eje este-oeste de la cancha del polideportivo. */
 export const GYM_MID = V.gymTop / 2;
 /** Pilastras de los laterales del polideportivo (coinciden con las cabriadas). */
-export const GYM_PILASTERS = [52.4, 55.8, 59.2, 62.6, 66.0] as const;
+export const GYM_PILASTERS = [1, 2, 3, 4, 5].map((k) => 50.3 + GYM_BAY * k);
 
 type ClassKind = 'desks' | 'redTables' | 'blueTables';
 
@@ -544,17 +599,27 @@ function classroom(u0: number, u1: number, kind: ClassKind = 'desks'): Item[] {
   const out: Item[] = [];
   const v0 = V.classTop;
   const uc = (u0 + u1) / 2;
-  out.push(item('board', u0 + 0.12, -3.4, 0.06, 2.4, 'e', false));
-  out.push({ ...item('blackboard', u1 - 0.12, -3.4, 0.04, 1.6, 'w', false), y: 0.95, h: 1.2 });
+  // Cara de cada testero: el de Miguel Cané (u = 0) es muro exterior, más grueso.
+  const w0 = u0 + (u0 === U.w ? SCHOOL.extT : SCHOOL.wallT) / 2;
+  const w1 = u1 - SCHOOL.wallT / 2;
+  // En el Aula 1 el testero oeste tiene la ventana a Miguel Cané en el medio:
+  // la pizarra va entre la ventana y el rincón del pasillo, no sobre el vidrio.
+  const boardV = u0 === U.w ? -5.72 : -3.4;
+  out.push(item('board', w0 + 0.02, boardV, 0.04, 2.4, 'e', false));
+  out.push({ ...item('blackboard', w1 - 0.025, -3.4, 0.05, 1.6, 'w', false), y: 0.95, h: 1.2 });
   out.push(item('teacherDesk', u0 + 1.3, -2.1, 0.7, 1.3, 'e'));
   out.push(item('chair', u0 + 0.75, -2.1, 0.45, 0.45, 'e', false));
-  // Viga descolgada a 2,2 m del pasillo, con el proyector colgado.
-  out.push({ ...item('wallPanel', uc, v0 + 2.2, u1 - u0 - 0.2, 0.25, 's', false), y: 2.75, h: 0.35, color: 'white' });
+  // Viga descolgada a 2,2 m del pasillo, de testero a testero (1 cm empotrada
+  // en cada uno), con el proyector colgado.
+  out.push({ ...item('wallPanel', (w0 + w1) / 2, v0 + 2.2, w1 - w0 + 0.02, 0.25, 's', false), y: 2.75, h: 0.35, color: 'white' });
   out.push({ ...item('projector', u0 + 3.0, v0 + 2.2, 0.36, 0.3, 'w', false), y: 2.75 });
   out.push({ ...item('fan', uc, -0.22, 0.3, 0.3, 'n', false), y: 2.6 });
-  out.push({ ...item('speaker', u0 + 0.16, -1.6, 0.22, 0.26, 'e', false), y: 2.55 });
+  // Parlante colgado sobre la pizarra (su caja mide 22 cm de fondo).
+  out.push({ ...item('speaker', w0 + 0.115, -1.6, 0.22, 0.26, 'e', false), y: 2.55 });
   if (kind === 'desks') {
-    const cols = [u0 + 2.3, u0 + 3.4, u0 + 4.5, u0 + 5.6].filter((u) => u < u1 - 0.7);
+    // La última fila deja 50 cm de paso detrás de las sillas (antes, en el
+    // Aula 4, las sillas de la cuarta columna se metían en el testero).
+    const cols = [u0 + 2.3, u0 + 3.4, u0 + 4.5, u0 + 5.6].filter((u) => u + 0.66 < w1 - 0.5);
     for (const u of cols) {
       for (const v of [v0 + 1.8, v0 + 3.6, v0 + 5.4]) {
         out.push({ ...item('desk', u, v, 0.5, 1.2, 'w'), color: 'sage' });
@@ -587,7 +652,8 @@ function classroom(u0: number, u1: number, kind: ClassKind = 'desks'): Item[] {
       if (u0 + du < u1 - 0.9) out.push({ ...item('roundTable', u0 + du, v, 1.1, 1.1), color: 'blue' });
     }
   }
-  out.push(item('shelf', u1 - 0.3, -0.6, 0.45, 1.2, 'w'));
+  // Biblioteca contra la fachada (cuyo muro exterior llega a v = −0,15).
+  out.push(item('shelf', w1 - 0.235, -0.76, 0.45, 1.2, 'w'));
   return out;
 }
 
@@ -601,7 +667,7 @@ function lab(u0: number, u1: number): Item[] {
   for (const u of [u0 + 3.0, u0 + 4.6]) {
     out.push(item('chair', u, V.classTop + 1.1, 0.42, 0.42, 'n', false));
   }
-  out.push(item('shelf', (u0 + u1) / 2, -0.35, 2.4, 0.45, 'n'));
+  out.push(item('shelf', (u0 + u1) / 2, -0.38, 2.4, 0.45, 'n'));
   out.push({ ...item('fan', (u0 + u1) / 2, -0.22, 0.3, 0.3, 'n', false), y: 2.6 });
   return out;
 }
@@ -629,7 +695,9 @@ export const MAKER_COLUMNS: ReadonlyArray<readonly [number, string]> = [
   [3.9, 'lime'],
   [6.4, 'navy'],
   [8.9, 'red'],
-  [11.85, 'blue'],
+  [10.9, 'blue'],
+  // La sexta, naranja, en la esquina noreste (2:40–3:15).
+  [12.2, 'orange'],
 ];
 
 const makerColumns = (): Item[] =>
@@ -653,7 +721,7 @@ const makerStools = (): Item[] =>
     return { ...item('stool', u, v, 0.34, 0.34, 's', false), color };
   });
 
-export const ITEMS: readonly Item[] = [
+const ITEMS_PB: Item[] = [
   // Aulas sobre Laprida (la tercera es el laboratorio de la estación de ciencia).
   ...classroom(U.w, U.c2, 'blueTables'),
   ...classroom(U.c2, U.c3, 'redTables'),
@@ -670,9 +738,14 @@ export const ITEMS: readonly Item[] = [
   ...[30.35, 23.25, 12.0].map((u) => item('extinguisher', u, -9.155, 0.17, 0.17, 's', false)),
   { ...item('wallPanel', 31.55, -9.24, 2.2, 0.02, 's', false), h: 1.2, color: 'darkRed' },
 
-  // Aula junto al gimnasio.
+  // Aula junto al gimnasio: bancos dobles con sus dos sillas (sin ellas el
+  // aula parecía un depósito de pupitres).
   ...[43.9, 45.4, 46.9, 48.4].flatMap((u) =>
-    [-7.4, -5.6, -3.8, -2.0].map((v) => item('desk', u, v, 0.55, 1.2, 'w')),
+    [-7.4, -5.6, -3.8, -2.0].flatMap((v) => [
+      item('desk', u, v, 0.55, 1.2, 'w'),
+      item('chair', u + 0.45, v - 0.3, 0.42, 0.42, 'w', false),
+      item('chair', u + 0.45, v + 0.3, 0.42, 0.42, 'w', false),
+    ]),
   ),
   item('board', U.salonW + 0.14, -4.6, 0.06, 2.6, 'e', false),
 
@@ -699,32 +772,36 @@ export const ITEMS: readonly Item[] = [
   { ...item('drawers', 30.7, -31.75, 0.6, 1.0, 'w'), color: 'blue', h: 1.05 },
   item('cabinet', 16.3, -30.25, 0.8, 0.45, 'n'),
   item('cabinet', 17.15, -30.25, 0.8, 0.45, 'n'),
-  { ...item('desk2', 18.9, -30.2, 1.2, 0.6, 'n'), color: 'oak' },
+  { ...item('desk2', 18.9, -30.27, 1.2, 0.6, 'n'), color: 'oak' },
   { ...item('chair', 18.6, -30.9, 0.5, 0.5, 'n', false), color: 'sage' },
   { ...item('projector', 18.6, -34.4, 0.36, 0.3, 'w', false), y: 2.9 },
   // Piso: verde salvia con pasillo azul acero a lo largo del muro sur y del
   // testero este, y líneas blancas.
+  // Las líneas blancas van 2 mm por encima del vinílico (sin z-fighting).
   { ...item('floorPatch', 22.78, -30.9, 16.9, 1.9, 's', false), color: 'steel' },
-  { ...item('floorPatch', 30.33, -33.67, 1.85, 3.6, 's', false), color: 'steel' },
-  { ...item('floorPatch', 22.5, -31.87, 13.8, 0.05, 's', false), color: 'board' },
-  { ...item('floorPatch', 29.38, -33.67, 0.05, 3.6, 's', false), color: 'board' },
+  { ...item('floorPatch', 30.33, -33.66, 1.85, 3.62, 's', false), color: 'steel' },
+  { ...item('floorPatch', 22.5, -31.87, 13.8, 0.05, 's', false), color: 'board', y: 0.002 },
+  { ...item('floorPatch', 29.38, -33.6825, 0.05, 3.575, 's', false), color: 'board', y: 0.002 },
 
   // Pasillo de bloque hacia el Aula Maker: columna redonda forrada en azul marino.
-  { ...item('paddedColumn', 14.4, -24.75, 0.35, 0.35), color: 'navy' },
+  { ...item('paddedColumn', 14.35, -28.0, 0.3, 0.3), color: 'navy' },
 
   // E.P
   item('table', 17.6, -27.5, 2.0, 1.1),
-  item('shelf', 19.9, -27.2, 0.45, 1.8, 'w'),
+  item('shelf', 19.82, -27.2, 0.45, 1.8, 'w'),
 
-  // Sala junto a la escalera.
-  item('table', 30.4, -27.5, 2.0, 1.2),
-  item('shelf', 32.6, -27.4, 0.45, 2.0, 'w'),
+  // Baños de alumnos: cubículos y mesada con bachas.
+  item('stall', 32.09, -26.9, 1.4, 1.2, 'w'),
+  item('stall', 32.09, -28.3, 1.4, 1.2, 'w'),
+  { ...item('sinkCounter', U.stairE + 0.4, -27.6, 0.55, 2.0, 'e'), color: 'board' },
 
   // Administración: escritorio y biblioteca; en su hall, columna con
   // protección azul francia.
-  item('teacherDesk', 10.4, -22.3, 1.3, 0.7, 's'),
-  item('shelf', 10.0, -19.45, 1.4, 0.4, 's'),
-  { ...item('paddedColumn', 12.75, -22.9, 0.4, 0.4), color: 'blue' },
+  item('teacherDesk', 10.15, -21.2, 1.3, 0.7, 's'),
+  item('shelf', 9.6, -19.51, 1.4, 0.4, 'n'),
+  { ...item('paddedColumn', 13.85, -24.8, 0.4, 0.4), color: 'blue' },
+  // Mampara de casilleros de madera clara contra el pasillo norte.
+  { ...item('cabinet', 12.7, -24.82, 1.8, 0.35, 's'), h: 1.8 },
 
   // Sala de profesores (1:54-2:00): mesas con tapa roja en grupos, sillas
   // blancas, mesada roja, banquetas rojas, bibliotecas rojas, pizarrón verde,
@@ -732,8 +809,9 @@ export const ITEMS: readonly Item[] = [
   ...[
     [7.6, -15.4],
     [8.8, -15.4],
-    [10.6, -15.4],
-    [11.8, -15.4],
+    // Corridas al oeste: la puerta de la sala barre hasta 1 m adentro.
+    [10.3, -15.4],
+    [11.5, -15.4],
     [9.0, -17.3],
     [10.2, -17.3],
   ].flatMap(([u, v]) => [
@@ -741,16 +819,20 @@ export const ITEMS: readonly Item[] = [
     { ...item('plasticChair', u, v - 0.55, 0.42, 0.42, 's', false) },
     { ...item('plasticChair', u, v + 0.55, 0.42, 0.42, 'n', false) },
   ]),
-  { ...item('counter', 9.0, -18.9, 2.6, 0.6, 's'), color: 'red' },
-  ...[7.9, 10.1].map((u) => ({ ...item('stool', u, -18.3, 0.34, 0.34, 's', false), color: 'red' })),
-  { ...item('shelf', 12.88, -15.7, 0.35, 0.9, 'w'), color: 'red' },
-  { ...item('blackboard', 7.4, -13.92, 1.8, 0.04, 's', false), y: 0.95, h: 1.2 },
-  { ...item('drawers', 12.6, -17.35, 0.9, 0.45, 'n'), h: 1.9 },
+  { ...item('counter', 9.0, -18.79, 2.6, 0.6, 's'), color: 'red' },
+  // Banquetas de la mesada: miran a la mesada y en su mitad libre. Mirando a
+  // las mesas, la de u 10,1 quedaba 7 cm detrás de la silla de la mesa y
+  // quien se sentaba metía las rodillas en la espalda del de adelante.
+  ...[7.9, 8.5].map((u) => ({ ...item('stool', u, -18.3, 0.34, 0.34, 'n', false), color: 'red' })),
+  { ...item('shelf', 12.82, -15.7, 0.35, 0.9, 'w'), color: 'red' },
+  { ...item('blackboard', 7.4, -13.925, 1.8, 0.05, 'n', false), y: 0.95, h: 1.2 },
+  { ...item('drawers', 12.54, -17.32, 0.9, 0.45, 's'), h: 1.9 },
   { ...item('fan', 12.95, -16.6, 0.3, 0.3, 'w', false), y: 2.5 },
 
   // Dirección primaria (1:24-1:30): biblioteca con biblioratos, escritorio y
   // cajonera color cerezo, sillas negras y ventilador de techo.
-  item('shelf', 5.6, -11.25, 1.6, 0.4, 's'),
+  // Biblioteca contra el muro del pasillo, entre las dos puertas.
+  item('shelf', 7.05, -11.19, 1.6, 0.4, 's'),
   { ...item('desk2', 4.0, -10.4, 1.4, 0.7, 's'), color: 'cherry' },
   { ...item('drawers', 2.9, -10.9, 0.45, 0.6, 'e'), color: 'cherry', h: 0.75 },
   { ...item('chair', 4.0, -10.95, 0.45, 0.45, 's', false), color: 'metalDark' },
@@ -762,36 +844,49 @@ export const ITEMS: readonly Item[] = [
   { ...item('gate', 13.25, -10.3, 0.05, 1.6, 'e', false), color: 'red', h: 2.2 },
   item('extinguisher', 13.3, -14.6, 0.17, 0.17, 'e', false),
 
-  // Buffet: barra contra las ventanillas, heladera, mesas y bancos.
-  item('counter', 32.3, -18.9, 0.8, 5.6, 'w'),
-  item('fridge', 32.35, -22.7, 0.7, 0.8, 'w'),
-  item('table', 29.9, -20.5, 1.3, 0.8),
-  item('table', 29.9, -16.4, 1.3, 0.8),
-  item('table', 29.9, -12.4, 1.3, 0.8),
-  item('bench', 29.9, -21.25, 1.3, 0.35, 's', false),
-  item('bench', 29.9, -19.75, 1.3, 0.35, 'n', false),
-  item('bench', 29.9, -17.15, 1.3, 0.35, 's', false),
-  item('bench', 29.9, -15.65, 1.3, 0.35, 'n', false),
+  // Cantina | Comedor (3:28–4:14). Al sur, contra el pasillo, la cantina:
+  // línea de acero con los carteles PRO FOOD bajo el riel negro de campanas,
+  // heladeras de bebidas, estantes de golosinas y la vitrina curva. Al norte
+  // el comedor: mesas largas de tapa blanca y estructura verde con bancos
+  // verdes, el jardín vertical, la tele y las cañas de bambú.
+  item('buffetLine', 30.75, -19.4, 2.5, 0.75, 's'),
+  { ...item('pendantRail', 30.65, -19.4, 3.8, 0.12, 's', false), y: 2.45 },
+  item('displayCase', 32.4, -19.4, 0.8, 0.75, 's'),
+  item('fridgeGlass', 31.0, -23.0, 0.75, 0.7, 's'),
+  item('fridgeGlass', 31.8, -23.0, 0.75, 0.7, 's'),
+  { ...item('shelf', 29.9, -23.18, 1.3, 0.45, 's'), color: 'board' },
+  { ...item('counter', 32.45, -21.6, 0.6, 1.4, 'w'), color: 'render' },
+  // Paneles símil hormigón detrás de la línea de servicio.
+  { ...item('wallPanel', 30.65, -23.38, 4.2, 0.03, 's', false), y: 0, h: 2.7, color: 'render' },
+  ...[-11.2, -13.0, -14.8, -16.6].map((v) => item('longTable', 29.75, v, 2.0, 0.8)),
+  ...[-12.2, -14.2].map((v) => item('longTable', 31.95, v, 1.4, 0.6)),
+  { ...item('greenWall', 32.75, -12.3, 3.4, 0.1, 'w', false), y: 1.0, h: 1.7 },
+  { ...item('tv', 32.75, -10.05, 1.1, 0.06, 'w', false), y: 1.9 },
+  // Al costado de la puerta al patio, no delante.
+  item('bamboo', 32.45, -16.6, 0.45, 0.45),
+  item('bamboo', 32.4, -11.0, 0.45, 0.45),
 
   // Espacio recreativo (2:00-2:13): cantero azul largo con pastos y asientos de
   // madera contra el lado norte, cantero angosto junto al pasillo oeste,
   // cantero de ladrillo, mástil, árboles, la palmera en su cantero con
   // asientos, banquitos cilíndricos rojos, aro de básquet y la galería del
   // comedor con columnas negras.
-  item('planter', 20.85, -22.95, 7.3, 0.9),
+  // Termina antes de la hoja abierta de la puerta doble al pasillo norte.
+  item('planter', 20.775, -22.95, 7.15, 0.9),
   ...[18.5, 20.85, 23.2].map((u) => ({ ...item('wallPanel', u, -22.62, 2.0, 0.3, 's', false), y: 0.6, h: 0.05, color: 'timberDark' })),
   item('planter', 17.0, -17.0, 0.8, 5.0),
   { ...item('planter', 17.35, -20.6, 1.5, 0.6), color: 'brick' },
-  { ...item('flagpole', 17.9, -21.7, 0.1, 0.1), h: 8 },
-  item('tree', 19.4, -21.9, 0.6, 0.6),
-  { ...item('floorPatch', 27.2, -21.9, 2.5, 2.5, 's', false), color: 'darkGreen' },
-  item('tree', 27.6, -22.4, 0.6, 0.6),
+  { ...item('flagpole', 17.9, -18.5, 0.1, 0.1), h: 8 },
+  item('bareTree', 19.4, -21.9, 0.6, 0.6),
+  { ...item('floorPatch', 25.0, -21.2, 2.5, 2.5, 's', false), color: 'darkGreen' },
+  item('bareTree', 25.2, -21.4, 0.6, 0.6),
   { ...item('bench', 26.6, -20.4, 1.2, 0.4, 's', false), color: 'timberDark' },
   item('planter', 24.75, -12.75, 2.4, 2.4),
   { ...item('palm', 24.75, -12.75, 0.4, 0.4), h: 6, y: 0.6 },
   ...[
     [24.75, -11.45, 2.4, 0.4],
-    [23.45, -12.75, 0.4, 2.4],
+    // Termina donde empieza el asiento del lado sur (sin encimarse en la esquina).
+    [23.45, -12.8, 0.4, 2.3],
   ].map(([u, v, w, d]) => ({ ...item('wallPanel', u, v, w, d, 's', false), y: 0.45, h: 0.05, color: 'timberDark' })),
   item('planter', 21.6, -12.1, 3.5, 0.6),
   ...[
@@ -802,16 +897,55 @@ export const ITEMS: readonly Item[] = [
   ...[-11.0, -14.0, -17.0, -20.0, -22.9].map((v) => ({ ...item('wallPanel', 26.8, v, 0.12, 0.12), h: 3.25, color: 'metalDark' })),
   item('planter', 27.7, -14.0, 0.6, 2.4),
   item('planter', 27.7, -19.8, 0.6, 2.4),
-  item('hoop', 16.63, -20.6, 0.6, 0.45, 'e', false),
+  // En el paño lleno entre dos ventanas del pasillo.
+  item('hoop', 16.58, -21.0, 0.6, 0.45, 'e', false),
 
-  // Patio este: árboles contra la medianera, canteros, juegos y bancos.
-  item('tree', 36.2, -33.1, 0.6, 0.6),
-  item('tree', 42.4, -31.6, 0.6, 0.6),
-  item('tree', 47.8, -30.0, 0.6, 0.6),
-  item('playhouse', 45.4, -26.6, 2.4, 2.0),
-  item('planter', 38.6, -21.4, 4.0, 0.9),
-  item('bench', 38.6, -19.6, 1.8, 0.5, 'n', false),
-  item('bench', 46.2, -21.5, 1.8, 0.5, 'n', false),
+  // Frente del comedor al patio este: zócalo de bloque bajo la tira de
+  // ventanas y toldo azul marino sobre la puerta vidriada.
+  { ...item('wallPanel', 33.03, -22.0, 0.04, 2.6, 'e', false), y: 0, h: 1.08, color: 'block' },
+  { ...item('wallPanel', 34.2, -24.0, 2.4, 3.0, 's', false), y: 2.85, h: 0.05, color: 'navy' },
+  { ...item('wallPanel', 35.42, -24.0, 0.04, 3.0, 'e', false), y: 2.4, h: 0.5, color: 'navy' },
+  // Arena bajo los juegos.
+  // Desde el pie de la escalera exterior (no por debajo de ella).
+  { ...item('floorPatch', 42.125, -28.0, 15.35, 4.8, 's', false), color: 'sand' },
+
+  // Patio este = "Espacio recreativo" de piso verde (9:40–10:06): franja
+  // pintada de verde junto al comedor, jardincito con la palmera bajo la
+  // pasarela, bicicletero, torre de juegos de madera con dos toboganes,
+  // aviarios y la choza de paja contra la medianera (pintada de azul con
+  // los azulejos de los chicos), hamacas, tobogán, domo trepador y el
+  // cerco de cañas delante del muro norte del edificio de bloque.
+  { ...item('floorPatch', 35.2, -20.2, 4.6, 10.5, 's', false), color: 'patioGreen' },
+  { ...item('floorPatch', 39.7, -15.4, 4.4, 4.0, 's', false), color: 'gravel' },
+  { ...item('palm', 39.8, -17.6, 0.4, 0.4), h: 3.6, y: 0 },
+  item('tree', 37.9, -19.4, 0.6, 0.6),
+  item('bikeRack', 34.8, -25.0, 1.8, 0.5, 'e'),
+  item('playTower', 35.75, -28.7, 2.6, 2.2, 's'),
+  { ...item('aviary', 35.5, -32.5, 3.6, 1.2, 's'), color: 'red' },
+  { ...item('aviary', 38.6, -31.8, 1.9, 1.2, 's'), color: 'chairGreen' },
+  item('hut', 41.0, -31.3, 2.4, 1.8, 's'),
+  item('swing', 45.0, -28.6, 2.6, 1.4, 's'),
+  { ...item('slide', 47.4, -30.1, 2.0, 1.2, 's'), color: 'lime' },
+  item('climber', 43.5, -25.4, 1.8, 1.8),
+  // Cerco de cañas delante del muro norte del edificio de bloque.
+  ...[37.9, 39.1, 40.3, 46.3, 47.5, 48.7].map((u) => item('hedge', u, -23.8, 1.2, 0.6, 's', false)),
+
+  // Equipos de aire de la fachada sobre Laprida (0:04, Street View) y del
+  // lado del patio oeste (2:02–2:07).
+  ...(
+    [
+      [2.35, 5.8],
+      [8.3, 5.8],
+      [11.45, 5.8],
+      [22.4, 6.8],
+      [24.15, 6.8],
+      [31.4, 6.8],
+      [32.3, 3.75],
+      [42.6, 3.7],
+      [43.6, 3.7],
+    ] as const
+  ).map(([u, y]) => ({ ...item('condenser', u, 0.32, 0.8, 0.3, 's', false), y })),
+  ...[20.9, 27.6].map((u) => ({ ...item('condenser', u, V.corrN + 0.3, 0.8, 0.3, 's', false), y: 3.6 })),
 
   // Recepción (0:18-0:34): banner al pie de la escalera, asientos de espera
   // negros frente al ventanal, columna con protección verde, cabina de
@@ -820,13 +954,15 @@ export const ITEMS: readonly Item[] = [
   item('banner', 34.9, -8.95, 0.9, 0.4, 's'),
   item('seats', 38.42, -12.55, 1.65, 0.5, 's'),
   item('seats', 40.3, -12.55, 1.1, 0.5, 's'),
-  { ...item('paddedColumn', 39.3, -8.0, 0.4, 0.4), color: 'darkGreen' },
-  item('booth', 40.65, -2.85, 2.5, 2.3, 'w'),
+  { ...item('paddedColumn', 39.4, -10.6, 0.4, 0.4), color: 'darkGreen' },
+  // Cabina larga y angosta contra el lado este, desde el acceso (0:28).
+  // Termina antes de la puerta del aula del pasaje (antes la tapaba entera).
+  item('booth', 41.0, -4.255, 1.7, 5.2, 'w'),
   item('plaques', 35.42, -3.3, 0.04, 0.6, 'e', false),
-  { ...item('speaker', 33.12, -4.4, 0.22, 0.26, 'e', false), y: 2.75 },
+  { ...item('speaker', 33.12, -4.4, 0.22, 0.26, 'e', false), y: 2.68 },
   { ...item('ac', 33.13, -6.2, 0.22, 0.86, 'e', false), y: 2.75 },
   { ...item('floorPatch', 37.4, -5.1, 1.2, 7.0, 's', false), color: 'charcoal' },
-  { ...item('floorPatch', 38.1, -8.85, 7.6, 0.5, 's', false), color: 'charcoal' },
+  { ...item('floorPatch', 38.1, -9.8, 7.6, 0.5, 's', false), color: 'charcoal' },
 
   // Salón de los espejos = aula de danzas (recorrido 10:08–10:36): parquet,
   // columnas redondas rojas sobre los dos laterales con vigas negras, espejos
@@ -836,32 +972,41 @@ export const ITEMS: readonly Item[] = [
     { ...item('roundColumn', 42.32, v, 0.36, 0.36), color: 'red' },
     { ...item('roundColumn', 49.93, v, 0.36, 0.36), color: 'red' },
   ]),
-  { ...item('mirror', 50.17, -14.3, 0.04, 2.7, 'w', false), color: 'red' },
-  { ...item('mirror', 50.17, -17.6, 0.04, 2.7, 'w', false), color: 'red' },
-  { ...item('barre', 49.88, -15.95, 0.06, 6.4, 'w'), color: 'metalDark' },
+  // Debajo de las bandas vidriadas hacia el polideportivo (de 2,05 m): con
+  // 1,9 m de alto el marco tapaba 16 cm de cada banda.
+  ...[-12.9, -16.1, -18.75].map((v) => ({ ...item('mirror', 50.17, v, 0.04, 1.9, 'w', false), color: 'red', h: 1.66 })),
+  // Barra sobre el muro de espejos, cortada en cada columna roja.
+  ...[
+    [-18.6, 1.0],
+    [-16.125, 2.35],
+    [-13.6, 1.7],
+  ].map(([v, d]) => ({ ...item('barre', 49.88, v, 0.06, d, 'w'), color: 'metalDark' })),
   // Barra de pie, suelta, frente a la ventana del oeste.
   { ...item('barre', 43.1, -17.6, 0.06, 2.4, 'e'), color: 'metalDark' },
   item('piano', 44.0, -20.38, 1.5, 0.55, 's'),
   item('drawers', 46.5, -20.45, 1.8, 0.42, 's'),
   { ...item('drawers', 48.4, -20.5, 0.9, 0.34, 's'), h: 0.65 },
-  item('coatBench', 42.38, -14.3, 0.42, 1.8, 'e'),
-  item('fan', 42.15, -16.0, 0.3, 0.3, 'e', false),
-  item('fan', 42.15, -19.3, 0.3, 0.3, 'e', false),
-  item('fan', 50.15, -12.2, 0.3, 0.3, 'w', false),
+  item('coatBench', 42.38, -16.1, 0.42, 1.8, 'e'),
+  // Ventiladores en los paños llenos, no sobre ventanas ni bandas.
+  item('fan', 42.15, -15.3, 0.3, 0.3, 'e', false),
+  item('fan', 42.15, -20.45, 0.3, 0.3, 'e', false),
+  item('fan', 50.15, -14.2, 0.3, 0.3, 'w', false),
   item('speaker', 42.2, -12.0, 0.26, 0.22, 'e', false),
-  item('speaker', 50.12, -19.9, 0.26, 0.22, 'w', false),
+  item('speaker', 50.085, -19.62, 0.26, 0.22, 'w', false),
 
   // Polideportivo: la cancha corre de oeste a este, con los arcos en los
   // testeros; las gradas de chapa negra van contra el lateral de Laprida y
   // las pilastras llevan protección verde abajo y roja arriba.
   // El arco oeste está corrido hacia la esquina norte, contra el bloque: en
   // el centro del testero está la puerta doble del pasaje (cuadro 9:20).
-  item('goal', 51.25, -17.4, 0.8, 3.1, 'e'),
+  item('goal', 51.25, -13.0, 0.8, 3.1, 'e'),
   item('goal', 66.45, GYM_MID, 0.8, 3.1, 'w'),
-  ...[56.4, 59.4, 62.4, 65.4].map((u) => item('bleachers', u, -1.5, 2.7, 2.4, 'n')),
+  // Gradas delante de las pilastras (no metidas en ellas).
+  // La última deja libre la puerta roja de la esquina.
+  ...[56.3, 59.2, 62.1, 65.0].map((u) => item('bleachers', u, -1.68, 2.7, 2.4, 'n')),
   ...GYM_PILASTERS.flatMap((u) => [item('padPilaster', u, -20.55, 0.42, 0.3, 's'), item('padPilaster', u, -0.32, 0.42, 0.3, 'n')]),
   { ...item('wallMat', 67.2, -1.5, 0.1, 1.7, 'w', false), color: 'red', h: 1.9 },
-  { ...item('wallMat', 66.3, -20.6, 1.6, 0.1, 's', false), color: 'red', h: 1.9 },
+  { ...item('wallMat', 66.3, -20.65, 1.6, 0.1, 's', false), color: 'red', h: 1.9 },
 
   // Arte y Teatro.
   item('table', 52.1, -25.5, 1.1, 2.2),
@@ -870,16 +1015,11 @@ export const ITEMS: readonly Item[] = [
   item('seats', 56.2, -24.3, 2.0, 0.5, 'n'),
 
   // V. Damas: cubículos.
-  item('stall', 66.4, -26.0, 1.4, 1.2, 'w'),
+  item('stall', 66.4, -25.84, 1.4, 1.2, 'w'),
   item('stall', 66.4, -24.5, 1.4, 1.2, 'w'),
-
-  // Jardín: mesas redondas, estantes y juego interior.
-  item('roundTable', 60.2, -35.3, 1.2, 1.2),
-  item('roundTable', 64.6, -35.3, 1.2, 1.2),
-  item('roundTable', 62.4, -32.0, 1.2, 1.2),
-  item('shelf', 67.0, -37.0, 0.45, 2.0, 'w'),
-  item('playhouse', 59.4, -31.4, 1.6, 1.4),
 ];
+
+export const ITEMS: readonly Item[] = [...ITEMS_PB, ...UPPER_ITEMS, ...JARDIN_ITEMS];
 
 // ============================================================== señalización
 
@@ -984,8 +1124,26 @@ const STEP_DOWN = 1.2;
 /** Luz libre bajo un tramo alto para poder pasar por debajo. */
 const HEADROOM = 2.1;
 
-function riserCount(s: Stair): number {
-  return Math.max(4, Math.round((s.y1 - s.y0) / 0.175));
+/**
+ * Escalones de un tramo: los que dejan la contrahuella entre 14 y 19 cm con
+ * el paso más cómodo (regla de Blondel: 2 contrahuellas + 1 huella ≈ 63 cm).
+ * Con un número fijo (alto / 0,175) los tramos cortos daban huellas de 38 cm
+ * y los empinados de 22. La usan el constructor (lo que se dibuja) y la
+ * rampa de los pies (`stairY`).
+ */
+export function riserCount(s: Stair): number {
+  const rise = s.y1 - s.y0;
+  const run = s.dir === 'u+' || s.dir === 'u-' ? s.u1 - s.u0 : s.v1 - s.v0;
+  let best = Math.max(4, Math.round(rise / 0.175));
+  let err = Infinity;
+  for (let n = Math.max(4, Math.ceil(rise / 0.19)); n <= Math.max(4, Math.floor(rise / 0.14)); n++) {
+    const e = Math.abs((2 * rise + run) / n - 0.63);
+    if (e < err) {
+      err = e;
+      best = n;
+    }
+  }
+  return best;
 }
 
 /**
@@ -1012,7 +1170,7 @@ export function stairY(s: Stair, u: number, v: number): number {
  * levantan desde el suelo). Los de los pisos altos son losas con luz abajo.
  */
 function stairIsSolidBelow(s: Stair): boolean {
-  return s.y0 < 0.5;
+  return s.y0 < 0.5 && !s.hollow;
 }
 
 interface StairHit {
@@ -1031,7 +1189,7 @@ function stairHitsAt(u: number, v: number): StairHit[] {
   }
   for (const l of LANDINGS) {
     if (u >= l.u0 && u <= l.u1 && v >= l.v0 && v <= l.v1) {
-      out.push({ y: SCHOOL.floorY + l.y, solidBelow: l.y < 3 });
+      out.push({ y: SCHOOL.floorY + l.y, solidBelow: l.y < 3 && !l.hollow });
     }
   }
   return out;
@@ -1087,6 +1245,36 @@ function wallThickness(w: Wall): number {
 }
 
 /**
+ * Distancia desde un punto (la cara trasera de algo que mira hacia `face`)
+ * hasta la cara del muro que tiene detrás, en su nivel. `Infinity` si no hay
+ * muro a menos de 1 m. Negativa si el punto ya está metido en el muro. La
+ * usan el constructor (un espejo lejos del muro es de pie y lleva patas) y
+ * el QA del equipamiento (lo colgado no puede flotar delante de la pared).
+ */
+export function wallGapBehind(level: Level, u: number, v: number, face: Facing): number {
+  const fu = face === 'e' ? 1 : face === 'w' ? -1 : 0;
+  const fv = face === 's' ? 1 : face === 'n' ? -1 : 0;
+  let best = Infinity;
+  for (const w of WALLS) {
+    if (w.level !== level) continue;
+    const len = Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]);
+    const du = (w.b[0] - w.a[0]) / len;
+    const dv = (w.b[1] - w.a[1]) / len;
+    const ru = u - w.a[0];
+    const rv = v - w.a[1];
+    const t = ru * du + rv * dv;
+    if (t < 0 || t > len) continue;
+    const n = -ru * dv + rv * du;
+    // El muro tiene que quedar detrás: el frente mira hacia el lado del punto.
+    const facing = fu * -dv + fv * du;
+    if (Math.abs(facing) < 0.5 || facing * n <= 0) continue;
+    const gap = Math.abs(n) - wallThickness(w) / 2;
+    if (gap > -0.1 && gap < 1 && gap < best) best = gap;
+  }
+  return best;
+}
+
+/**
  * Obstáculos rectangulares alineados de un nivel: núcleo gris y canteros de
  * frente en planta baja, y el equipamiento que bloquea en cada nivel. Las
  * escaleras no están acá: se resuelven por altura (ver `schoolSolidLocal`).
@@ -1108,28 +1296,32 @@ function obstacleRects(level: Level): Rect[] {
 
 /** Canteros de la franja de frente, a ambos lados del acceso. */
 export const FRONT_PLANTERS: readonly Rect[] = [
-  { u0: 0.4, v0: 0.35, u1: 14.8, v1: 1.35 },
-  { u0: 16.8, v0: 0.35, u1: 32.4, v1: 1.35 },
-  { u0: 42.4, v0: 0.35, u1: 49.8, v1: 1.35 },
+  // Del lado de la vereda, fuera del cerco (0:04–0:08, Street View).
+  { u0: 0.4, v0: 0.95, u1: 14.8, v1: 1.85 },
+  { u0: 16.8, v0: 0.95, u1: 32.4, v1: 1.85 },
+  { u0: 42.4, v0: 0.95, u1: 49.8, v1: 1.85 },
 ];
+
+/** Línea del cerco sobre Laprida: pegado a la fachada, sobre el muro bajo rojo. */
+const FENCE_V = 0.6;
 
 /** Reja sobre la línea municipal: tramos con su abertura para pasar. */
 export const FENCES: readonly (readonly [P, P])[] = [
   [
-    [miguelCaneU(SCHOOL.front - 0.15), SCHOOL.front - 0.15],
-    [15.4, SCHOOL.front - 0.15],
+    [miguelCaneU(FENCE_V), FENCE_V],
+    [15.4, FENCE_V],
   ],
   [
-    [16.2, SCHOOL.front - 0.15],
-    [33.1, SCHOOL.front - 0.15],
+    [16.2, FENCE_V],
+    [32.9, FENCE_V],
   ],
   [
-    [42.0, SCHOOL.front - 0.15],
-    [50.2, SCHOOL.front - 0.15],
+    [42.0, FENCE_V],
+    [50.2, FENCE_V],
   ],
   // Sobre Miguel Cané, hasta el muro del ala oeste, con portón de salida.
   [
-    [miguelCaneU(SCHOOL.front - 0.15), SCHOOL.front - 0.15],
+    [miguelCaneU(FENCE_V), FENCE_V],
     [miguelCaneU(-4.6), -4.6],
   ],
   [
@@ -1219,6 +1411,34 @@ function gridSolid(level: Level, u: number, v: number): boolean {
   return g[j * GW + i] === 1;
 }
 
+// ======================================================= bloqueos dinámicos
+
+/**
+ * Rectángulos macizos que el juego pone y saca en tiempo de ejecución: las
+ * puertas cerradas con llave de las zonas que se desbloquean con la historia.
+ * La grilla de ocupación es estática; esto se consulta aparte y es barato
+ * (pocos rectángulos).
+ */
+const dynamicSolids = new Map<string, Rect & { level: Level; playerOnly: boolean }>();
+
+/**
+ * Cierra (o con `null`, abre) un paso: un rectángulo macizo en un nivel.
+ * `playerOnly`: sólo para el jugador — las puertas de las aulas, que la gente
+ * abre al llegar (la multitud las atraviesa y el juego anima la hoja).
+ */
+export function setDynamicSolid(id: string, rect: (Rect & { level: Level }) | null, opts?: { playerOnly?: boolean }): void {
+  if (rect) dynamicSolids.set(id, { ...rect, playerOnly: opts?.playerOnly ?? false });
+  else dynamicSolids.delete(id);
+}
+
+function dynamicSolidAt(level: Level, u: number, v: number, pedestrian: boolean): boolean {
+  for (const r of dynamicSolids.values()) {
+    if (r.playerOnly && pedestrian) continue;
+    if (r.level === level && inRect(r, u, v)) return true;
+  }
+  return false;
+}
+
 /**
  * ¿Ese punto local está ocupado para quien tiene los pies a `feetY`?
  *
@@ -1233,11 +1453,17 @@ export function schoolSolidLocal(u: number, v: number, feetY: number = SCHOOL.fl
   // Fondos vecinos, detrás de la medianera (fuera del predio del jardín).
   if (u < U.teaE && v < rearV(u) - 0.15 && u > miguelCaneU(v) - 0.2 && v > V.top - 1.2) return true;
   const level = levelOf(feetY);
+  if (dynamicSolids.size > 0 && dynamicSolidAt(level, u, v, pedestrian)) return true;
   const hits = stairHitsAt(u, v);
   if (hits.length > 0) {
-    if (pedestrian) return true;
     let clear = true;
     for (const h of hits) {
+      // La multitud no usa escaleras: para ella son macizas, salvo los tramos
+      // que pasan muy por encima (el arranque de la pasarela sobre el patio).
+      if (pedestrian) {
+        if (h.solidBelow || h.y < feetY + HEADROOM) return true;
+        continue;
+      }
       if (h.y <= feetY + STEP_UP && h.y >= feetY - STEP_DOWN) return false;
       if (h.y < feetY - STEP_DOWN) {
         // Un tramo más abajo: es el hueco de la escalera, salvo que haya losa encima.

@@ -61,6 +61,9 @@ export const R = {
   ballet2: [1928, 1240, 2048, 1424],
   cork1: [1544, 1568, 1800, 1760],
   cork2: [1808, 1568, 2048, 1760],
+  // Fachada del jardín: marquesina y banda vertical (10:38–10:41).
+  inicial: [1024, 1776, 2048, 1904],
+  cimdip: [904, 1648, 1000, 2040],
 } as const;
 
 export type Region = readonly [number, number, number, number];
@@ -130,6 +133,55 @@ export function drawAtlas(ctx: CanvasRenderingContext2D): void {
   drawBalletPoster(ctx, R.ballet2, 1);
   drawCorkBoard(ctx, R.cork1, 1);
   drawCorkBoard(ctx, R.cork2, 2);
+  drawInicial(ctx, R.inicial);
+  drawCimdipBand(ctx, R.cimdip);
+}
+
+/** Marquesina roja del jardín con "Educación Inicial" en blanco. */
+function drawInicial(ctx: CanvasRenderingContext2D, r: Region): void {
+  const [x0, y0, x1, y1] = r;
+  const w = x1 - x0;
+  const h = y1 - y0;
+  ctx.fillStyle = '#c22832';
+  ctx.fillRect(x0, y0, w, h);
+  ctx.fillStyle = '#f4f1ea';
+  ctx.fillRect(x0, y0 + h * 0.82, w, h * 0.07);
+  // Texto alineado a la derecha y el gatito del logo a la izquierda (10:40).
+  ctx.font = `700 ${Math.round(h * 0.46)}px Arial, Helvetica, sans-serif`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Educación Inicial', x1 - w * 0.04, y0 + h * 0.42);
+  const cx = x0 + h * 0.7;
+  ctx.beginPath();
+  ctx.arc(cx, y0 + h * 0.42, h * 0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#1f3b6a';
+  ctx.beginPath();
+  ctx.arc(cx, y0 + h * 0.47, h * 0.16, 0, Math.PI * 2);
+  ctx.moveTo(cx - h * 0.14, y0 + h * 0.36);
+  ctx.lineTo(cx - h * 0.1, y0 + h * 0.2);
+  ctx.lineTo(cx - h * 0.02, y0 + h * 0.33);
+  ctx.moveTo(cx + h * 0.14, y0 + h * 0.36);
+  ctx.lineTo(cx + h * 0.1, y0 + h * 0.2);
+  ctx.lineTo(cx + h * 0.02, y0 + h * 0.33);
+  ctx.fill();
+}
+
+/** Banda azul marino con CIMDIP en letras blancas apiladas. */
+function drawCimdipBand(ctx: CanvasRenderingContext2D, r: Region): void {
+  const [x0, y0, x1, y1] = r;
+  const w = x1 - x0;
+  const h = y1 - y0;
+  ctx.fillStyle = '#1f3b6a';
+  ctx.fillRect(x0, y0, w, h);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `700 ${Math.round(w * 0.62)}px Arial, Helvetica, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const letters = 'CIMDIP';
+  for (let i = 0; i < letters.length; i++) {
+    ctx.fillText(letters[i], x0 + w / 2, y0 + (h * (i + 0.5)) / letters.length);
+  }
 }
 
 function drawCrest(ctx: CanvasRenderingContext2D, r: Region): void {
@@ -154,19 +206,26 @@ function drawSign(ctx: CanvasRenderingContext2D, r: Region): void {
   const [x0, y0, x1, y1] = r;
   const w = x1 - x0;
   const h = y1 - y0;
-  ctx.fillStyle = '#b74b58';
+  // Rojo vivo con filete blanco y azul arriba y letras grandes (0:09–0:16).
+  ctx.fillStyle = '#d42a2a';
   ctx.fillRect(x0, y0, w, h);
   ctx.fillStyle = '#eef1f0';
-  ctx.fillRect(x0, y0 + 11, w, 9);
+  ctx.fillRect(x0, y0 + 8, w, 10);
   ctx.fillStyle = '#243b67';
-  ctx.fillRect(x0, y0 + h - 20, w, 9);
+  ctx.fillRect(x0, y0 + 20, w, 10);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = CREAM;
-  ctx.font = 'bold 55px Georgia, "Times New Roman", serif';
-  ctx.fillText('C.I.M.D.I.P. & M. CANÉ', x0 + w / 2, y0 + 94);
-  ctx.font = '30px Arial, Helvetica, sans-serif';
-  ctx.fillText('Educación Inicial, Primaria y Secundaria', x0 + w / 2, y0 + 154);
+  ctx.fillStyle = '#ffffff';
+  // La región se estira sobre un cartel de 8,2 × 1,36 m: se comprime en x
+  // para que las letras salgan con su proporción.
+  ctx.save();
+  ctx.translate(x0 + w / 2, 0);
+  ctx.scale(0.64, 1);
+  ctx.font = 'bold 90px Georgia, "Times New Roman", serif';
+  ctx.fillText('C.I.M.D.I.P.& M.CANÉ', 0, y0 + 112);
+  ctx.font = '44px Arial, Helvetica, sans-serif';
+  ctx.fillText('Educación Inicial, Primaria y Secundaria', 0, y0 + 200);
+  ctx.restore();
 }
 
 function drawFlag(ctx: CanvasRenderingContext2D, r: Region): void {
@@ -625,7 +684,9 @@ function drawPlan(ctx: CanvasRenderingContext2D, r: Region): void {
   // Ambientes con nombre.
   ctx.font = '600 9px Arial, Helvetica, sans-serif';
   ctx.fillStyle = '#3a4150';
+  // Sólo la planta baja: es la copia del plano colgado en el hall.
   for (const room of ROOMS) {
+    if ((room.level ?? 0) !== 0) continue;
     if (!room.name || room.name === 'Pasillo' || room.name === 'Aula') continue;
     let cu = 0;
     let cv = 0;
@@ -639,6 +700,7 @@ function drawPlan(ctx: CanvasRenderingContext2D, r: Region): void {
   // Escaleras en gris.
   ctx.fillStyle = '#b9bcc2';
   for (const s of STAIRS) {
+    if (s.y0 > 0.5) continue;
     const [a, b] = [at(s.u0, s.v0), at(s.u1, s.v1)];
     ctx.fillRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
   }
@@ -646,6 +708,7 @@ function drawPlan(ctx: CanvasRenderingContext2D, r: Region): void {
   ctx.strokeStyle = '#15171c';
   ctx.lineCap = 'butt';
   for (const wl of WALLS) {
+    if (wl.level !== 0) continue;
     const len = Math.hypot(wl.b[0] - wl.a[0], wl.b[1] - wl.a[1]);
     const du = (wl.b[0] - wl.a[0]) / len;
     const dv = (wl.b[1] - wl.a[1]) / len;
