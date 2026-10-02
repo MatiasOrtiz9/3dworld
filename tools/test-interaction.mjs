@@ -52,7 +52,7 @@ const frames = (page, n) =>
   );
 const visible = (page, sel) =>
   page.$eval(sel, (el) => {
-    const s = getComputedStyle(el);
+    const s = window.getComputedStyle(el);
     return !el.hidden && !el.classList.contains('hidden') && s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity) > 0.05;
   });
 
