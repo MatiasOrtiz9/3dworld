@@ -1182,6 +1182,20 @@ export class GameDirector {
     this.interact(this.focus.key);
   };
 
+  /**
+   * Toque en la pantalla del celular: lo que señala el dedo (un rayo desde
+   * la cámara por ese punto), con la misma regla que el láser del visor y
+   * sin atravesar muros. Devuelve si había algo para usar.
+   */
+  tapAt(origin: WorldPoint, dir: WorldPoint): boolean {
+    if (this.inXR || this.mode !== 'play' || this.modal !== null || this.hud.modal) return false;
+    if (!(this.deps.canInteract?.() ?? true)) return false;
+    const f = focusByRay(this.candidates, origin, dir, this.feet, 1);
+    if (!f || this.occluded(f, this.feet)) return false;
+    this.interact(f.key);
+    return true;
+  }
+
   /** Gatillo en el visor: lo que toca el láser (cajas de selección) o, si no, lo enfocado. */
   private onPointer = (info: PointerInfo): void => {
     if (!this.inXR || info.type !== PointerEventTypes.POINTERDOWN) return;

@@ -2,6 +2,7 @@ import type { Scene } from '@babylonjs/core/scene';
 import type { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import type { CityIndex } from '../world/CityIndex';
+import { VirtualInput } from './VirtualInput';
 
 export type MoveMode = 'walk' | 'fly';
 
@@ -59,6 +60,8 @@ export class PlayerController {
     private readonly scene: Scene,
     private readonly camera: UniversalCamera,
     private readonly index: CityIndex,
+    /** Joysticks y botones táctiles (celular). Sin ellos, sólo teclado. */
+    private readonly input: VirtualInput = new VirtualInput(),
   ) {
     // Se desactiva el movimiento propio de la cámara: lo manejamos nosotros
     // para poder aplicar gravedad y colisión.
@@ -99,6 +102,7 @@ export class PlayerController {
     this.paused = paused;
     if (paused) {
       this.keys.clear();
+      this.input.reset();
       this.velocityY = 0;
       this.velocityX = 0;
       this.velocityZ = 0;
@@ -162,8 +166,11 @@ export class PlayerController {
     if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) dz -= 1;
     if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) dx += 1;
     if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) dx -= 1;
+    // Joystick táctil: analógico, a medio recorrido se camina más despacio.
+    dx += this.input.x;
+    dz += this.input.y;
 
-    const running = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
+    const running = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.input.run;
     const inputLength = Math.hypot(dx, dz);
     if (inputLength > 1) {
       dx /= inputLength;
@@ -174,7 +181,7 @@ export class PlayerController {
       this.move.set(
         this.forward.x * dz + this.right.x * dx,
         this.forward.y * dz + this.right.y * dx +
-          Number(this.keys.has('KeyE')) - Number(this.keys.has('KeyQ')),
+          Number(this.keys.has('KeyE')) - Number(this.keys.has('KeyQ')) + this.input.rise,
         this.forward.z * dz + this.right.z * dx,
       );
       if (this.move.lengthSquared() > 1) this.move.normalize();
@@ -244,7 +251,7 @@ export class PlayerController {
     // Gravedad y salto. El piso depende de la altura de los pies: en la
     // escuela hay planta alta y escaleras.
     const floor = this.index.groundHeight(cam.position.x, cam.position.z, this.feet()) + EYE_HEIGHT;
-    if (this.grounded && this.keys.has('Space')) {
+    if (this.grounded && (this.keys.has('Space') || this.input.takeJump())) {
       this.velocityY = JUMP;
       this.grounded = false;
     }

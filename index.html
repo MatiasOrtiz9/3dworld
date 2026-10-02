@@ -2,7 +2,12 @@
 <html lang="es">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0e1a17" />
+    <!-- Agregado a la pantalla de inicio, iOS lo abre sin barras (como app). -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>CIMDIP · Recorrido 40</title>
     <link
       rel="icon"
@@ -31,6 +36,9 @@
         --radius: 12px;
         --safe-t: env(safe-area-inset-top, 0px);
         --safe-b: env(safe-area-inset-bottom, 0px);
+        /* Con el teléfono apaisado, la muesca y las esquinas quedan a los costados. */
+        --safe-l: env(safe-area-inset-left, 0px);
+        --safe-r: env(safe-area-inset-right, 0px);
         --font: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
       }
       * { box-sizing: border-box; }
@@ -343,6 +351,192 @@
         #pause nav .brand { display: none; }
         #card { top: auto; bottom: calc(5rem + var(--safe-b)); right: 50%; transform: translateX(50%); }
       }
+
+      /* =================================================================
+         CELULAR — pantalla horizontal con controles táctiles (html.touch,
+         ver src/ui/TouchControls.ts). La escala de la interfaz sigue al
+         lado corto de la pantalla: en un teléfono apaisado de 390 px de
+         alto, 1rem ≈ 13,6 px; en una tableta, los 16 px del escritorio.
+         ================================================================= */
+      html:not(.touch) .touch-only { display: none !important; }
+      html.touch .desk-only { display: none !important; }
+      html.touch {
+        font-size: clamp(12px, 3.5vmin, 16px);
+        -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent; overscroll-behavior: none;
+      }
+      html.touch body { overscroll-behavior: none; }
+      html.touch button, html.touch input { touch-action: manipulation; }
+      html.touch kbd { display: none; }
+
+      /* superficie de juego (debajo del HUD) y capa de controles (encima) */
+      #touch-zone { position: fixed; inset: 0; z-index: 10; touch-action: none; }
+      #touch-ui {
+        position: fixed; inset: 0; z-index: 22; pointer-events: none;
+        /* Sólo para medir: TouchControls lee de acá los márgenes seguros en píxeles. */
+        padding: 0 var(--safe-r) 0 var(--safe-l);
+      }
+      #touch-ui button { pointer-events: auto; }
+      .in-title #touch-ui, .in-credits #touch-ui, .hud-hidden #touch-ui { display: none; }
+      body.touch-blocked .stick, body.touch-blocked #t-actions { display: none; }
+
+      .stick {
+        position: fixed; left: 0; top: 0; width: 7.8rem; height: 7.8rem; border-radius: 50%; pointer-events: none;
+        background: radial-gradient(circle, rgba(11,21,19,0.12) 0%, rgba(11,21,19,0.36) 72%);
+        border: 2px solid rgba(238,246,242,0.34); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.22), 0 4px 18px rgba(0,0,0,0.22);
+        will-change: transform;
+      }
+      .stick::after { content: ''; position: absolute; inset: 22%; border-radius: 50%; border: 1px dashed rgba(238,246,242,0.18); }
+      .stick .knob {
+        position: absolute; left: 50%; top: 50%; width: 3.4rem; height: 3.4rem; margin: -1.7rem 0 0 -1.7rem; border-radius: 50%; z-index: 1;
+        background: radial-gradient(circle at 40% 35%, rgba(255,255,255,0.96), rgba(214,228,222,0.78));
+        box-shadow: 0 3px 12px rgba(0,0,0,0.35); will-change: transform;
+      }
+      .stick.idle { opacity: 0.34; transition: transform 0.22s ease, opacity 0.22s ease; }
+      .stick.idle .knob { transition: transform 0.16s ease; }
+      #stick-look { display: none; }
+      #stick-look .knob { background: radial-gradient(circle at 40% 35%, #ffe7a6, rgba(242,193,78,0.85)); }
+      #touch-ui.look-stick #stick-look { display: block; }
+
+      .t-btn {
+        appearance: none; position: absolute; display: grid; place-items: center; padding: 0; border-radius: 50%; cursor: pointer;
+        border: 1.5px solid rgba(238,246,242,0.36); background: rgba(11,21,19,0.52); color: var(--text);
+        backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 4px 16px rgba(0,0,0,0.28);
+        transition: transform 0.08s ease, background 0.15s, border-color 0.15s, opacity 0.2s;
+      }
+      .t-btn svg { width: 46%; height: 46%; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+      .t-btn.down { transform: scale(0.9); background: rgba(242,193,78,0.32); }
+      #t-actions { position: absolute; right: calc(var(--safe-r) + 1.1rem); bottom: calc(var(--safe-b) + 1rem); width: 10.6rem; height: 10rem; pointer-events: none; }
+      #t-use { right: 0; bottom: 0; width: 5.3rem; height: 5.3rem; grid-template-rows: 1fr auto; padding: 0.85rem 0 0.7rem; opacity: 0.8; }
+      #t-use svg { width: 2.1rem; height: 2.1rem; }
+      #t-use-label { font-size: 0.64rem; font-weight: 750; letter-spacing: 0.04em; max-width: 4.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #t-use.ready { opacity: 1; background: rgba(242,193,78,0.9); color: var(--ink); border-color: var(--gold); animation: use-pulse 1.6s ease-out infinite; }
+      #t-use.ready.down { background: #ffd56b; }
+      @keyframes use-pulse { 0% { box-shadow: 0 0 0 0 rgba(242,193,78,0.55); } 100% { box-shadow: 0 0 0 16px rgba(242,193,78,0); } }
+      #t-jump, #t-down { right: 6.1rem; bottom: 0.25rem; width: 4.1rem; height: 4.1rem; }
+      #t-run { right: 0.7rem; bottom: 6.15rem; width: 3.7rem; height: 3.7rem; }
+      #t-run.on { background: rgba(79,170,122,0.78); border-color: #8fe0ad; }
+      #t-up { right: 6.3rem; bottom: 5.1rem; width: 3.7rem; height: 3.7rem; }
+      .t-btn.fly { display: none; }
+      #touch-ui.flying .t-btn.fly { display: grid; }
+      #touch-ui.flying #t-jump { display: none; }
+      #t-top { position: absolute; top: calc(var(--safe-t) + 0.6rem); left: 50%; transform: translateX(-50%); display: flex; gap: 0.55rem; }
+      #t-top .t-btn { position: static; width: 2.75rem; height: 2.75rem; }
+      #t-hud.off { opacity: 0.5; }
+      #t-full.on { border-color: var(--gold); color: var(--gold); }
+
+      /* HUD acomodado a una pantalla chica y ancha */
+      html.touch #quick { display: none; }
+      html.touch #objective {
+        left: calc(var(--safe-l) + 0.75rem); top: calc(var(--safe-t) + 0.6rem); width: min(300px, 32vw);
+        padding: 0.55rem 0.7rem 0.5rem; max-height: 40vh; overflow: hidden; cursor: pointer;
+      }
+      html.touch #obj-title { font-size: 0.9rem; margin-bottom: 0.3rem; }
+      html.touch #obj-list li { font-size: 0.76rem; }
+      html.touch #objective.collapsed #obj-list { display: none; }
+      html.touch #objective.collapsed #obj-title { margin-bottom: 0; }
+      html.touch #objective header::after { content: '▾'; color: var(--dim); font-size: 0.7rem; }
+      html.touch #objective.collapsed header::after { content: '▸'; }
+      html.touch #obj-stamps { margin-left: auto; }
+      html.touch #mapbox { right: calc(var(--safe-r) + 0.75rem); top: calc(var(--safe-t) + 0.6rem); width: 7rem; gap: 0.35rem; justify-items: end; }
+      html.touch #minimap { width: 7rem; height: 7rem; }
+      html.touch #room-label { max-width: 10rem; font-size: 0.66rem; }
+      .hud-min #objective, .hud-min #mapbox { display: none; }
+      html.touch #toasts { top: calc(var(--safe-t) + 3.9rem); max-width: 46vw; }
+      html.touch .toast { white-space: normal; font-size: 0.78rem; padding: 0.42rem 0.8rem 0.42rem 0.45rem; }
+      html.touch .toast .ico { width: 22px; height: 22px; }
+      /* El aviso no atrapa el dedo: un pulgar que arranca encima tiene que mover el
+         joystick. Tocarlo igual usa (TouchControls mira si el toque cayó sobre él). */
+      html.touch #prompt { bottom: calc(var(--safe-b) + 1.2rem); max-width: 44vw; padding: 0.45rem 0.95rem 0.45rem 0.45rem; font-size: 0.86rem; pointer-events: none; }
+      html.touch #prompt-target { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      .tap-ico { width: 1.9rem; height: 1.9rem; border-radius: 50%; display: grid; place-items: center; background: var(--gold); color: var(--ink); flex: none; }
+      .tap-ico svg { width: 60%; height: 60%; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+      html.touch #bark { bottom: calc(var(--safe-b) + 4.4rem); max-width: 50vw; font-size: 0.82rem; pointer-events: none; }
+      html.touch #drill { right: calc(var(--safe-r) + 0.75rem); top: calc(var(--safe-t) + 10rem); font-size: 0.74rem; pointer-events: none; }
+      html.touch #chapter { padding: 1rem 2.5rem; }
+      html.touch #stats { left: 50%; transform: translateX(-50%); bottom: calc(var(--safe-b) + 4.2rem); text-align: center; }
+
+      /* diálogo: ancho, bajo y con opciones en columnas para que no tape la escena */
+      html.touch #dialogue {
+        bottom: calc(var(--safe-b) + 0.6rem); width: min(780px, calc(100vw - var(--safe-l) - var(--safe-r) - 1.5rem));
+        padding: 0.65rem 0.9rem 0.55rem; grid-template-columns: 2.7rem 1fr; gap: 0 0.75rem;
+        max-height: calc(100dvh - var(--safe-t) - 4.4rem); overflow: auto;
+      }
+      html.touch #dlg-portrait { width: 2.7rem; height: 2.7rem; font-size: 0.92rem; }
+      html.touch #dlg-text { font-size: 0.94rem; line-height: 1.45; min-height: 2.9em; margin: 0.2rem 0 0.1rem; }
+      html.touch #dlg-choices { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0.35rem; margin-top: 0.3rem; }
+      html.touch .choice { min-height: 2.8rem; font-size: 0.86rem; padding: 0.45rem 0.7rem; }
+      html.touch .choice b { display: none; }
+
+      /* actividad: dos columnas (consigna y tablero | opciones) en lugar de una torre */
+      html.touch #activity:not(.compact) {
+        width: min(880px, calc(100vw - var(--safe-l) - var(--safe-r) - 1.5rem));
+        max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 1rem); padding: 0.8rem 1rem;
+        display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 1.1rem; align-content: start;
+        grid-template-areas: "head head" "title choices" "text choices" "canvas choices" "feedback choices";
+        grid-template-rows: auto auto auto auto 1fr;
+      }
+      html.touch #activity.hidden { display: none; }
+      html.touch #activity:not(.compact) #act-head { grid-area: head; }
+      html.touch #activity:not(.compact) #act-title { grid-area: title; font-size: 1.05rem; }
+      html.touch #activity:not(.compact) #act-text { grid-area: text; font-size: 0.84rem; }
+      html.touch #activity:not(.compact) #act-canvas { grid-area: canvas; }
+      html.touch #activity:not(.compact) #act-feedback { grid-area: feedback; font-size: 0.82rem; }
+      html.touch #activity:not(.compact) #act-choices { grid-area: choices; align-content: start; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); }
+      html.touch #activity.compact { width: min(680px, calc(100vw - var(--safe-l) - var(--safe-r) - 1.5rem)); bottom: calc(var(--safe-b) + 0.6rem); }
+
+      /* ficha: centrada (al costado chocaba con el mapa) */
+      html.touch #card { top: 50%; right: auto; left: 50%; transform: translate(-50%, -50%); width: min(400px, 60vw); max-height: calc(100dvh - 2rem); overflow: auto; }
+      html.touch #card.hidden { transform: translate(-50%, -46%); }
+
+      /* menú de pausa a pantalla completa */
+      html.touch #pause .sheet {
+        width: calc(100vw - var(--safe-l) - var(--safe-r) - 1rem); height: calc(100dvh - var(--safe-t) - var(--safe-b) - 1rem);
+        max-width: 980px; max-height: 640px; grid-template-columns: 12.5rem 1fr;
+      }
+      html.touch #pause nav { padding: 0.7rem 0.6rem; gap: 0.15rem; overflow: auto; }
+      html.touch #pause nav .brand { margin: 0 0 0.45rem 0.4rem; }
+      html.touch .tab { min-height: 2.6rem; padding: 0.5rem 0.75rem; font-size: 0.86rem; }
+      html.touch #pause .pane { padding: 0.9rem 1.1rem; }
+      html.touch #pause .pane h2 { margin-bottom: 0.6rem; }
+      html.touch .setting { min-height: 3rem; padding: 0.35rem 0; font-size: 0.86rem; }
+      html.touch .setting .pill { min-width: 8.5rem; min-height: 2.5rem; }
+      html.touch .time input[type='range'] { width: 9.5rem; height: 6px; }
+      html.touch .time input[type='range']::-webkit-slider-thumb { width: 24px; height: 24px; }
+      html.touch .time input[type='range']::-moz-range-thumb { width: 24px; height: 24px; }
+      #t-sens { background: linear-gradient(90deg, var(--leaf), var(--gold)) !important; }
+
+      /* título: dos columnas (marca y relato | botones) para que entre a lo alto */
+      html.touch #title {
+        padding: calc(var(--safe-t) + 1.1rem) calc(var(--safe-r) + 1.6rem) calc(var(--safe-b) + 1.1rem) calc(var(--safe-l) + 1.6rem);
+        grid-template-columns: minmax(0, 1.15fr) minmax(15rem, 0.85fr); grid-template-areas: "brand menu" "tag menu" "tag fine";
+        column-gap: 2.2rem; align-items: end; justify-items: stretch;
+      }
+      html.touch #title .brand { grid-area: brand; }
+      html.touch #title .tag { grid-area: tag; margin: 0.3rem 0 0; font-size: 0.88rem; line-height: 1.5; }
+      html.touch #title .menu-buttons { grid-area: menu; min-width: 0; }
+      html.touch #title .fine { grid-area: fine; margin-top: 0.7rem; }
+      html.touch .seal { width: 3.6rem; height: 3.6rem; font-size: 1.35rem; border-width: 2px; }
+      html.touch #title .brand h1 { font-size: clamp(1.4rem, 4.2vw, 2.4rem); }
+      html.touch .big-btn { min-height: 3rem; padding: 0.65rem 1rem; font-size: 0.92rem; }
+      html.touch #credits .inner { gap: 0.6rem; }
+      html.touch #credits-roll { height: 6.5rem; }
+
+      /* teléfono vertical: el juego pide girarlo */
+      #rotate {
+        position: fixed; inset: 0; z-index: 100; display: none; place-content: center; justify-items: center; gap: 0.8rem;
+        padding: 2rem; text-align: center; background: radial-gradient(110% 90% at 50% 20%, #1b3a33 0%, #0e1a17 65%);
+      }
+      @media (orientation: portrait) { html.touch #rotate { display: grid; } }
+      #rotate svg { width: 4.6rem; height: 4.6rem; fill: none; stroke: var(--gold); stroke-width: 1.5; stroke-linecap: round; animation: tilt 2.6s ease-in-out infinite; }
+      @keyframes tilt { 0%, 22% { transform: rotate(0deg); } 50%, 78% { transform: rotate(-90deg); } 100% { transform: rotate(0deg); } }
+      #rotate b { font-size: 1.25rem; letter-spacing: 0.02em; }
+      #rotate span { color: var(--dim); font-size: 0.92rem; line-height: 1.5; max-width: 17rem; }
+
+      @media (max-height: 500px) {
+        html.touch #obj-list li small { display: none; }
+        html.touch #title .tag { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+      }
     </style>
   </head>
   <body>
@@ -367,14 +561,14 @@
       <div id="drill" hidden><span>Simulacro · seguí las flechas verdes</span><b id="drill-time">0:00</b></div>
       <div id="chapter" class="hidden"><div id="chapter-kicker"></div><h2 id="chapter-title"></h2></div>
       <div id="bark" class="hidden"><span id="bark-name"></span><span id="bark-text"></span></div>
-      <button id="prompt" class="hidden" type="button"><kbd>E</kbd><span id="prompt-verb"></span><span id="prompt-target"></span></button>
+      <button id="prompt" class="hidden" type="button"><kbd>E</kbd><i class="tap-ico touch-only"><svg viewBox="0 0 24 24"><path d="M9 11.5V5a1.6 1.6 0 0 1 3.2 0v5.5"/><path d="M12.2 10V8.6a1.6 1.6 0 0 1 3.2 0V11"/><path d="M15.4 10.6a1.6 1.6 0 0 1 3.2 0v3.9a6 6 0 0 1-6 6h-1a5.6 5.6 0 0 1-4.4-2.1l-2.7-3.6a1.5 1.5 0 0 1 2.3-2l1.4 1.6"/></svg></i><span id="prompt-verb"></span><span id="prompt-target"></span></button>
 
       <section id="dialogue" class="glass hidden" role="dialog" aria-live="polite">
         <div id="dlg-portrait"></div>
         <div id="dlg-head"><span id="dlg-name"></span><span id="dlg-role"></span></div>
         <p id="dlg-text"></p>
         <div id="dlg-choices"></div>
-        <div id="dlg-next"><kbd>E</kbd> continuar</div>
+        <div id="dlg-next"><kbd>E</kbd> <span class="touch-only">Tocá para&nbsp;</span>continuar</div>
       </section>
 
       <section id="activity" class="glass hidden" role="dialog" aria-modal="true">
@@ -401,6 +595,30 @@
     <div id="stats"></div>
     <div id="vr-status" role="status" aria-live="polite" hidden></div>
 
+    <!-- ==================== controles táctiles (celular, ver TouchControls) ==================== -->
+    <div id="touch-zone" hidden></div>
+    <div id="touch-ui" hidden>
+      <div id="stick-move" class="stick idle"><i class="knob"></i></div>
+      <div id="stick-look" class="stick idle"><i class="knob"></i></div>
+      <div id="t-actions">
+        <button id="t-use" class="t-btn" type="button" aria-label="Usar"><svg viewBox="0 0 24 24"><path d="M9 11.5V5a1.6 1.6 0 0 1 3.2 0v5.5"/><path d="M12.2 10V8.6a1.6 1.6 0 0 1 3.2 0V11"/><path d="M15.4 10.6a1.6 1.6 0 0 1 3.2 0v3.9a6 6 0 0 1-6 6h-1a5.6 5.6 0 0 1-4.4-2.1l-2.7-3.6a1.5 1.5 0 0 1 2.3-2l1.4 1.6"/></svg><span id="t-use-label">Usar</span></button>
+        <button id="t-jump" class="t-btn" type="button" aria-label="Saltar"><svg viewBox="0 0 24 24"><path d="M12 18V6"/><path d="M6.5 11 12 5.5l5.5 5.5"/><path d="M6 20.5h12"/></svg></button>
+        <button id="t-run" class="t-btn" type="button" aria-label="Correr" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="m5 17 5-5-5-5"/><path d="m12.5 17 5-5-5-5"/></svg></button>
+        <button id="t-up" class="t-btn fly" type="button" aria-label="Subir"><svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>
+        <button id="t-down" class="t-btn fly" type="button" aria-label="Bajar"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+      </div>
+      <div id="t-top">
+        <button id="t-menu" class="t-btn" type="button" aria-label="Menú"><svg viewBox="0 0 24 24"><path d="M4.5 7h15M4.5 12h15M4.5 17h15"/></svg></button>
+        <button id="t-hud" class="t-btn" type="button" aria-label="Mostrar u ocultar objetivo y mapa" aria-pressed="true"><svg viewBox="0 0 24 24"><path d="M2.5 12S6 6 12 6s9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.6"/></svg></button>
+        <button id="t-full" class="t-btn" type="button" aria-label="Pantalla completa"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+      </div>
+    </div>
+    <div id="rotate" role="alert">
+      <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.2"/><path d="M11 18.5h2"/></svg>
+      <b>Girá el teléfono</b>
+      <span>Recorrido 40 se juega con la pantalla horizontal: un pulgar camina y el otro mira.</span>
+    </div>
+
     <!-- ==================== menú de pausa ==================== -->
     <div id="pause" class="hidden" role="dialog" aria-modal="true" aria-label="Menú">
       <div class="sheet glass">
@@ -418,7 +636,7 @@
             <h2>En pausa</h2>
             <p class="fine" id="pause-summary"></p>
             <div class="menu-buttons">
-              <button class="big-btn primary" id="pause-resume" type="button">Seguir jugando <span>Esc</span></button>
+              <button class="big-btn primary" id="pause-resume" type="button">Seguir jugando <span class="desk-only">Esc</span></button>
               <button class="big-btn" data-goto="pasaporte" type="button">Ver el Pasaporte 40 <span>sellos, lugares y voces</span></button>
             </div>
           </section>
@@ -441,10 +659,18 @@
             <div class="setting"><span>Explorar libre (abre todas las zonas)</span><button class="pill" id="btn-free" aria-pressed="false">Desactivado</button></div>
             <div class="setting"><span>Métricas de rendimiento</span><button class="pill" id="btn-metrics" aria-pressed="false">Ocultas</button></div>
             <div class="setting"><span>Realidad virtual</span><button class="pill accent" id="btn-vr-menu" type="button">Entrar en VR</button></div>
+            <div class="touch-only">
+              <h3>Celular</h3>
+              <div class="setting"><span>Sensibilidad de la cámara</span><label class="time" for="t-sens"><span id="t-sens-label">1,0×</span><input id="t-sens" type="range" min="0.4" max="2.2" step="0.1" value="1" /></label></div>
+              <div class="setting"><span>Mirar con</span><button class="pill" id="btn-look-mode" type="button">Deslizar</button></div>
+              <div class="setting"><span>Ahorro de batería (30 cuadros por segundo)</span><button class="pill" id="btn-battery" type="button" aria-pressed="false">Desactivado</button></div>
+              <div class="setting"><span>Vibración</span><button class="pill" id="btn-haptics" type="button" aria-pressed="true">Activada</button></div>
+              <div class="setting"><span>Pantalla completa</span><button class="pill" id="btn-fullscreen" type="button" aria-pressed="false">Desactivada</button></div>
+            </div>
           </section>
           <section data-pane="controles" hidden>
             <h2>Controles</h2>
-            <div id="help">
+            <div id="help" class="desk-only">
               <div id="help-walk">
                 <div><b>Caminar</b> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> · <b>Correr</b> <kbd>Shift</kbd> · <b>Saltar</b> <kbd>Espacio</kbd></div>
                 <div><b>Mirar</b> clic + arrastrar · <b>Interactuar / hablar</b> <kbd>E</kbd></div>
@@ -454,6 +680,12 @@
               </div>
               <div><b>Elegir respuesta</b> <kbd>1</kbd>–<kbd>6</kbd> o clic · <b>Pasaporte</b> <kbd>Tab</kbd> · <b>Menú</b> <kbd>Esc</kbd></div>
               <div><b>Caminar / volar</b> <kbd>F</kbd></div>
+            </div>
+            <div id="help-touch" class="touch-only">
+              <div><b>Caminar</b> apoyá el pulgar en la mitad izquierda y arrastralo · <b>Mirar</b> deslizá en la mitad derecha</div>
+              <div><b>Interactuar / hablar</b> tocá a la persona u objeto, o el botón dorado · <b>Saltar</b> y <b>Correr</b> botones de la derecha</div>
+              <div><b>Diálogos</b> tocá la pantalla para avanzar · <b>Menú</b> ≡ arriba · <b>Ocultar objetivo y mapa</b> el ojo</div>
+              <div><b>Volar</b> Ajustes → Movimiento (aparecen subir y bajar)</div>
             </div>
             <h3>Realidad virtual</h3>
             <p class="fine">Stick izquierdo: caminar (apretalo para correr). Stick derecho: girar a los costados y, hacia adelante, apuntar un salto. Apuntá con el láser a una persona u objeto y apretá el gatillo para interactuar. Levantá la mano izquierda para ver dónde estás y tu objetivo.</p>
@@ -485,7 +717,7 @@
         <button class="big-btn" id="title-start" type="button">Nueva partida <span>empieza en Laprida</span></button>
         <button class="big-btn" id="title-vr" type="button" hidden>Jugar en VR <span>visor conectado</span></button>
       </div>
-      <p class="fine">WASD para caminar · clic y arrastrar para mirar · E para interactuar · Esc para el menú. Personajes ficticios; escuela reconstruida desde su plano y el recorrido virtual de 2020.</p>
+      <p class="fine"><span class="desk-only">WASD para caminar · clic y arrastrar para mirar · E para interactuar · Esc para el menú. </span><span class="touch-only">Pulgar izquierdo para caminar · derecho para mirar · tocá a las personas para hablar. </span>Personajes ficticios; escuela reconstruida desde su plano y el recorrido virtual de 2020.</p>
     </div>
 
     <!-- ==================== créditos finales ==================== -->
@@ -496,7 +728,7 @@
         <p class="fine" id="credits-speech"></p>
         <div id="credits-summary"></div>
         <div id="credits-roll"><div id="credits-text"></div></div>
-        <button class="big-btn primary" id="credits-close" type="button">Seguir explorando la escuela <span>Esc</span></button>
+        <button class="big-btn primary" id="credits-close" type="button">Seguir explorando la escuela <span class="desk-only">Esc</span></button>
       </div>
     </div>
 

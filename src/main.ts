@@ -1,6 +1,7 @@
 import { Engine } from '@babylonjs/core/Engines/engine';
 import { Scene } from '@babylonjs/core/scene';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
+import type { FreeCameraMouseInput } from '@babylonjs/core/Cameras/Inputs/freeCameraMouseInput';
 
 // Efectos secundarios de Babylon: registran componentes que usamos.
 import '@babylonjs/core/Materials/standardMaterial';
@@ -9,10 +10,11 @@ import '@babylonjs/core/Culling/ray';
 
 import { City } from './world/City';
 import { DEFAULT_HOUR, Environment, formatHour } from './world/Environment';
-import { QualityManager, TIER_ORDER, type QualityTier } from './core/QualityManager';
+import { QualityManager, TIER_ORDER, TOUCH_TIER_ORDER, type QualityTier } from './core/QualityManager';
 import { createFlyCamera } from './player/FlyCamera';
 import { RenderPipeline } from './core/RenderPipeline';
 import { PlayerController, type MoveMode } from './player/PlayerController';
+import { VirtualInput } from './player/VirtualInput';
 import { Life } from './world/Life';
 import { Population } from './world/people/Population';
 import { Soundscape } from './audio/Soundscape';
@@ -21,6 +23,8 @@ import { isHeadsetBrowser, isVrSupported } from './vr/isVrSupported';
 import type { XRControls } from './vr/XRSetup';
 import { seedFromString } from './utils/rng';
 import { Hud } from './ui/Hud';
+import type { TouchControls } from './ui/TouchControls';
+import { classifyDevice, detectTouchMode, evenCap, fovForAspect, mobileRenderScale, readDeviceInfo, sampleRefresh } from './ui/device';
 import { GameDirector } from './game/GameDirector';
 import type { PlayerApi, WorldPoint } from './game/contracts';
 import { SCHOOL, toWorld } from './world/SchoolLayout';
@@ -81,10 +85,18 @@ const seed = seedParam
 
 // -------------------------------------------------------------------- arranque
 
+// Celular o tableta: controles táctiles, perfil 'Móvil', pantalla horizontal.
+// Se decide antes del motor: cambia las opciones del contexto WebGL.
+const touchMode = detectTouchMode();
+// Ya mismo: la pantalla de carga y el aviso de girar el teléfono son del modo celular.
+if (touchMode) document.documentElement.classList.add('touch');
+
 const engine = new Engine(canvas, true, {
   antialias: true,
   stencil: false,
-  powerPreference: 'high-performance',
+  // En un teléfono hay una sola GPU: pedir "alto rendimiento" sólo le
+  // impide al sistema bajar los relojes cuando sobra.
+  powerPreference: touchMode ? 'default' : 'high-performance',
   preserveDrawingBuffer: false,
 });
 engine.setHardwareScalingLevel(1);
@@ -101,17 +113,59 @@ scene.skipPointerMovePicking = true;
 // ?quality=low|vr|balanced|high fuerza un perfil para comparar equipos.
 const qualityParam = new URLSearchParams(location.search).get('quality') as QualityTier | null;
 const initialTier: QualityTier =
-  qualityParam && (TIER_ORDER.includes(qualityParam) || qualityParam === 'vr')
+  qualityParam && (TIER_ORDER.includes(qualityParam) || qualityParam === 'vr' || qualityParam === 'mobile')
     ? qualityParam
-    : QualityManager.suggestInitial(canvas);
+    : touchMode
+      ? 'mobile'
+      : QualityManager.suggestInitial(canvas);
 const quality = new QualityManager(engine, scene, initialTier);
 const camera = createFlyCamera(scene, canvas);
+
+/**
+ * Lo que se decidió para este celular (lo leen las herramientas de prueba).
+ * La resolución sale de la gama y la densidad de la pantalla; un equipo de
+ * entrada arranca además un escalón abajo en la calidad adaptativa.
+ */
+const device = touchMode
+  ? (() => {
+      const gpu = engine.getGlInfo().renderer;
+      const cls = classifyDevice(readDeviceInfo(gpu));
+      const w = Math.max(window.innerWidth, window.innerHeight);
+      const h = Math.min(window.innerWidth, window.innerHeight);
+      const renderScale = mobileRenderScale(cls, w, h, window.devicePixelRatio || 1);
+      quality.setCycle(TOUCH_TIER_ORDER);
+      quality.setDeviceScaling(1 / renderScale);
+      if (cls === 'weak') quality.startAdaptive(1);
+      return { touch: true, cls, renderScale, gpu };
+    })()
+  : { touch: false, cls: null, renderScale: 1, gpu: '' };
+
+if (touchMode) {
+  // La cámara la mueven los controles táctiles. La entrada táctil propia de
+  // Babylon caminaba (arrastrar hacia arriba = avanzar) salteando la
+  // colisión, y el mouse no debe reaccionar a los dedos.
+  camera.inputs.removeByType('FreeCameraTouchInput');
+  const mouse = camera.inputs.attached['mouse'] as FreeCameraMouseInput | undefined;
+  if (mouse) mouse.touchEnabled = false;
+  fitFov();
+}
+
+/** Celular: campo visual según la proporción (ver fovForAspect). */
+function fitFov(): void {
+  if (!touchMode) return;
+  const w = canvas.clientWidth || window.innerWidth;
+  const h = canvas.clientHeight || window.innerHeight;
+  camera.fov = fovForAspect(w / Math.max(1, h));
+}
+
+/** Joysticks y botones táctiles → jugador. Sobrevive a las reconstrucciones. */
+const virtualInput = new VirtualInput();
 
 const renderPipeline = new RenderPipeline(scene, camera);
 
 // El audio arranca suspendido: ningún navegador deja sonar nada hasta que haya
 // un gesto del usuario. El Soundscape se despierta solo con el primer clic.
-const sound = new Soundscape({ lowPower: initialTier === 'vr' });
+const sound = new Soundscape({ lowPower: initialTier === 'vr' || touchMode });
 
 // El HUD vive toda la sesión: cada director nuevo (al cambiar la calidad) se
 // vuelve a enganchar al mismo.
@@ -152,6 +206,65 @@ const playerApi: PlayerApi = {
   },
 };
 
+/**
+ * Controles del celular (sólo con pantalla táctil como puntero principal).
+ * Import dinámico, como WebXR: el escritorio no los descarga.
+ */
+let touch: TouchControls | null = null;
+async function setupTouch(): Promise<void> {
+  const { TouchControls } = await import('./ui/TouchControls');
+  touch = new TouchControls({
+    scene,
+    camera,
+    input: virtualInput,
+    hud,
+    inXR,
+    click: (pitch) => sound.click(pitch),
+    onPowerChange: () => updateFrameCap(),
+    // El dedo señala: un rayo desde la cámara por ese punto.
+    tapWorld: (x, y) => {
+      if (!director) return false;
+      const rect = canvas.getBoundingClientRect();
+      const ray = scene.createPickingRay(x - rect.left, y - rect.top, null, camera);
+      return director.tapAt(ray.origin, ray.direction);
+    },
+  });
+  touch.setFlying(player?.mode === 'fly');
+  updateFrameCap();
+}
+
+/**
+ * Tope de cuadros por segundo en el celular (batería y temperatura).
+ *
+ * Muchos teléfonos refrescan a 90 o 120 Hz: sin tope, la GPU dibuja el doble
+ * para una diferencia que en este juego no se ve. Se apunta a 60 jugando; a
+ * 30 con el menú, el título o el ahorro de batería; a 10 con el teléfono
+ * vertical (la escena está tapada). Siempre un divisor exacto de la
+ * frecuencia medida de la pantalla (ver evenCap): 60 en 120 Hz, 45 en 90 Hz.
+ * Dentro del visor no hay tope: lo marca él. `engine.maxFPS` saltea el
+ * cuadro entero, así que el tiempo entre cuadros que ven el jugador y la
+ * animación es el real.
+ */
+let refreshHz = 60;
+let frameCap = -1;
+function updateFrameCap(): void {
+  if (!touch) return;
+  let wanted = touch.lowPower ? 30 : 60;
+  if (touch.isPortrait) wanted = 10;
+  else if (hud.paused || director?.atTitle) wanted = 30;
+  const cap = inXR() ? 0 : evenCap(refreshHz, wanted);
+  if (cap === frameCap) return;
+  frameCap = cap;
+  engine.maxFPS = cap > 0 ? cap : undefined;
+  // La calidad adaptativa mide contra el tope: a 30 por elección no hay que bajar nada.
+  quality.setFrameCap(cap > 0 ? cap : null);
+}
+
+if (touchMode) {
+  // Otra app, pantalla apagada: el audio no sigue gastando batería.
+  document.addEventListener('visibilitychange', () => sound.setBackground(document.hidden));
+}
+
 // Gancho de depuración: deja que herramientas externas (tools/shoot.mjs) muevan
 // la cámara para capturar la escuela desde ángulos concretos.
 Object.assign(window as unknown as Record<string, unknown>, {
@@ -181,6 +294,12 @@ Object.assign(window as unknown as Record<string, unknown>, {
   },
   __setPost: (mode: 'off' | 'lite' | 'balanced' | 'high') => renderPipeline.apply(mode),
   __windClock: () => city?.windClock ?? -1,
+  // Modo celular: gama, escala de render y controles, para tools/test-mobile.mjs.
+  __device: device,
+  __touch: () => touch,
+  __input: virtualInput,
+  __quality: quality,
+  __refreshHz: () => refreshHz,
 });
 
 // El director vigente (cambia al reconstruir), para guiones de prueba.
@@ -194,6 +313,7 @@ window.addEventListener('pagehide', (event) => {
   life?.dispose();
   people?.dispose();
   player?.dispose();
+  touch?.dispose();
   hud.dispose();
   renderPipeline.dispose();
   environment?.dispose();
@@ -317,7 +437,7 @@ async function buildCity(newSeed: number): Promise<void> {
   people.setSchoolPhase('entrada');
 
   // Jugador con colisión y modo caminar/volar.
-  player = new PlayerController(scene, camera, city.index);
+  player = new PlayerController(scene, camera, city.index, virtualInput);
   player.onModeChanged(updateModeButton);
   player.onFootstep((running) => sound.step(running));
 
@@ -437,11 +557,13 @@ function updateModeButton(mode: MoveMode): void {
   btnMode.textContent = mode === 'walk' ? 'Modo: Caminar' : 'Modo: Volar';
   helpWalk.hidden = mode !== 'walk';
   helpFly.hidden = mode === 'walk';
+  touch?.setFlying(mode === 'fly');
 }
 
 // ---------------------------------------------------------------------- inicio
 
 async function start(): Promise<void> {
+  if (touchMode) await setupTouch();
   updateQualityButton();
   if (!sound.available) {
     btnSound.disabled = true;
@@ -465,6 +587,7 @@ async function start(): Promise<void> {
       engine.getDeltaTime(),
       scene.activeCamera?.getClassName().includes('WebXR') ?? false,
     );
+    updateFrameCap();
     if (adaptiveLevel !== null) {
       people?.setAdaptiveLevel(adaptiveLevel);
       environment?.setAdaptiveLevel(adaptiveLevel);
@@ -476,10 +599,22 @@ async function start(): Promise<void> {
     }
     scene.render();
   });
-  window.addEventListener('resize', () => engine.resize());
+  window.addEventListener('resize', () => {
+    engine.resize();
+    fitFov();
+  });
   setInterval(updateStats, 500);
 
   boot.classList.add('hidden');
+
+  // Frecuencia real de la pantalla del celular, ya con la escuela armada (mientras
+  // carga, los cuadros duran lo que cada paso de la construcción).
+  if (touch) {
+    sampleRefresh((hz) => {
+      refreshHz = hz;
+      updateFrameCap();
+    });
+  }
 
   // VR en segundo plano: si no hay visor, la experiencia de escritorio ya funciona.
   if (await isVrSupported()) {
@@ -522,7 +657,7 @@ async function start(): Promise<void> {
           vrIdle('Salir de VR');
         } else if (state === WebXRState.NOT_IN_XR) {
           vrIdle();
-          sound.setLowPower(quality.current === 'vr');
+          sound.setLowPower(quality.current === 'vr' || touchMode);
           const previous = tierBeforeVr;
           tierBeforeVr = null;
           if (previous && previous !== quality.current) {

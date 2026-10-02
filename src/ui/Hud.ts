@@ -193,6 +193,83 @@ export class Hud {
     return this.pauseOpen;
   }
 
+  /** ¿Hay algo para usar ahora (el aviso de interacción está a la vista)? */
+  get promptActive(): boolean {
+    return this.promptAction !== null;
+  }
+
+  /**
+   * El botón de acción del celular: lo mismo que `E`. Avanza el diálogo,
+   * elige la única opción de una actividad, cierra la ficha o usa lo que
+   * se está mirando. Devuelve si hizo algo.
+   */
+  primaryAction(): boolean {
+    if (this.titleOpen || this.pauseOpen || this.creditsOpen) return false;
+    if (this.dlgOpen) {
+      this.advanceDialogue();
+      return true;
+    }
+    if (this.actOpen && this.actView) {
+      const only = this.singleChoice(this.actView);
+      if (only < 0) return false;
+      this.actPick?.(only);
+      return true;
+    }
+    if (this.cardOpen) {
+      this.closeCard();
+      return true;
+    }
+    if (!this.promptAction) return false;
+    this.promptAction();
+    return true;
+  }
+
+  /**
+   * Toque fuera de los paneles (celular): termina de escribir la línea o
+   * avanza una sin opciones, y cierra la ficha. Con opciones a la vista no
+   * elige nada: hay que tocar una.
+   */
+  tapAdvance(): boolean {
+    if (this.pauseOpen || this.titleOpen || this.creditsOpen) return false;
+    if (this.dlgOpen) {
+      if (this.dlgTyping) {
+        this.finishTyping();
+        return true;
+      }
+      if (this.dlgChoices.length > 0) return false;
+      this.pickDialogue(0);
+      return true;
+    }
+    if (this.cardOpen) {
+      this.closeCard();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * HUD mínimo (celular): sin objetivo ni mapa, sólo lo que pasa. Se
+   * recuerda entre sesiones.
+   */
+  setMinimal(on: boolean): void {
+    document.body.classList.toggle('hud-min', on);
+    try {
+      localStorage.setItem('cimdip-hud-min', on ? '1' : '0');
+    } catch {
+      // Preferencia de una sesión, nada más.
+    }
+  }
+
+  get minimal(): boolean {
+    return document.body.classList.contains('hud-min');
+  }
+
+  /** Índice de la única opción habilitada que avanza (Continuar, Siguiente), o −1. */
+  private singleChoice(view: ActivityView): number {
+    const enabled = view.choices.map((c, i) => [c, i] as const).filter(([c]) => !c.disabled && !c.exit);
+    return enabled.length === 1 ? enabled[0][1] : -1;
+  }
+
   /** Oculta todo el HUD (capturas limpias: `?hud=0`). */
   setVisible(on: boolean): void {
     document.body.classList.toggle('hud-hidden', !on);
@@ -736,9 +813,9 @@ export class Hud {
         if (view.choices[i] && !view.choices[i].disabled) this.actPick?.(i);
       } else if (advance) {
         // Con una sola opción habilitada (Continuar, Siguiente), E la elige.
-        const enabled = view.choices.map((c, i) => [c, i] as const).filter(([c]) => !c.disabled && !c.exit);
+        const only = this.singleChoice(view);
         consume(e);
-        if (enabled.length === 1) this.actPick?.(enabled[0][1]);
+        if (only >= 0) this.actPick?.(only);
       }
       return;
     }

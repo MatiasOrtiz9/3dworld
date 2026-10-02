@@ -39,6 +39,8 @@ cortando la red de verdad y recargando — 0 peticiones fallidas.
 | `/?seed=42` | Ciudad reproducible (número o texto) |
 | `/?quality=low` | Fuerza el perfil de bajo consumo para equipos modestos |
 | `/?quality=vr` | Fuerza el perfil VR |
+| `/?quality=mobile` | Fuerza el perfil de celular |
+| `/?touch=1` | Fuerza los controles táctiles (para probarlos en la PC) |
 
 En escritorio, la calidad inicial se estima con núcleos, memoria disponible y
 GPU. Los equipos modestos arrancan en **Baja**: renderiza a resolución reducida,
@@ -59,6 +61,28 @@ vegetación y peatones. El botón **Calidad** permite pasar por Baja, Media y Al
 | **Inspeccionar** | **clic sobre un edificio** |
 | Cerrar panel | `Esc` |
 | Ocultar ayuda | `H` |
+
+### Celular (pantalla horizontal)
+
+Se detecta solo: con la pantalla táctil como puntero principal aparecen los
+controles y el perfil de calidad **Móvil**. Con el teléfono vertical, el juego
+pide girarlo; al empezar pasa a pantalla completa y fija la orientación
+horizontal donde el navegador lo permite (Android; en iPhone, agregándolo a la
+pantalla de inicio).
+
+| | |
+|---|---|
+| Caminar | pulgar izquierdo: joystick flotante, analógico |
+| Mirar | deslizar en la mitad derecha (o joystick, en Ajustes) |
+| Hablar / usar | tocar a la persona u objeto, o el botón dorado **Usar** |
+| Saltar / correr | botones de la derecha (correr queda puesto mientras caminás) |
+| Subir / bajar | botones que aparecen al volar |
+| Menú · ocultar objetivo y mapa · pantalla completa | botones de arriba |
+| Diálogos | tocar la pantalla para avanzar |
+
+En **Ajustes → Celular**: sensibilidad de la cámara, mirar deslizando o con
+joystick, ahorro de batería (30 cuadros por segundo), vibración y pantalla
+completa.
 
 ---
 

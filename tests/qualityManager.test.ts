@@ -85,7 +85,7 @@ describe('QualityManager adaptativo', () => {
 
 describe('perfiles de calidad', () => {
   it('todos los perfiles conservan el contrato y los tamaños son coherentes', () => {
-    for (const tier of [...TIER_ORDER, 'vr'] as const) {
+    for (const tier of [...TIER_ORDER, 'vr', 'mobile'] as const) {
       const p = QUALITY[tier];
       // `shadows` se conserva por compatibilidad y tiene que coincidir con el modo.
       expect(p.shadows).toBe(p.shadowMode !== 'off');

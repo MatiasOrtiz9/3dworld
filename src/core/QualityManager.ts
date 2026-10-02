@@ -4,7 +4,7 @@ import type { BaseTexture } from '@babylonjs/core/Materials/Textures/baseTexture
 import type { RenderQuality } from './RenderPipeline';
 import type { ShadowFilter, ShadowMode } from '../world/Environment';
 
-export type QualityTier = 'low' | 'vr' | 'balanced' | 'high';
+export type QualityTier = 'low' | 'mobile' | 'vr' | 'balanced' | 'high';
 
 export interface QualityProfile {
   label: string;
@@ -47,6 +47,11 @@ export interface QualityProfile {
   crowdSize: number;
   /** Nivel de post-procesado. */
   post: RenderQuality;
+  /**
+   * Fracción del filtrado anisótropo original de cada textura (1 si falta).
+   * En una GPU móvil cada muestra extra se paga en ancho de banda.
+   */
+  anisotropy?: number;
 }
 
 export const QUALITY: Record<QualityTier, QualityProfile> = {
@@ -105,6 +110,35 @@ export const QUALITY: Record<QualityTier, QualityProfile> = {
     // de cada material y el visor ve lo mismo que el escritorio.
     post: 'off',
   },
+  // Celulares y tabletas. Parte del perfil del visor, que ya resolvió una
+  // GPU móvil del mismo orden (el Quest es un Snapdragon) con la escuela
+  // entera a 72 fps y DOS ojos:
+  //
+  //  - SIN post-proceso: el mapeo tonal va dentro de cada material (los
+  //    colores son los del visor, ya verificados) y el antialiasing es el
+  //    MSAA del búfer de pantalla, que en una GPU por mosaicos (todas las de
+  //    celular) se resuelve en la memoria del chip casi gratis. Un pipeline
+  //    HDR sumaría un búfer de color a resolución completa ida y vuelta por
+  //    cuadro: es justo lo que más batería gasta en un teléfono.
+  //  - Sombra estática a 1024: se dibuja una vez por cambio de hora.
+  //  - La resolución no sale de acá: `main.ts` la ajusta por gama y por
+  //    densidad de pantalla (ver ui/device.ts) con `setDeviceScaling`.
+  mobile: {
+    label: 'Móvil',
+    hardwareScaling: 1,
+    shadows: true,
+    shadowMode: 'static',
+    shadowResolution: 1024,
+    shadowFilter: 'low',
+    greenDensity: 0.5,
+    gridSize: 5,
+    maxZ: 600,
+    highDetailFoliage: false,
+    highDetailStreet: false,
+    crowdSize: 70,
+    post: 'off',
+    anisotropy: 0.5,
+  },
   // La sombra estática a 2048 se ve mejor que las cascadas a 1024 (que se
   // redibujaban cuatro veces por cuadro) y no cuesta casi nada por cuadro.
   balanced: {
@@ -139,8 +173,19 @@ export const QUALITY: Record<QualityTier, QualityProfile> = {
   },
 };
 
+/** Con tope de cuadros: tiempo sano para recuperar un escalón, y su techo tras recuperaciones fallidas. */
+const CAPPED_RECOVER_MS = 15000;
+const CAPPED_RECOVER_MAX_MS = 120000;
+
 /** Perfiles de escritorio. VR se activa desde el visor, no desde el ciclo. */
 export const TIER_ORDER: QualityTier[] = ['low', 'balanced', 'high'];
+
+/**
+ * Perfiles que ofrece el botón en un celular. 'Alta' (cascadas de sombra y
+ * SSAO) no tiene sentido en un teléfono; 'Media' queda para tabletas
+ * potentes. Lo que baje de 'Móvil' lo hace solo la calidad adaptativa.
+ */
+export const TOUCH_TIER_ORDER: QualityTier[] = ['mobile', 'balanced'];
 
 /**
  * Niveles de calidad.
@@ -158,6 +203,24 @@ export class QualityManager {
   private slowWindows = 0;
   private healthyMs = 0;
   private readonly textureAnisotropy = new WeakMap<BaseTexture, number>();
+  /** Multiplica la escala de resolución del perfil (celular: densidad y gama del equipo). */
+  private deviceScaling = 1;
+  /** Cuadros por segundo a sostener fuera del visor (celular: el tope vigente). */
+  private desktopTarget = 60;
+  /** Perfiles del botón de calidad (en un celular, otros). */
+  private order: QualityTier[] = TIER_ORDER;
+  /**
+   * Con tope de cuadros (celular): no se puede medir margen por encima del
+   * tope, así que la recuperación se decide de otra manera (ver observeFrame).
+   */
+  private capped = false;
+  /** Tiempo de tirones aislados dentro de la ventana (compilar un shader, GC). */
+  private hitchMs = 0;
+  /** Reloj de la medición (suma de ventanas) y última recuperación. */
+  private clockMs = 0;
+  private recoveredAt = -Infinity;
+  /** Tiempo sano exigido para recuperar un escalón con tope; se duplica si la recuperación falla. */
+  private recoverMs = CAPPED_RECOVER_MS;
 
   constructor(
     private readonly engine: Engine,
@@ -187,15 +250,25 @@ export class QualityManager {
   observeFrame(deltaMs: number, inVr: boolean): number | null {
     // Un cuadro aislado muy largo no debe contar como todo el intervalo, pero
     // permitir hasta 1 s hace que la adaptación responda también a 1–2 fps.
-    this.sampleElapsedMs += Math.min(1000, Math.max(0, deltaMs));
+    const dt = Math.min(1000, Math.max(0, deltaMs));
+    this.sampleElapsedMs += dt;
     this.sampleFrames++;
+    // Celular: un cuadro de un cuarto de segundo es un tirón (un shader que se
+    // compila al entrar a un ambiente, el recolector de basura), no un equipo
+    // lento. Sin descontarlo, un solo tirón bajaba un escalón para siempre.
+    const capped = this.capped && !inVr;
+    if (capped && dt > 250) this.hitchMs += dt;
     if (this.sampleElapsedMs < 2500) return null;
 
-    const fps = (this.sampleFrames * 1000) / this.sampleElapsedMs;
-    const target = inVr ? 72 : 60;
+    // Si los tirones son casi toda la ventana, el equipo ES lento: cuentan.
+    const hitches = capped && this.hitchMs < this.sampleElapsedMs * 0.4 ? this.hitchMs : 0;
+    const fps = (this.sampleFrames * 1000) / Math.max(1, this.sampleElapsedMs - hitches);
+    const target = inVr ? 72 : this.desktopTarget;
     const previous = this.adaptive;
+    this.clockMs += this.sampleElapsedMs;
     this.sampleElapsedMs = 0;
     this.sampleFrames = 0;
+    this.hitchMs = 0;
 
     if (fps < target * 0.72 && this.adaptive < 3) {
       this.adaptive++;
@@ -210,17 +283,25 @@ export class QualityManager {
       }
     } else {
       this.slowWindows = 0;
-      if (fps >= target + 10 && this.adaptive > 0) {
+      // Con tope no hay margen que medir (nunca se pasa del tope): sano es
+      // sostenerlo, y se exige más tiempo. Si una recuperación hace caer los
+      // cuadros enseguida, la próxima espera el doble: así no oscila.
+      const healthy = capped ? fps >= target * 0.96 : fps >= target + 10;
+      if (healthy && this.adaptive > 0) {
         this.healthyMs += 2500;
-        if (this.healthyMs >= 8000) {
+        if (this.healthyMs >= (capped ? this.recoverMs : 8000)) {
           this.adaptive--;
           this.healthyMs = 0;
+          this.recoveredAt = this.clockMs;
         }
       } else {
         this.healthyMs = 0;
       }
     }
 
+    if (capped && this.adaptive > previous && this.clockMs - this.recoveredAt < 15000) {
+      this.recoverMs = Math.min(CAPPED_RECOVER_MAX_MS, this.recoverMs * 2);
+    }
     if (this.adaptive === previous) return null;
     this.applyRuntime();
     return this.adaptive;
@@ -231,8 +312,8 @@ export class QualityManager {
     const p = this.profile;
     const resolutionScale = [1, 1.12, 1.28, 1.5][this.adaptive];
     const distanceScale = [1, 0.86, 0.72, 0.58][this.adaptive];
-    const textureScale = [1, 0.75, 0.5, 0.25][this.adaptive];
-    this.engine.setHardwareScalingLevel(p.hardwareScaling * resolutionScale);
+    const textureScale = [1, 0.75, 0.5, 0.25][this.adaptive] * (p.anisotropy ?? 1);
+    this.engine.setHardwareScalingLevel(p.hardwareScaling * resolutionScale * this.deviceScaling);
     for (const camera of this.scene.cameras) {
       // La cámara del visor fija su propio plano lejano (ver vr/XRSetup) y
       // sus cámaras de ojo heredan el de ella; allí la palanca adaptativa es
@@ -253,18 +334,62 @@ export class QualityManager {
   set(tier: QualityTier): void {
     this.tier = tier;
     this.adaptive = 0;
+    this.resetWindow();
+    this.recoverMs = CAPPED_RECOVER_MS;
+    this.applyRuntime();
+  }
+
+  private resetWindow(): void {
     this.sampleElapsedMs = 0;
     this.sampleFrames = 0;
     this.slowWindows = 0;
     this.healthyMs = 0;
-    this.applyRuntime();
+    this.hitchMs = 0;
   }
 
   /** Siguiente nivel, en ciclo. Para el botón del HUD. */
   cycle(): QualityTier {
-    const i = TIER_ORDER.indexOf(this.tier);
-    this.set(TIER_ORDER[(i + 1) % TIER_ORDER.length]);
+    const i = this.order.indexOf(this.tier);
+    this.set(this.order[(i + 1) % this.order.length]);
     return this.tier;
+  }
+
+  /** Perfiles que recorre `cycle()` (el celular tiene los suyos). */
+  setCycle(order: QualityTier[]): void {
+    this.order = order;
+  }
+
+  /**
+   * Escala de resolución del equipo, encima de la del perfil: <1 dibuja más
+   * píxeles que los CSS (pantallas densas), >1 menos.
+   */
+  setDeviceScaling(scaling: number): void {
+    this.deviceScaling = scaling;
+    this.applyRuntime();
+  }
+
+  /**
+   * Arranca ya en un nivel adaptativo (celular de gama baja): mejor empezar
+   * liviano que mostrar los primeros segundos a tirones.
+   */
+  startAdaptive(level: number): void {
+    this.adaptive = Math.max(0, Math.min(3, Math.round(level)));
+    this.applyRuntime();
+  }
+
+  /**
+   * Tope de cuadros vigente fuera del visor (celular), o `null` sin tope.
+   * Con un tope (ahorro de batería, menú abierto) medir contra 60 bajaría la
+   * calidad sin motivo. Reinicia la ventana de medición: no mezcla cuadros
+   * de antes y después.
+   */
+  setFrameCap(fps: number | null): void {
+    const capped = fps !== null;
+    const target = fps ?? 60;
+    if (capped === this.capped && target === this.desktopTarget) return;
+    this.capped = capped;
+    this.desktopTarget = target;
+    this.resetWindow();
   }
 
   /**
@@ -275,8 +400,8 @@ export class QualityManager {
   static suggestInitial(canvas?: HTMLCanvasElement): QualityTier {
     const nav = navigator as Navigator & { deviceMemory?: number };
     const cores = nav.hardwareConcurrency ?? 4;
-    const mobile = /Android|iPhone|iPad|Quest|Pico/i.test(navigator.userAgent);
-    if (mobile) return 'vr';
+    if (/Quest|Pico/i.test(navigator.userAgent)) return 'vr';
+    if (/Android|iPhone|iPad/i.test(navigator.userAgent)) return 'mobile';
     // Los núcleos no representan la potencia gráfica. La memoria disponible
     // y las GPUs Intel antiguas ayudan a no arrancar con sombras/SSAO en una
     // notebook económica que informa muchos hilos de CPU.

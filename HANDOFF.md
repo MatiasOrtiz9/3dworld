@@ -75,7 +75,9 @@ npm run build
 **Parámetros de URL**
 
 - `?seed=42` — barrio reproducible (número o texto)
-- `?quality=low|vr|balanced|high` — fuerza un perfil de calidad
+- `?quality=low|mobile|vr|balanced|high` — fuerza un perfil de calidad
+- `?touch=1|0` — fuerza o apaga el modo celular (para probarlo en la PC con
+  el mouse: el mouse maneja los joysticks)
 - `?titulo=0|1` — salta o muestra la pantalla de título
 - `?libre=1` — abre todas las zonas (sin las cerraduras de la historia)
 - `?hud=0|1` — oculta o muestra el HUD y los marcadores
@@ -90,6 +92,13 @@ controles), `F` caminar/volar (volando, `E`/`Q` suben y bajan).
 **Controles VR**: stick izquierdo camina (clic: correr), stick derecho gira de
 a 30° / teletransporta / paso atrás, gatillo elige con el láser. Panel de
 muñeca con el lugar y el objetivo.
+
+**Controles de celular** (pantalla horizontal; ver 56–61): joystick flotante
+en la mitad izquierda (analógico), deslizar en la mitad derecha para mirar
+(o un segundo joystick, en Ajustes), tocar a una persona u objeto para
+usarlo, botones Usar (se enciende con algo a mano), Saltar y Correr; volando,
+Subir y Bajar. Arriba: menú, ocultar objetivo y mapa, pantalla completa. En
+un diálogo, un toque avanza. Con el teléfono vertical, el juego pide girarlo.
 
 ---
 
@@ -143,7 +152,11 @@ src/
 ├── audio/                  # Soundscape (AudioApi) + mix, synth, dsp, speech,
 │                           # music, schoolAcoustics
 ├── ui/                     # Hud (DOM), Minimap, draw, input
-├── player/                 # FlyCamera, PlayerController (caminar/volar)
+│   ├── TouchControls.ts    #   celular: joysticks, botones, toques (import dinámico)
+│   ├── joystick.ts         #   matemática de los sticks (pura, con tests)
+│   └── device.ts           #   modo táctil, gama, resolución, FOV, tope de cuadros
+├── player/                 # FlyCamera, PlayerController (caminar/volar),
+│                           # VirtualInput (lo que escriben los controles táctiles)
 ├── vr/                     # XRSetup, XRLocomotion, XRWristPanel,
 │                           # XRComfortVignette, XRControllerModels
 └── utils/rng.ts            # mulberry32 con semilla
@@ -607,6 +620,49 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     largo de las aristas muro/cielorraso. Cuando la calidad adaptativa apaga
     ese desenfoque, la intensidad baja para que no quede granulado.
 
+56. **El modo celular lo decide el puntero PRINCIPAL** (`ui/device.ts`,
+    `(pointer: coarse)` + puntos táctiles), no el agente: una notebook con
+    pantalla táctil sigue siendo de mouse, un iPad que se presenta como Mac
+    es táctil, y los visores quedan afuera. Todo lo del celular cuelga de
+    `touchMode` en `main.ts`; sin él, escritorio y VR no cambian en nada
+    (`tools/test-mobile.mjs` lo comprueba al final).
+
+57. **Los controles táctiles escriben en `VirtualInput`, no mueven la cámara
+    por su cuenta.** `PlayerController` suma el joystick al teclado: colisión
+    por ejes, escaleras, gravedad y pisadas son el mismo código. La entrada
+    táctil propia de Babylon (`FreeCameraTouchInput`) se quita: arrastrar
+    hacia arriba hacía avanzar la cámara salteando la colisión.
+
+58. **Perfil 'Móvil' = el del visor con menos sombra y gente, SIN
+    post-proceso.** El mapeo tonal va en los materiales (colores ya
+    verificados en VR) y el antialiasing es el MSAA del búfer de pantalla,
+    casi gratis en una GPU por mosaicos. La resolución sale de la gama del
+    equipo y un techo de píxeles por cuadro (`mobileRenderScale`), no de la
+    densidad de la pantalla: a densidad 3 nativa, un teléfono dibujaría 9
+    veces los píxeles del escritorio. Un equipo de entrada arranca un escalón
+    abajo en la calidad adaptativa.
+
+59. **Tope de cuadros parejo** (`evenCap`): divisor exacto de la frecuencia
+    MEDIDA de la pantalla (60 en 120 Hz, 45 en 90 Hz). Un tope de 60 en 90 Hz
+    alterna cuadros de 11 y 22 ms y se ve a saltos (se midió el mismo efecto
+    en Chrome headless a 75 Hz). Usa `engine.maxFPS`, que saltea el cuadro
+    entero: el `dt` que ven jugador y animaciones es el real. 30 con menú,
+    título o ahorro de batería; 10 con el teléfono vertical; sin tope en XR.
+
+60. **La calidad adaptativa con tope ignora tirones aislados y se recupera**
+    (`QualityManager.setFrameCap`). Con tope no hay margen que medir y la
+    regla de escritorio (recuperar a `objetivo + 10` fps) no se cumple nunca:
+    un solo shader compilado al entrar a un ambiente bajaba la resolución
+    para siempre. Con tope, un cuadro > 250 ms es un tirón; se recupera tras
+    15 s sosteniendo el tope y, si la recuperación falla, la espera se
+    duplica (no oscila). El escritorio no llama a `setFrameCap`: sin cambios.
+
+61. **El aviso de interacción no atrapa el dedo en el celular**
+    (`pointer-events: none`): un pulgar que arranca encima tiene que mover el
+    joystick. Tocarlo igual usa (TouchControls mira si el toque cayó sobre
+    él). La pantalla completa y el bloqueo horizontal se piden al
+    LEVANTAR el dedo (con toque, `pointerdown` no cuenta como gesto).
+
 ---
 
 ## 6. Estado actual
@@ -634,6 +690,10 @@ los imprime por vista.
 - Audio procedural por zona, voces y música
 - VR: menú del juego en el visor, láser, panel de muñeca, caminata con stick,
   giro, teletransporte, viñeta de confort
+- Celular en horizontal: joysticks, tocar para usar, botones, HUD y menús
+  acomodados, aviso de girar, perfil 'Móvil', tope de cuadros parejo, audio
+  suspendido en segundo plano. Probado en un teléfono EMULADO (Chrome con
+  toques reales por CDP), no en uno físico
 
 ### ⚠️ Limitación crítica de validación
 
@@ -676,6 +736,7 @@ juego delante, mandos, colores, salir, sin errores).
 npx tsc --noEmit && npx eslint src tests --max-warnings=0 && npx vitest run
 node tools/test-interaction.mjs http://localhost:5190/ <carpeta>   # escritorio + juego
 node tools/test-vr.mjs http://localhost:5190/?seed=42 <carpeta>    # Quest 3 emulado
+node tools/test-mobile.mjs http://localhost:5190/ <carpeta>        # celular horizontal
 node tools/school-shots.mjs "<url>&quality=high|vr" <carpeta> <vistas.json>
 ```
 
@@ -685,6 +746,12 @@ node tools/school-shots.mjs "<url>&quality=high|vr" <carpeta> <vistas.json>
 - `test-vr.mjs`: entra desde el título, verifica el menú del juego en el
   visor, empieza la partida y prueba locomoción (ver la limitación del
   emulador en 6), paredes, mandos, salida y consola.
+- `test-mobile.mjs`: un Android emulado de 844 × 390 jugando con los dedos
+  (`Input.dispatchTouchEvent`, varios a la vez): detección y perfil,
+  joystick analógico, mirar, dos pulgares, saltar, correr, tocar a una
+  persona, botón de usar, menú, ajustes, volar, actividad, superposiciones
+  del HUD, aviso vertical, tope de cuadros, un equipo de entrada y que el
+  escritorio NO entre en modo táctil.
 - `school-shots.mjs`: capturas en coordenadas del plano
   (`[{name, eye:[u,y,v], look:[u,y,v], fly, wait}]`) con el coste de cada
   encuadre (draw calls, triángulos, gente dibujada).

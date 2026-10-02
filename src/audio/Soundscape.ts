@@ -414,6 +414,18 @@ export class Soundscape implements AudioApi {
     this.lowPower = on;
   }
 
+  /**
+   * La página quedó en segundo plano (celular: otra app, pantalla apagada).
+   * Suspende el contexto sin tocar la preferencia de silencio; al volver,
+   * reanuda sólo si no estaba silenciado.
+   */
+  setBackground(hidden: boolean): void {
+    const ctx = this.ctx;
+    if (!ctx || this.disposed) return;
+    if (hidden) ctx.suspend().catch(() => undefined);
+    else if (!this.muted) ctx.resume().catch(() => undefined);
+  }
+
   /** 'babble' fuerza el bla-bla aunque haya voz del navegador (o 'auto' para preferirla). */
   setVoiceMode(mode: VoiceMode): void {
     this.voiceMode = mode;
