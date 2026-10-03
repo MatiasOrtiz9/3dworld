@@ -223,6 +223,12 @@ export class RenderPipeline {
     // Un poco más de tolerancia de auto-oclusión: en losas y muros lisos el
     // valor por omisión dejaba un moteado fino.
     ssao.epsilon = 0.03;
+    // Radio recortado cerca de la cámara (radio = min(radius, minZAspect ·
+    // profundidad / near)): con el 0,2 de Babylon y near 0,10, un marco de
+    // puerta o un parante a menos de 1 m dejaba manchones negros borrosos en
+    // el muro de atrás (en el visor la cabeza pasa así de cerca a cada rato).
+    // Con 0,025 el radio entero llega recién a ~2,4 m y a 1 m es de 0,25.
+    ssao.minZAspect = 0.025;
     ssao.expensiveBlur = s.bilateral;
     if (s.bilateral) {
       // A media resolución el filtro bilateral alcanza con pocas muestras;

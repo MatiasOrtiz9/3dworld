@@ -1371,8 +1371,16 @@ export class SchoolBuilder {
       const p1 = p0 + (2 * over) / segs;
       const pm = (p0 + p1) / 2;
       const w = 2 * r * Math.sin((p1 - p0) / 2) + 0.04;
-      const pos = toWorld(this.f, uMid, arcV(pm));
-      this.farm.add('box', m.gymRoof, new Vector3(pos.x, arcY(pm), pos.z), new Vector3(uLen, 0.1, w), 0, pm);
+      // Sobre el hall del segundo piso la chapa no vuela al oeste: ahí la
+      // parte oeste del bloque es más alta y el alero se metía en el hall
+      // (se veía su testa desde adentro).
+      const va = Math.min(arcV(p0), arcV(p1));
+      const vb = Math.max(arcV(p0), arcV(p1));
+      const overHall = vb > V1.blockA && va < V1.blockHall;
+      const segMid = overHall ? (u0 + 0.01 + U.e + 0.35) / 2 : uMid;
+      const segLen = overHall ? U.e + 0.35 - (u0 + 0.01) : uLen;
+      const pos = toWorld(this.f, segMid, arcV(pm));
+      this.farm.add('box', m.gymRoof, new Vector3(pos.x, arcY(pm), pos.z), new Vector3(segLen, 0.1, w), 0, pm);
       // Cara interior oscura de la chapa, sólo sobre el polideportivo.
       const inner = toWorld(this.f, (U.gymW + U.e) / 2, arcV(pm, r - 0.08));
       this.farm.add('box', m.metalDark, new Vector3(inner.x, arcY(pm, r - 0.08), inner.z), new Vector3(U.e - U.gymW, 0.04, w), 0, pm);
@@ -1447,6 +1455,19 @@ export class SchoolBuilder {
       [V1.blockA, V1.blockHall, 2 * H, 8.75],
     ];
     this.gable(m.facade, u0 - 0.15, u0 + 0.15, 2 * H, archY, mirrorWin);
+    // Sobre el hall del segundo piso, la parte oeste (dos plantas, techo
+    // plano a 3 pisos) es más alta que la bóveda: entre la curva del tímpano
+    // y ese techo quedaba un triángulo abierto por el que se veía el cielo y
+    // la testa de la chapa desde adentro del hall. Se cierra con el mismo
+    // tímpano (blanco hacia el hall, revoque hacia afuera).
+    const fill: Array<[number, number]> = [];
+    for (let k = 0; k <= 8; k++) {
+      const v = V1.blockA + ((V1.blockHall - V1.blockA) * k) / 8;
+      fill.push([v, archY(v) - 0.05]);
+    }
+    fill.push([V1.blockHall, 3 * H + 0.05], [V1.blockA, 3 * H + 0.05]);
+    this.prisms.alongU(m.white, fill, u0 - 0.15, u0);
+    this.prisms.alongU(m.facade, fill, u0, u0 + 0.15);
     for (const [v0, v1, y0, y1] of mirrorWin.slice(0, 4)) this.box(m.glassDark, u0, (v0 + v1) / 2, 0.06, y1 - y0, v1 - v0, y0);
     // Testero este: dos franjas rojo-blanco-azul a los lados de la bandera,
     // con el azul hacia el centro y más alto (9:28).
@@ -1896,9 +1917,23 @@ export class SchoolBuilder {
         break;
       }
       case 'counter': {
-        const body = this.mat(it.color, room?.id === 'buffet' ? m.black : m.appliance);
-        this.box(body, u, v, w, 0.92, d, FY);
-        this.box(room?.id === 'buffet' ? m.timberDark : m.frame, u, v, w + 0.04, 0.05, d + 0.04, FY + 0.92);
+        // Mueble bajo de verdad: zócalo oscuro retirado 6 cm, cuerpo, tapa que
+        // vuela 2 cm en un laminado más oscuro y juntas de puertas al frente.
+        // Antes era un bloque blanco liso con una tapa blanca: en el
+        // laboratorio se leía como una caja, no como una mesada.
+        const buffet = room?.id === 'buffet';
+        const body = this.mat(it.color, buffet ? m.black : m.appliance);
+        const [fu, fv] = faceDir(it.face);
+        const along = alongV ? d : w;
+        this.box(m.metalDark, u - fu * 0.03, v - fv * 0.03, alongV ? w - 0.06 : w, 0.1, alongV ? d : d - 0.06, FY);
+        this.box(body, u, v, w, 0.82, d, FY + 0.1);
+        this.box(buffet ? m.timberDark : m.black, u, v, w + 0.04, 0.04, d + 0.04, FY + 0.92);
+        const doors = Math.max(1, Math.round(along / 0.6));
+        for (let k = 1; k < doors; k++) {
+          const t = (k / doors - 0.5) * along;
+          const half = (alongV ? w : d) / 2;
+          this.box(m.metalDark, u + (alongV ? fu * half : t), v + (alongV ? t : fv * half), alongV ? 0.012 : 0.012, 0.74, 0.012, FY + 0.14);
+        }
         break;
       }
       case 'fridge': {
@@ -2131,6 +2166,24 @@ export class SchoolBuilder {
             s * 0.62,
           );
         }
+        // Tímpanos: sin ellos se veía el triángulo hueco bajo los dos paños,
+        // como una caja con una tapa apoyada. Sólo las dos caras de punta
+        // (alongU no dibuja los costados), del color de las paredes.
+        const slope = Math.tan(0.62);
+        const eave = FY + 1.62 - (d / 4 - 0.02) * slope - 0.03;
+        const ridge = FY + 1.62 + (d / 4 + 0.02) * slope - 0.03;
+        this.prisms.alongU(
+          body,
+          [
+            [v - d / 2, FY + 1.3],
+            [v + d / 2, FY + 1.3],
+            [v + d / 2, eave],
+            [v, ridge],
+            [v - d / 2, eave],
+          ],
+          u - w / 2 + 0.01,
+          u + w / 2 - 0.01,
+        );
         break;
       }
       case 'banner': {

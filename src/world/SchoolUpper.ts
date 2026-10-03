@@ -907,7 +907,9 @@ const I1: Item[] = [
   ...desks({ u0: 27.9, v0: -15.9, u1: 31.2, v1: -9.6 }, 'e', 'yellow', 'metal', 3, 2),
   ...classKit([U.east1 - 0.12, -12.4], 'w', 30.0, -12.4),
   // Salón Emociones: mesas naranjas.
-  ...desks({ u0: 28.0, v0: -22.4, u1: 32.0, v1: -18.0 }, 'n', 'orange', 'red', 2, 3, 'table'),
+  // Medio metro lejos del muro oeste: la primera mesa quedaba a 1 m de la
+  // puerta de la galería y trababa a quien entraba.
+  ...desks({ u0: 28.5, v0: -22.4, u1: 32.3, v1: -18.0 }, 'n', 'orange', 'red', 2, 3, 'table'),
   ...classKit([29.9, V.nBlockS + 0.12], 's', 29.9, -20.2),
 
   // Sector nuevo: mesada de venecitas con bachas y espejos en el pasillo,

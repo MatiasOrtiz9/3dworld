@@ -330,6 +330,28 @@ export class CityIndex {
     return this.isSolid(x, z);
   }
 
+  /**
+   * ¿El jugador puede aterrizar (teletransporte VR) en (x, z) con los pies a
+   * `feetY`?
+   *
+   * Dentro de la escuela cuenta el piso en el que se está: libre a esa altura
+   * y con un solado a esa misma cota debajo (no el hueco de una escalera, ni
+   * el vacío de una losa, ni un escalón). Antes se miraba sólo la planta baja:
+   * desde el primer piso el destino se validaba contra lo que había abajo y el
+   * salto te dejaba en la planta baja. Fuera del edificio, lo del peatón.
+   */
+  canLandAt(x: number, z: number, feetY: number): boolean {
+    const b = this.blockAt(x, z);
+    if (b?.landmark && this.school) {
+      const { u, v } = toLocal(this.school, x, z);
+      if (inLot(u, v) && v <= 0) {
+        if (schoolSolidLocal(u, v, feetY)) return false;
+        return Math.abs(schoolFloorLocal(u, v, feetY + 0.1) - feetY) < 0.15;
+      }
+    }
+    return !this.isPedestrianBlocked(x, z);
+  }
+
   /** Ficha informativa de una manzana, para el panel de inspección. */
   describe(block: Block): BlockInfo {
     if (block.landmark) {

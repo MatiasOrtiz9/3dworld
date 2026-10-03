@@ -678,12 +678,13 @@ async function start(): Promise<void> {
         worldExtent: city!.plan.extent,
         spawn: xrSpawn,
         // El punto y un radio de cuerpo alrededor (el de la caminata VR): un
-        // destino pegado a una fachada dejaba la cabeza dentro del muro.
-        canTeleportTo: (x, z) => {
+        // destino pegado a una fachada dejaba la cabeza dentro del muro. `feet`
+        // es la cota del piso en el que se apunta (el de los pies del jugador).
+        canTeleportTo: (x, z, feet) => {
           const idx = city?.index;
           if (!idx) return false;
           const r = 0.3;
-          return [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]].every(([dx, dz]) => !idx.isPedestrianBlocked(x + dx, z + dz));
+          return [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]].every(([dx, dz]) => idx.canLandAt(x + dx, z + dz, feet));
         },
         // Se pide en cada cuadro: la escuela se reconstruye al cambiar la calidad.
         index: () => city?.index ?? null,

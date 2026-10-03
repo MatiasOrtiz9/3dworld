@@ -18,13 +18,19 @@ import { WristPanel, type HudInfo } from './XRWristPanel';
 // giratorio del destino de teletransporte.
 import '@babylonjs/core/Animations/animatable';
 
+/** El piso de teletransporte va apenas sobre los pies (no se dibuja). */
+const TELEPORT_FLOOR_LIFT = 0.02;
+
 export interface XRSetupOptions {
   /** Medio lado de la ciudad: tamaño del piso de teletransporte y del cielo. */
   worldExtent: number;
   /** Dónde pararse al entrar: se consulta en cada entrada (la ciudad puede haberse regenerado). */
   spawn: () => { eye: Vector3; look: Vector3 };
-  /** Rechaza destinos de teletransporte dentro de edificios, agua o fuera del barrio. */
-  canTeleportTo: (x: number, z: number) => boolean;
+  /**
+   * Rechaza destinos de teletransporte dentro de edificios, agua o fuera del
+   * barrio. `feet` es la cota del piso apuntado: el de los pies del jugador.
+   */
+  canTeleportTo: (x: number, z: number, feet: number) => boolean;
   /** Colisión y pisos: el mismo índice del escritorio. Se pide en cada cuadro. */
   index: () => WalkIndex | null;
   /** Pisada caminando con el stick (sonido de pasos). */
@@ -90,7 +96,7 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
     { width: options.worldExtent * 2, height: options.worldExtent * 2, subdivisions: 1 },
     scene,
   );
-  teleportFloor.position.y = 0.02;
+  teleportFloor.position.y = TELEPORT_FLOOR_LIFT;
   teleportFloor.isVisible = false;
   teleportFloor.isPickable = true;
   teleportFloor.freezeWorldMatrix();
@@ -159,7 +165,7 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
   teleport.backwardsTeleportationDistance = 0.8;
   const teleportTargetObserver = teleport.onTargetMeshPositionUpdatedObservable.add((pick) => {
     const point = pick.pickedPoint;
-    const allowed = Boolean(point && options.canTeleportTo(point.x, point.z));
+    const allowed = Boolean(point && options.canTeleportTo(point.x, point.z, point.y - TELEPORT_FLOOR_LIFT));
     teleport.skipNextTeleportation = !allowed;
     // Oculta el anillo cuando el arco termina dentro de un obstáculo.
     const target = teleport.teleportationTargetMesh;
@@ -191,8 +197,19 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
   const wrist = new WristPanel(scene);
   const models = new ControllerModels(scene, experience.input, (grip) => wrist.attachTo(grip));
   const vignette = new ComfortVignette(scene, cam);
+  // El piso de teletransporte sigue a los pies: en el primer y segundo piso
+  // de la escuela el arco caía sobre el plano de la calle, se validaba contra
+  // la planta baja y el salto te bajaba a ella. Se recongela sólo al cambiar
+  // de cota (subiendo una escalera, cada pocos centímetros).
+  let teleportFloorFeet = 0;
   const vignetteObserver = scene.onBeforeRenderObservable.add(() => {
     if (base.state !== WebXRState.IN_XR) return;
+    const feet = locomotion.debug.feet;
+    if (Math.abs(feet - teleportFloorFeet) > 0.03) {
+      teleportFloorFeet = feet;
+      teleportFloor.position.y = feet + TELEPORT_FLOOR_LIFT;
+      teleportFloor.freezeWorldMatrix();
+    }
     vignette.update(locomotion.motion, Math.min(scene.getEngine().getDeltaTime() / 1000, 0.1));
   });
 

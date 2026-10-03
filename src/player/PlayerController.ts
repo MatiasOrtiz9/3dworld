@@ -3,6 +3,7 @@ import type { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import type { CityIndex } from '../world/CityIndex';
 import { VirtualInput } from './VirtualInput';
+import { RUN_SPEED, WALK_SPEED, walkStep, type WalkState } from './walkPhysics';
 
 export type MoveMode = 'walk' | 'fly';
 
@@ -10,24 +11,8 @@ export type MoveMode = 'walk' | 'fly';
 // por encima de la cabeza de la maestra (1,68 m de alto) y los pupitres de
 // 0,74 m parecían de juguete.
 const EYE_HEIGHT = 1.62;
-const WALK_SPEED = 4.2; // m/s — paso rápido de persona
-const RUN_SPEED = 8.5;
 const FLY_SPEED = 18;
 const FLY_BOOST = 55;
-const GRAVITY = -18;
-const JUMP = 6.4;
-const RADIUS = 0.45; // radio del cuerpo para la colisión
-const ACCELERATION = 11;
-const BRAKING = 15;
-const COLLISION_STEP = RADIUS * 0.5;
-/**
- * Caída máxima que se baja caminando sin saltar. En la escuela, más que esto
- * sólo pasa por el costado abierto de un tramo de escalera: sin el límite se
- * atravesaba el pasamanos dibujado y se caía al piso de abajo. Un tramo
- * empinado, mirado RADIUS + un sub-paso adelante, baja ~0,5 m: el límite
- * queda por encima para no trabar a quien baja la escalera.
- */
-const MAX_DROP = 0.65;
 const FORWARD = new Vector3(0, 0, 1);
 const RIGHT = new Vector3(1, 0, 0);
 
@@ -57,6 +42,7 @@ export class PlayerController {
   private readonly right = new Vector3();
   private readonly move = new Vector3();
   private grounded = false;
+  private readonly state: WalkState = { x: 0, z: 0, feet: 0, vx: 0, vz: 0, vy: 0, grounded: false };
   private readonly keys = new Set<string>();
   private onModeChange?: (mode: MoveMode) => void;
   private onStep?: (running: boolean) => void;
@@ -199,90 +185,36 @@ export class PlayerController {
     }
 
     // --- caminar: aceleración y frenado suaves, con velocidad de carrera ---
-    const hasInput = dx !== 0 || dz !== 0;
     const speed = running ? RUN_SPEED : WALK_SPEED;
     const targetX = (this.forward.x * dz + this.right.x * dx) * speed;
     const targetZ = (this.forward.z * dz + this.right.z * dx) * speed;
-    const blend = 1 - Math.exp(-(hasInput ? ACCELERATION : BRAKING) * dt);
-    this.velocityX += (targetX - this.velocityX) * blend;
-    this.velocityZ += (targetZ - this.velocityZ) * blend;
-    const moveX = this.velocityX * dt;
-    const moveZ = this.velocityZ * dt;
+    // La física vive en walkPhysics: las pruebas de puertas y escaleras corren
+    // la misma función, no una copia.
+    const st = this.state;
+    st.x = cam.position.x;
+    st.z = cam.position.z;
+    st.feet = cam.position.y - EYE_HEIGHT;
+    st.vx = this.velocityX;
+    st.vz = this.velocityZ;
+    st.vy = this.velocityY;
+    st.grounded = this.grounded;
+    const wasGrounded = this.grounded;
+    const jump = this.grounded && (this.keys.has('Space') || this.input.takeJump());
+    const moved = walkStep(this.index, st, targetX, targetZ, dt, jump);
+    cam.position.set(st.x, st.feet + EYE_HEIGHT, st.z);
+    this.velocityX = st.vx;
+    this.velocityZ = st.vz;
+    this.velocityY = st.vy;
+    this.grounded = st.grounded;
 
-    // Colisión por ejes separados: si el eje X está bloqueado pero Z no, el
-    // jugador se desliza a lo largo de la pared en vez de quedarse trabado.
-    // Es la diferencia entre una colisión que se siente natural y una que
-    // frustra.
-    const beforeX = cam.position.x;
-    const beforeZ = cam.position.z;
-    let px = beforeX;
-    let pz = beforeZ;
-    const steps = Math.max(
-      1,
-      Math.ceil(Math.max(Math.abs(moveX), Math.abs(moveZ)) / COLLISION_STEP),
-    );
-    const stepX = moveX / steps;
-    const stepZ = moveZ / steps;
-    for (let i = 0; i < steps; i++) {
-      const nextX = px + stepX;
-      if (
-        stepX === 0 ||
-        !this.blocked(nextX + Math.sign(stepX) * RADIUS, pz, this.grounded)
-      ) {
-        px = nextX;
-      } else {
-        this.velocityX = 0;
-      }
-
-      const nextZ = pz + stepZ;
-      if (
-        stepZ === 0 ||
-        !this.blocked(px, nextZ + Math.sign(stepZ) * RADIUS, this.grounded)
-      ) {
-        pz = nextZ;
-      } else {
-        this.velocityZ = 0;
-      }
-    }
-    cam.position.x = px;
-    cam.position.z = pz;
-
-    // Pisadas: una cada 0,78 m recorridos, que es la zancada de una persona.
-    if (this.onStep && this.grounded) {
-      this.strideAccum += Math.hypot(cam.position.x - beforeX, cam.position.z - beforeZ);
+    if (this.onStep && wasGrounded) {
+      this.strideAccum += moved;
       if (this.strideAccum >= 0.78) {
         this.strideAccum = 0;
         this.onStep(running);
       }
     }
-
-    // Gravedad y salto. El piso depende de la altura de los pies: en la
-    // escuela hay planta alta y escaleras.
-    const floor = this.index.groundHeight(cam.position.x, cam.position.z, this.feet()) + EYE_HEIGHT;
-    if (this.grounded && (this.keys.has('Space') || this.input.takeJump())) {
-      this.velocityY = JUMP;
-      this.grounded = false;
-    }
-    this.velocityY += GRAVITY * dt;
-    cam.position.y += this.velocityY * dt;
-
-    if (cam.position.y <= floor) {
-      cam.position.y = floor;
-      this.velocityY = 0;
-      this.grounded = true;
-    }
   };
-
-  /** Altura de los pies. */
-  private feet(): number {
-    return this.camera.position.y - EYE_HEIGHT;
-  }
-
-  /** ¿Hay algo en (x, z)? Con los pies en el piso, también un borde de más de MAX_DROP. */
-  private blocked(x: number, z: number, grounded: boolean): boolean {
-    const feet = this.feet();
-    return this.index.isSolid(x, z, feet) || (grounded && this.index.groundHeight(x, z, feet) < feet - MAX_DROP);
-  }
 
   /** Espiral de búsqueda de un punto libre, para no aterrizar dentro de un muro. */
   private findFreeSpot(x: number, z: number, feetY?: number): { x: number; z: number } {

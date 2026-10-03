@@ -604,7 +604,11 @@ describe('QA del equipamiento de la escuela', () => {
       const r = roomAt(it.u, it.v, level(it));
       if (!r || !r.roofed) continue;
       const ceil = ceilingHeight(r);
+      // Bajo un hueco del piso de arriba no hay cielorraso: ahí cuelgan las
+      // vigas que sostienen los muros que lo bordean.
+      const lvAbove = Math.min(2, level(it) + 1) as 0 | 1 | 2;
       for (const b of boxes(it)) {
+        if (level(it) < 2 && voidsAt(lvAbove).some((r) => overlap(b.u0, b.u1, r.u0, r.u1) > 0.02 && overlap(b.v0, b.v1, r.v0, r.v1) > 0.02)) continue;
         if (b.y1 > ceil + 0.005) bad.push(`${name(it)} [${b.tag}] llega a ${b.y1.toFixed(2)} (cielorraso ${ceil.toFixed(2)} en ${r.id})`);
       }
     }
@@ -1052,6 +1056,10 @@ describe('QA de escaleras en su lugar', () => {
             [Math.min(b.u1, s.u1), Math.max(b.v0, s.v0)],
           ];
           const under = Math.min(...corners.map(([cu, cv]) => stairY(s, cu, cv))) - SCHOOL.floorY - lv * SCHOOL.storey - 0.3;
+          // Lo que cuelga por encima del tramo con altura libre de sobra (una
+          // viga bajo la losa) no está enterrado.
+          const over = Math.max(...corners.map(([cu, cv]) => stairY(s, cu, cv))) - SCHOOL.floorY - lv * SCHOOL.storey + 1.9;
+          if (b.y0 >= over) continue;
           if (solid || b.y1 > under) bad.push(`${name(it)} [${b.tag}] bajo el tramo ${s.u0},${s.v0}`);
         }
       }

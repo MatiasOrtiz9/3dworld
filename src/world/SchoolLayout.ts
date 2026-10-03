@@ -987,9 +987,17 @@ const ITEMS_PB: Item[] = [
   // color cerezo con su silla negra y ventilador de techo, en la oficina chica
   // del CAD.
   item('shelf', 3.4, V.dirTop + 0.3, 1.4, 0.4, 's'),
-  { ...item('desk2', 5.05, -9.65, 0.6, 1.2, 'e'), color: 'cherry' },
-  { ...item('chair', 4.45, -9.65, 0.45, 0.45, 'e', false), color: 'metalDark' },
+  // El escritorio va contra el muro del fondo, junto a la biblioteca: frente a
+  // la puerta del pasillo se comía la mitad del paso y se frenaba en el marco.
+  // De 0,9 m: con 1,2 todavía se frenaba a medio metro de la puerta.
+  { ...item('desk2', 4.65, V.dirTop + 0.4, 0.9, 0.6, 'n'), color: 'cherry' },
+  { ...item('chair', 4.75, V.dirTop + 0.95, 0.45, 0.45, 'n', false), color: 'metalDark' },
   item('ceilingFan', 3.4, -9.45, 1.2, 1.2, 's', false),
+  // Viga bajo el muro oeste de la PR (u 8,9), que en el primer piso cruza el
+  // hueco de la escalera oeste: sin ella el muro quedaba colgado, con su cara
+  // de abajo a la vista y la planta baja asomando por debajo. 30 cm de alto:
+  // sobre el tramo 2 quedan ~2,08 m libres.
+  { ...item('wallPanel', 8.9, (V.dirTop + V.profB) / 2, SCHOOL.wallT, V.dirTop - V.profB - SCHOOL.wallT - 0.01, 'e', false), y: SCHOOL.storey - 0.3, h: 0.3, color: 'white' },
   // Preceptoría primaria: el escritorio frente a la ventana al pasillo.
   item('teacherDesk', 10.15, -9.7, 1.3, 0.7, 'n'),
 
