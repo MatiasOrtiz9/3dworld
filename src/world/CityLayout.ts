@@ -108,6 +108,28 @@ export interface CityPlan {
    * atravesarlas por el carril de la fachada.
    */
   cafeTables: { x: number; z: number }[];
+  /** El borde del mapa: obradores cercados del otro lado de las calles perimetrales. */
+  periphery: Periphery;
+}
+
+/**
+ * Periferia en obra. Más allá de las calles perimetrales no hay ciudad (HANDOFF
+ * 86): en vez de pasto pelado, un cerco de obra continuo con obradores detrás.
+ * Es dato del plano para que la colisión (`CityIndex`) y el dibujo
+ * (`PeripheryBuilder`) usen exactamente la misma línea.
+ */
+export interface Periphery {
+  /** Rectángulo del cerco: afuera de él todo es macizo. */
+  x0: number;
+  x1: number;
+  z0: number;
+  z1: number;
+  /** Portones (centro sobre el cerco, a lo largo del lado). */
+  gates: Array<{ side: BlockSide; at: number }>;
+  /** Edificios en obra (esqueleto de hormigón), detrás del cerco. */
+  sites: Array<{ x: number; z: number; w: number; d: number; floors: number }>;
+  crane: { x: number; z: number; h: number; rot: number };
+  excavator: { x: number; z: number; rot: number };
 }
 
 /**
@@ -317,6 +339,39 @@ export function generateCityPlan(seed: number, options: LayoutOptions = {}): Cit
     // Azar propio también: los bancos no mueven nada de lo que ya se sorteaba.
     benches: generateBenches(new Rng((seed ^ 0x0be4c5) >>> 0), blocks, props, blockSize, streetWidth),
     cafeTables: [],
+    periphery: generatePeriphery(new Rng((seed ^ 0x0b7a5e11) >>> 0), xs, zs, streetWidth),
+  };
+}
+
+/**
+ * El cerco va 1 m afuera de la vereda exterior de las calles perimetrales (la
+ * calle y su vereda siguen enteras). Azar propio: no corre nada del barrio.
+ */
+function generatePeriphery(rng: Rng, xs: [number, number], zs: [number, number], streetWidth: number): Periphery {
+  const m = streetWidth / 2 + 1;
+  const x0 = xs[0] - m;
+  const x1 = xs[1] + m;
+  const z0 = zs[0] - m;
+  const z1 = zs[1] + m;
+  const gates: Periphery['gates'] = [
+    { side: 'zn', at: rng.range(-60, -20) },
+    { side: 'zp', at: rng.range(-110, -80) },
+    { side: 'xn', at: rng.range(-30, 30) },
+    { side: 'xp', at: rng.range(-30, 30) },
+  ];
+  const sites: Periphery['sites'] = [
+    { x: rng.range(-50, -30), z: z0 - 16, w: 26, d: 14, floors: rng.int(4, 6) },
+    { x: rng.range(-110, -90), z: z1 + 17, w: 22, d: 16, floors: rng.int(3, 5) },
+  ];
+  return {
+    x0,
+    x1,
+    z0,
+    z1,
+    gates,
+    sites,
+    crane: { x: sites[0].x + 22, z: z0 - 14, h: rng.range(30, 38), rot: rng.range(0, Math.PI * 2) },
+    excavator: { x: sites[1].x + 22, z: z1 + 9, rot: rng.range(-0.6, 0.6) },
   };
 }
 

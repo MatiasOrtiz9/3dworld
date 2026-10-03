@@ -1013,6 +1013,15 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     cinturón de árboles de afuera. Lo que dicen los ítems 73 y 76 sobre la
     ciudad lejana ya no aplica; la losa de suelo y la niebla siguen igual.
 
+87. **El borde del mapa es una obra** (`PeripheryBuilder`, datos en
+    `CityLayout` con generador propio): valla de obra continua de ~2,6 m del
+    otro lado de las calles perimetrales, un portón por lado con barrera,
+    carteles ACCESO RESTRINGIDO / PELIGRO OBRA (vía `SignAtlas`), conos, dos
+    edificios en construcción con andamio y red, una grúa torre y una
+    excavadora. Todo lo que queda del lado de afuera de la valla es sólido en
+    `CityIndex` (caminando, volando y con teletransporte): no volver a dejar
+    pasto transitable más allá.
+
 ---
 
 ## 6. Estado actual

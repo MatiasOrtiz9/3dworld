@@ -55,18 +55,18 @@ describe('CityIndex.blockAt', () => {
 });
 
 describe('CityIndex.isSolid', () => {
-  it('fuera del terreno no camina nadie, pero el jugador puede volar', () => {
+  it('fuera del terreno no camina nadie, ni el jugador: lo cierra el cerco de obra', () => {
     // Sobre el eje de una calle de la ciudad de fondo: libre de edificios.
     const pitch = plan.blockSize + plan.streetWidth;
     const z = plan.extent + 30;
     expect(index.blockAt(pitch / 2, z)).toBeNull();
     expect(index.isPedestrianBlocked(pitch / 2, z)).toBe(true);
-    expect(index.isSolid(pitch / 2, z)).toBe(false);
+    expect(index.isSolid(pitch / 2, z)).toBe(true);
   });
 
   it('la calle nunca bloquea', () => {
     const pitch = plan.blockSize + plan.streetWidth;
-    for (let i = -3; i <= 3; i++) {
+    for (let i = -3; i <= 1; i++) {
       expect(index.isSolid(i * pitch + pitch / 2, 0)).toBe(false);
     }
   });

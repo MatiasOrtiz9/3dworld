@@ -161,6 +161,10 @@ export class CityIndex {
    * Sólo se recorre fuera del barrio, donde `blockAt` no encuentra nada.
    */
   private backdropSolid(x: number, z: number): boolean {
+    // Cerco de obra de la periferia: todo lo que queda afuera (y el cerco
+    // mismo, 0,3 m) es macizo. Así no se lo cruza caminando, volando bajo ni
+    // con el teletransporte, y la gente y los autos nunca lo pisan.
+    if (this.outsideFence(x, z)) return true;
     for (const p of this.plan.props ?? []) {
       // Kiosco: la caja entera. Refugio: el respaldo y el banco (bajo el
       // techo, del lado de la calle, se puede parar).
@@ -181,6 +185,12 @@ export class CityIndex {
       if (m.layer === 2 && Math.abs(x - m.x) <= m.w / 2 && Math.abs(z - m.z) <= m.d / 2) return true;
     }
     return false;
+  }
+
+  /** Sobre el cerco de obra de la periferia (0,3 m) o más allá. */
+  private outsideFence(x: number, z: number): boolean {
+    const pe = this.plan.periphery;
+    return !!pe && (x < pe.x0 + 0.3 || x > pe.x1 - 0.3 || z < pe.z0 + 0.3 || z > pe.z1 - 0.3);
   }
 
   /**
@@ -308,6 +318,7 @@ export class CityIndex {
    */
   isPedestrianBlocked(x: number, z: number): boolean {
     if (Math.abs(x) > this.plan.extent || Math.abs(z) > this.plan.extent) return true;
+    if (this.outsideFence(x, z)) return true;
     const b = this.blockAt(x, z);
     if (!b) return false;
     if (b.kind === 'water') return true;

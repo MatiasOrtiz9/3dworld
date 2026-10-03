@@ -8,6 +8,7 @@ import { BuildingBuilder } from './builders/BuildingBuilder';
 import { NeighborhoodBuilder } from './builders/NeighborhoodBuilder';
 import { InfraBuilder } from './builders/InfraBuilder';
 import { StreetLevel } from './builders/StreetLevel';
+import { PeripheryBuilder } from './builders/PeripheryBuilder';
 import { CityIndex } from './CityIndex';
 import { PALETTE } from './Palette';
 import { SchoolIdentity } from './SchoolIdentity';
@@ -147,6 +148,9 @@ export class City {
       }
       infra.streetscape(block, this.plan);
     }
+
+    // El borde del mapa: cerco y obradores. Antes del canal, que sube los carteles.
+    new PeripheryBuilder(this.farm, this.mats, street).build(this.plan);
 
     // El canal va último: se superpone a lo que haya quedado debajo.
     infra.canal(this.plan);
