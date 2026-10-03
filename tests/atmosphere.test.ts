@@ -233,7 +233,7 @@ describe('luz natural horneada de la escuela', async () => {
 
   it('un aula sobre Laprida es más clara junto a las ventanas que en el fondo', () => {
     const front = light(22.5, -1.2);
-    const back = light(22.5, -6.5);
+    const back = light(22.5, -5.6);
     expect(front).toBeGreaterThan(back + 0.12);
     // Ni negra ni quemada: es un factor sobre el rebote, no la luz final.
     expect(back).toBeGreaterThan(0.5);
@@ -242,7 +242,7 @@ describe('luz natural horneada de la escuela', async () => {
 
   it('los rincones son más oscuros que el medio del ambiente', () => {
     // Rincón norte-oeste del aula 4 contra el centro de su fondo.
-    expect(light(19.45, -6.95)).toBeLessThan(light(22.5, -6.5) - 0.08);
+    expect(light(19.7, -5.95)).toBeLessThan(light(22.5, -5.6) - 0.08);
   });
 
   it('en un aula sobre Laprida la luz llega del sur (+z), desde las ventanas', () => {
@@ -258,8 +258,8 @@ describe('luz natural horneada de la escuela', async () => {
   it('bajo los pupitres hay algo que tapa el piso, entre ellos no', () => {
     let under = 0;
     let free = 0;
-    for (let u = 19.5; u < 25.5; u += 0.1) {
-      for (let v = -6.8; v < -0.4; v += 0.1) {
+    for (let u = 19.7; u < 25.8; u += 0.1) {
+      for (let v = -6.0; v < -0.4; v += 0.1) {
         const c = cover(u, v);
         if (c > 0.6) under++;
         else if (c < 0.05) free++;
@@ -277,8 +277,8 @@ describe('luz natural horneada de la escuela', async () => {
     expect(cover(58.4, -35.2, 0)).toBe(0);
     // Ese mismo tramo sí tapa su propio piso (el primero) donde gana altura.
     expect(cover(46.5, -15.3, 1)).toBeGreaterThan(0.5);
-    // El tramo del ala oeste sobre la preceptoría sigue tapando la planta baja.
-    expect(cover(10.5, -10.2, 0)).toBeGreaterThan(2);
+    // El segundo tramo del ala oeste, sobre la preceptoría, sigue tapando la planta baja.
+    expect(cover(8.0, -9.5, 0)).toBeGreaterThan(2);
   });
 
   it('apagar las luces de un aula baja su luz, más en el fondo que junto a las ventanas', async () => {
@@ -290,11 +290,11 @@ describe('luz natural horneada de la escuela', async () => {
       expect(i).toBeGreaterThanOrEqual(0);
       return room.off[i] / 128;
     };
-    const back = light(22.5, -6.5);
+    const back = light(22.5, -5.6);
     const front = light(22.5, -1.2);
     // Fondo: de ~0,66 a ~0,41; junto a las ventanas la caída pesa menos.
-    expect(offAt(22.5, -6.5)).toBeLessThan(back - 0.18);
-    expect(offAt(22.5, -6.5)).toBeGreaterThan(0.3);
-    expect(offAt(22.5, -1.2) / front).toBeGreaterThan(offAt(22.5, -6.5) / back);
+    expect(offAt(22.5, -5.6)).toBeLessThan(back - 0.18);
+    expect(offAt(22.5, -5.6)).toBeGreaterThan(0.3);
+    expect(offAt(22.5, -1.2) / front).toBeGreaterThan(offAt(22.5, -5.6) / back);
   });
 });

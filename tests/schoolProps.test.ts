@@ -21,6 +21,7 @@ import {
   type Item,
   type Level,
   type Opening,
+  type Stair,
   type Wall,
   riserCount,
   stairY,
@@ -962,6 +963,37 @@ describe('QA de interruptores', () => {
   });
 });
 
+/**
+ * Alturas del tramo `s` en la franja que ocupa el muro `g` (su espesor sobre
+ * el eje), muestreadas cada 5 cm: del pie de la losa (26 cm bajo la huella;
+ * los macizos, desde su arranque como el resto del test) a medio escalón por
+ * encima. `null` si el tramo no llega a la franja.
+ */
+function stairBandBox(s: Stair, g: WallGeo, full: Box): Box | null {
+  let lo = Infinity;
+  let hi = -Infinity;
+  const nu = Math.max(2, Math.ceil((s.u1 - s.u0) / 0.05));
+  const nv = Math.max(2, Math.ceil((s.v1 - s.v0) / 0.05));
+  for (let i = 0; i <= nu; i++) {
+    for (let j = 0; j <= nv; j++) {
+      const u = s.u0 + ((s.u1 - s.u0) * i) / nu;
+      const v = s.v0 + ((s.v1 - s.v0) * j) / nv;
+      const ru = u - g.w.a[0];
+      const rv = v - g.w.a[1];
+      const t = ru * g.du + rv * g.dv;
+      const n = -ru * g.dv + rv * g.du;
+      if (Math.abs(n) > g.t / 2 || t < 0 || t > g.len) continue;
+      const y = stairY(s, u, v);
+      lo = Math.min(lo, y);
+      hi = Math.max(hi, y);
+    }
+  }
+  if (lo === Infinity) return null;
+  const half = (s.y1 - s.y0) / riserCount(s) / 2;
+  const solid = s.y0 < 0.5 && !s.hollow;
+  return { ...full, y0: solid ? full.y0 : Math.max(full.y0, lo - 0.26), y1: Math.min(full.y1, hi + half) };
+}
+
 describe('QA de escaleras en su lugar', () => {
   const stairLevel = (y0: number): Level => Math.min(2, Math.floor((y0 + 0.01) / SCHOOL.storey)) as Level;
 
@@ -973,9 +1005,15 @@ describe('QA de escaleras en su lugar', () => {
     ];
     for (const { r, y0, y1, id } of rects) {
       // Alturas absolutas (los muros arrancan en 0; los tramos, sobre el piso terminado).
-      const b: Box = { u0: r.u0, v0: r.v0, u1: r.u1, v1: r.v1, y0: SCHOOL.floorY + y0, y1: SCHOOL.floorY + y1, tag: id };
+      const full: Box = { u0: r.u0, v0: r.v0, u1: r.u1, v1: r.v1, y0: SCHOOL.floorY + y0, y1: SCHOOL.floorY + y1, tag: id };
       for (const g of GEOS) {
         const wb = g.w.level * SCHOOL.storey;
+        // Un tramo inclinado ocupa, sobre el muro, sólo la altura que tiene
+        // donde lo cruza: el tramo largo de la escalera exterior pasa a 1 m
+        // por debajo del muro del aula del primer piso que lo cubre en su
+        // arranque, no a la altura de su llegada.
+        const b = 'dir' in r ? stairBandBox(r, g, full) : full;
+        if (!b) continue;
         if (overlap(wb, wb + g.w.h, b.y0 + 0.02, b.y1 - 0.02) <= 0) continue;
         const p = project(g, b);
         if (p.t1 < 0.02 || p.t0 > g.len - 0.02) continue;

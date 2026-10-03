@@ -45,7 +45,7 @@ export interface DoorDef {
 }
 
 const CORRIDOR = /^(pasillo|hall|galeria|pasarela|rellano|pasaje|nicho|torre)/i;
-const ROOMISH = /^(aula|tecnologia|arte|teatro|bilingue|biblioteca|dirPrim|dirSec|secretaria|prof$|precep|sala|adm$|ep$|recepcionOf)/;
+const ROOMISH = /^(aula|tecnologia|arte|teatro|bilingue|biblioteca|dirPrim|dirSec|gerencia|secretaria|prof$|precep|sala|adm$|ep$|recepcionOf)/;
 
 function isCorridor(r: Room | null): boolean {
   return !r || !r.roofed || r.name === 'Pasillo' || CORRIDOR.test(r.id);
@@ -61,8 +61,41 @@ export function openingKey(level: Level, a: P, b: P): string {
   return `${level}:${f(a[0])},${f(a[1])}:${f(b[0])},${f(b[1])}`;
 }
 
+/** Hoja abierta en planta: de la bisagra hacia adentro del ambiente. */
+function openLeaf(d: DoorDef, L: LeafDef): [P, P] {
+  return [L.hinge, [L.hinge[0] + d.swing[0] * L.width, L.hinge[1] + d.swing[1] * L.width]];
+}
+
+/** Distancia mínima entre dos segmentos (0 si se cruzan). */
+function segmentGap([a, b]: [P, P], [c, d]: [P, P]): number {
+  const cross = (o: P, p: P, q: P) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
+  const d1 = cross(c, d, a);
+  const d2 = cross(c, d, b);
+  const d3 = cross(a, b, c);
+  const d4 = cross(a, b, d);
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return 0;
+  const toSeg = (p: P, s0: P, s1: P) => {
+    const du = s1[0] - s0[0];
+    const dv = s1[1] - s0[1];
+    const l2 = du * du + dv * dv;
+    const t = l2 > 0 ? Math.max(0, Math.min(1, ((p[0] - s0[0]) * du + (p[1] - s0[1]) * dv) / l2)) : 0;
+    return Math.hypot(p[0] - (s0[0] + du * t), p[1] - (s0[1] + dv * t));
+  };
+  return Math.min(toSeg(a, c, d), toSeg(b, c, d), toSeg(c, a, b), toSeg(d, a, b));
+}
+
+/** Holgura mínima entre dos hojas abiertas (el espesor de una hoja y algo más). */
+const LEAF_CLEAR = 0.06;
+
+/** ¿Dos hojas abiertas de puertas distintas se tocan o se atraviesan? */
+export function leavesClash(d: DoorDef, L: LeafDef, e: DoorDef, M: LeafDef): boolean {
+  return d !== e && d.level === e.level && segmentGap(openLeaf(d, L), openLeaf(e, M)) < LEAF_CLEAR;
+}
+
 function build(): DoorDef[] {
   const out: DoorDef[] = [];
+  /** Bisagra alternativa de las puertas simples (la otra jamba), si ahí entra la hoja. */
+  const alternatives = new Map<DoorDef, LeafDef>();
   for (const w of WALLS) {
     if (w.level > 1) continue;
     const [au, av] = w.a;
@@ -103,20 +136,23 @@ function build(): DoorDef[] {
       // otro lado del vano.
       const fits = (hinge: P, hd: [number, number], width: number) =>
         [0.5, 1].every((k) => roomAt(hinge[0] + hd[0] * 0.05 + nu * s * width * k, hinge[1] + hd[1] * 0.05 + nv * s * width * k, w.level) === room);
-      const single = (): LeafDef => {
+      // Elegida y, si la otra jamba también sirve, la alternativa.
+      const single = (): [LeafDef, LeafDef | null] => {
         const width = len2 - 0.13;
         const near: LeafDef = { hinge: face(0.065), dir: [du, dv], width };
         const far: LeafDef = { hinge: face(len2 - 0.065), dir: [-du, -dv], width };
-        return fits(near.hinge, near.dir, width) || !fits(far.hinge, far.dir, width) ? near : far;
+        const farFits = fits(far.hinge, far.dir, width);
+        if (fits(near.hinge, near.dir, width)) return [near, farFits ? far : null];
+        return farFits ? [far, null] : [near, null];
       };
-      const leaves: LeafDef[] =
-        o.type === 'door'
-          ? [single()]
-          : [
-              { hinge: face(0.065), dir: [du, dv], width: (len2 - 0.13) / 2 },
-              { hinge: face(len2 - 0.065), dir: [-du, -dv], width: (len2 - 0.13) / 2 },
-            ];
-      out.push({
+      const [first, alternative] = o.type === 'door' ? single() : [null, null];
+      const leaves: LeafDef[] = first
+        ? [first]
+        : [
+            { hinge: face(0.065), dir: [du, dv], width: (len2 - 0.13) / 2 },
+            { hinge: face(len2 - 0.065), dir: [-du, -dv], width: (len2 - 0.13) / 2 },
+          ];
+      const def: DoorDef = {
         id: `${room.id}-${out.filter((d) => d.room.id === room.id).length + 1}`,
         level: w.level,
         a,
@@ -134,8 +170,17 @@ function build(): DoorDef[] {
         glass: Boolean(o.color && o.color !== 'red' && o.color !== 'timberDark'),
         room,
         label: roomLabel(room),
-      });
+      };
+      out.push(def);
+      if (alternative) alternatives.set(def, alternative);
     }
+  }
+  // Dos puertas en esquina cuyas hojas abiertas se cruzan (la portería: la
+  // del atrio y la de madera del vestíbulo, que se abren a la vez): la
+  // simple pasa la bisagra a la otra jamba si ahí deja de cruzarse.
+  const clashes = (d: DoorDef, L: LeafDef) => out.some((e) => e.leaves.some((M) => leavesClash(d, L, e, M)));
+  for (const [d, alt] of alternatives) {
+    if (clashes(d, d.leaves[0]) && !clashes(d, alt)) d.leaves = [alt];
   }
   return out;
 }

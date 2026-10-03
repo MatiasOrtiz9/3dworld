@@ -98,38 +98,44 @@ describe('escaleras', () => {
     }
   });
 
-  it('la escalera principal del bloque norte se sube entera hasta el primer piso', () => {
-    // Primer tramo hacia el este, descanso, segundo tramo hacia el oeste.
-    const top = climb(
-      [
-        [21.0, -26.3],
-        [26.5, -26.3],
-        [26.5, -28.6],
-        [22.6, -28.6],
-      ],
-      FY,
-    );
-    expect(top).toBeCloseTo(LEVEL_Y[1], 1);
-    expect(levelOf(top)).toBe(1);
-    // Y se baja por el mismo camino hasta planta baja.
-    const bottom = climb(
-      [
-        [22.6, -28.6],
-        [26.5, -28.6],
-        [26.5, -26.3],
-        [23.35, -26.3],
-      ],
-      top,
-    );
-    // Termina sobre el primer escalón: medio escalón por encima del piso.
-    expect(bottom).toBeLessThan(FY + 0.2);
+  it('el costado de un tramo es macizo para quien está abajo', () => {
+    // A mitad del primer tramo del hall (sube al norte contra el muro oeste)
+    // los escalones están a la altura de la cadera.
+    expect(schoolSolidLocal(33.5, -11.4, FY)).toBe(true);
+    // Pero el arranque se pisa.
+    expect(schoolSolidLocal(33.24, -9.0, FY)).toBe(false);
   });
 
-  it('el costado de un tramo es macizo para quien está abajo', () => {
-    // A mitad del primer tramo los escalones están a la altura de la cadera.
-    expect(schoolSolidLocal(24.9, -26.3, FY)).toBe(true);
-    // Pero el arranque se pisa.
-    expect(schoolSolidLocal(23.4, -26.3, FY)).toBe(false);
+  it('en el núcleo del bloque norte no hay escalera (CAD): baños, pozo y depósito', () => {
+    // Donde estaba la escalera principal hay un baño de alumnos y el pozo de
+    // luz cerrado; ningún tramo arranca en el bloque norte.
+    expect(roomAt(24.0, -26.5)?.id).toBe('salaNorte');
+    expect(roomAt(23.0, -27.9)).toBeNull();
+    expect(STAIRS.some((s) => s.u0 < 26.76 && s.u1 > 19.5 && s.v0 < -23.25 && s.v1 > -30.4)).toBe(false);
+  });
+
+  it('el descanso del ala oeste termina contra el testero de la caja, no en el aire', () => {
+    // Al oeste del descanso (2,2 m) estaba la cuña contra Miguel Cané, sin
+    // muro: el que se caía quedaba encerrado en un rincón sin salida.
+    const feet = FY + 2.2;
+    expect(schoolFloorLocal(6.4, -11.7, feet)).toBeCloseTo(feet, 5);
+    for (const v of [-9.0, -11.7, -12.6]) expect(schoolSolidLocal(5.3, v, feet), `v ${v}`).toBe(true);
+    // La cuña, debajo de la Gerencia del primer piso, no es un ambiente.
+    expect(roomAt(4.0, -11.7)).toBeNull();
+    expect(roomAt(6.0, -11.7)?.id).toBe('hallOeste');
+  });
+
+  it('el paso de la torre a la pasarela es muro para quien está abajo', () => {
+    // El vano arranca a la altura del descanso (2,45 m): desde el jardincito
+    // se atravesaba la parte llena del muro y se entraba al cuartito.
+    let blocked = false;
+    for (let u = 36.3; u >= 34.5; u -= 0.05) if (schoolSolidLocal(u, -14.2, FY)) blocked = true;
+    expect(blocked).toBe(true);
+    expect(schoolSolidLocal(35.31, -14.2, FY, true)).toBe(true);
+    // Desde el descanso sí se pasa (la caminata de la pasarela lo recorre entero).
+    expect(schoolSolidLocal(35.31, -14.2, FY + 2.45)).toBe(false);
+    // Del cuartito se sale por su puerta al hall.
+    expect(climb([[34.6, -13.6], [34.6, -11.8]], FY)).toBeCloseTo(FY, 5);
   });
 
   it('la multitud no usa las escaleras que arrancan del suelo', () => {
@@ -147,36 +153,38 @@ describe('escaleras', () => {
 
 describe('plantas altas del recorrido', () => {
   it('"Acceso al Nivel Secundario": del hall al pasillo de los trofeos', () => {
+    // Primer tramo al norte hasta el descanso de la torre, segundo tramo de
+    // vuelta al sur (arranca dentro del descanso) y el pasillo este hasta la PR.
     const top = climb(
       [
-        [33.65, -8.7],
-        [33.65, -13.9],
-        [35.0, -13.9],
-        [35.0, -11.6],
-        [34.9, -5.0],
+        [33.24, -8.7],
+        [33.24, -14.4],
+        [34.7, -14.4],
+        [34.7, -11.6],
+        [34.0, -5.0],
       ],
       FY,
     );
     expect(levelOf(top)).toBe(1);
-    expect(roomAt(34.9, -5.0, 1)?.id).toBe('pasilloTrofeos');
+    expect(roomAt(34.0, -5.0, 1)?.id).toBe('pasilloTrofeos');
   });
 
   it('del descanso, por la pasarela vidriada, al edificio de bloque y al aula de danzas', () => {
     const l1 = climb(
       [
-        [33.65, -8.7],
-        [33.65, -14.2],
+        [33.24, -8.7],
+        [33.24, -14.2],
         [36.0, -14.2],
-        [41.5, -14.2],
-        [43.0, -14.2],
-        [43.0, -15.3],
+        [40.0, -14.2],
+        [41.6, -14.2],
+        [41.6, -15.3],
       ],
       FY,
     );
     expect(levelOf(l1)).toBe(1);
     const l2 = climb(
       [
-        [43.0, -15.3],
+        [41.6, -15.3],
         [44.6, -15.3],
         [48.2, -15.3],
         [48.2, -16.9],
@@ -193,20 +201,38 @@ describe('plantas altas del recorrido', () => {
   });
 
   it('"Acceso a primer piso": la escalera del ala oeste sube en U', () => {
+    // Del pie del primer tramo (al oeste) al descanso, segundo tramo al este
+    // hasta la cabecera, y por el ensanche del pasillo al pasillo de lockers.
     const top = climb(
       [
-        [12.6, -12.9],
-        [9.0, -12.9],
-        [8.7, -12.9],
-        [8.7, -10.25],
-        [11.9, -10.25],
-        [12.2, -8.2],
-        [4.0, -8.2],
+        [11.6, -11.7],
+        [6.4, -11.7],
+        [6.4, -9.5],
+        [9.6, -9.5],
+        [11.4, -9.5],
+        [11.4, -7.4],
+        [8.0, -7.4],
       ],
       FY,
     );
     expect(levelOf(top)).toBe(1);
-    expect(roomAt(4.0, -8.2, 1)?.id).toBe('pasilloL1');
+    expect(roomAt(8.0, -7.4, 1)?.id).toBe('pasilloL1');
+  });
+
+  it('por la escalera exterior del patio este se sube al balcón y al aula nueva', () => {
+    // Tramo corto al oeste, descanso de la esquina, tramo largo al norte
+    // contra el bloque norte y, desde el balcón, la puerta del aula.
+    const top = climb(
+      [
+        [35.6, -26.2],
+        [33.25, -26.2],
+        [33.25, -33.75],
+        [35.0, -33.75],
+      ],
+      FY,
+    );
+    expect(levelOf(top)).toBe(1);
+    expect(roomAt(35.0, -33.75, 1)?.id).toBe('aulaNE');
   });
 
   it('el jardín sube sus tres plantas', () => {

@@ -77,29 +77,58 @@ export function levelOf(feetY: number): Level {
   return 0;
 }
 
-/** Líneas del plano (u constantes). */
+/**
+ * Líneas del plano (u constantes): ejes de muro, como `rect()`.
+ *
+ * Salen del plano de evacuación en CAD (planta baja y primer piso), pasado a
+ * metros con el frente de 67,4 m del ochavo al muro este del gimnasio (26,02
+ * px/m; sobre los muros que el modelo ya tenía bien, error de ~0,26 m). Lo que
+ * el CAD no dibuja porque es más nuevo (edificio de bloque, Arte, Teatro,
+ * jardín, Tecnología, galería roja) sale de la foto del plano de S&O y del
+ * recorrido de 2020, apoyado en estas líneas.
+ */
 export const U = {
   w: 0,
-  c2: 6.7,
+  /** Testero oeste del pasillo sur, con la salida al ochavo. */
+  jog: 0.9,
+  /** Dirección primaria / Preceptoría (arriba, Gerencia / caja de la escalera). */
+  dirDiv: 5.5,
+  c2: 6.51,
+  /** Sala de profesores y Administración / columna de baños. */
+  wcW: 10.56,
+  /** Lado oeste del bloque norte (pasillo hacia el Aula Maker). */
+  epW: 12.28,
+  /** Ala oeste / pasillo oeste (sigue en el primer piso). */
+  wingE: 12.47,
   c3: 13.0,
-  c4: 19.3,
-  c5: 25.65,
-  dirDiv: 8.0,
-  wingE: 13.1,
-  patioW: 16.45,
-  epW: 14.05,
-  epE: 20.15,
-  stairE: 26.95,
-  bufW: 28.4,
-  closetW: 29.3,
-  tecE: 31.4,
-  /** Pasillo de bloque de Administración al Aula Maker: su lado este (E.P). */
-  epCorrE: 16.05,
-  east1: 32.9,
-  /** Oficina de recepción, a la izquierda de la entrada. */
-  recE: 35.3,
-  kioskE: 35.6,
-  salonW: 41.95,
+  /** Pasillo hacia el Aula Maker / E.P. */
+  epCorrE: 14.3,
+  /** Pasillo oeste / patio central (sigue en el primer piso). */
+  patioW: 14.83,
+  /** E.P / núcleo de sanitarios. */
+  epE: 19.5,
+  c4: 19.52,
+  /** Núcleo de sanitarios: entrada en recodo desde el pasillo norte. */
+  notchW: 21.68,
+  bathDiv: 23.21,
+  notchE: 24.5,
+  c5: 26.01,
+  /** Núcleo de sanitarios / aula del bloque norte. */
+  stairE: 26.76,
+  /** Patio / buffet (en el primer piso, el muro oeste de las aulas del comedor). */
+  bufW: 27.36,
+  /** Fin del pasillo norte: el local con las puertas vidriadas al patio este. */
+  endW: 28.92,
+  /** Tecnología / patio este. */
+  tecE: 30.01,
+  /** Aula 5, buffet y bloque norte / hall y patio este (todos los pisos). */
+  east1: 32.48,
+  /** Torre de la escalera del hall (= pasillo este del primer piso). */
+  kioskE: 35.31,
+  /** Vestíbulo / oficina de recepción, a la DERECHA de la entrada. */
+  recW: 36.75,
+  /** Hall / edificio de bloque (todos los pisos). */
+  salonW: 40.54,
   gymW: 50.3,
   artE: 53.9,
   teaE: 57.65,
@@ -107,39 +136,65 @@ export const U = {
   e: 67.4,
 } as const;
 
-/** Líneas del plano (v constantes). */
+/** Líneas del plano (v constantes): ejes de muro, del CAD como las de `U`. */
 export const V = {
   facade: 0,
-  hallDoors: -1.55,
+  /** Frente del hall con la entrada: delante queda el atrio bajo el primer piso. */
+  hallDoors: -2.31,
+  /** Entre las dos celdas de la oficina de recepción. */
+  recN: -4.02,
   /** Oficina de recepción: su lado norte. */
-  recN: -3.6,
-  classTop: -7.1,
-  corrS: -9.35,
+  recB: -5.53,
+  /** Lado norte de las aulas sobre Laprida (todos los pisos). */
+  classTop: -6.19,
+  /** Donde la diagonal de Miguel Cané llega al testero del pasillo sur. */
+  jogN: -8.28,
+  /** Pasillo sur / patio y ala oeste (todos los pisos). */
+  corrS: -8.53,
   passS: -9.1,
+  /** Dirección primaria y Preceptoría / caja de la escalera del ala oeste. */
+  dirTop: -10.42,
   passN: -11.15,
-  dirTop: -11.5,
-  hallTop: -13.3,
-  profB: -13.8,
-  kiosk: -14.95,
-  grayB: -17.65,
-  /** Baño junto a Administración: su lado norte. */
-  wcB: -19.6,
-  admB: -19.2,
+  /** Testero norte del hall = lado sur de la torre de su escalera. */
+  hallTop: -12.58,
+  /** Caja de la escalera del ala oeste / Sala de profesores. */
+  profB: -12.95,
+  /** Lado norte de la torre de la escalera del hall. */
+  kiosk: -15.06,
+  /** Columna de baños junto a Administración: su lado sur. */
+  wcS: -15.75,
+  /** Sala de profesores / Administración. */
+  admB: -17.41,
+  /** Tabiques de los cubículos de esa columna. */
+  wcP1: -17.41,
+  wcP2: -19.62,
   gymTop: -20.8,
+  /** Administración: su lado norte, al pasillo norte. */
+  admN: -20.9,
+  /** Pasillo norte: lado sur (= norte del patio y del buffet). */
+  corrN: -20.96,
+  /** Columna de baños: su lado norte (asoma 0,6 m en el pasillo norte). */
+  wcN: -21.5,
   artB: -22.65,
-  corrN: -23.5,
+  /** Bloque norte: lado sur (= pasillo y fila norte del primer piso). */
+  nBlockS: -23.25,
   vdB: -23.55,
-  nBlockS: -25.1,
-  nBlockN: -29.85,
+  /** Fondo del recodo de la entrada a los baños (= pasillo norte del primer piso). */
+  notchN: -25.23,
+  /** Pozo de luz del núcleo, cerrado. */
+  wellS: -27.35,
+  wellN: -28.51,
+  /** Bloque norte: lado norte (sólo planta baja; arriba la fila llega a −31,9). */
+  nBlockN: -30.4,
   top: -39,
 } as const;
 
 /**
- * Línea municipal sobre Miguel Cané: la calle corre en diagonal (≈32° del
- * norte) y el ala oeste del edificio se apoya sobre ella.
+ * Línea municipal sobre Miguel Cané: la calle corre en diagonal (26,9° del
+ * norte, la recta del CAD) y el ala oeste del edificio se apoya sobre ella.
  */
 export function miguelCaneU(v: number): number {
-  return 0.97 - 0.6386 * (v + 9.7);
+  return -3.305 - 0.508 * v;
 }
 
 /**
@@ -150,16 +205,26 @@ export function miguelCaneOffset(u: number, v: number): number {
   return (miguelCaneU(v) - u) * MC_COS;
 }
 
+/** Pendiente de Miguel Cané: metros de u por metro de v hacia el norte. */
+export const MC_SLOPE = 0.508;
 /** Componente en v de la dirección de Miguel Cané: convierte Δu en distancia real. */
-export const MC_COS = 1 / Math.hypot(0.6386, 1);
+export const MC_COS = 1 / Math.hypot(MC_SLOPE, 1);
 
 /** Medianera del fondo: la otra diagonal del predio. */
 export function rearV(u: number): number {
   return -38.48 + 0.2496 * (u - 19.35);
 }
 
-/** Vértice norte del predio (encuentro de Miguel Cané con la medianera). */
-export const APEX: P = [19.35, -38.48];
+/**
+ * Vértice norte del predio: encuentro de Miguel Cané con la medianera (que no
+ * se movió: la del CAD difiere en ≤ 0,6 m al oeste de u 40 y el jardín, más
+ * nuevo que el CAD, coincide con la de S&O).
+ */
+export const APEX: P = (() => {
+  // u = −3,305 − 0,508·v  ∩  v = −38,48 + 0,2496·(u − 19,35)
+  const v = (-38.48 + 0.2496 * (-3.305 - 19.35)) / (1 + 0.2496 * MC_SLOPE);
+  return [miguelCaneU(v), v] as const;
+})();
 
 // ======================================================================= muros
 
@@ -516,13 +581,21 @@ export const FURNITURE = {
 export const CEILING_H: Readonly<Record<string, number>> = {
   pasilloL1: 2.75,
   pasilloNorteL1: 2.75,
-  rellanoNorte: 2.75,
   pasilloOesteL1: 2.75,
-  // Las cajas de escalera del primer piso, a la altura de los pasillos que
-  // las rodean: con 3,1 m quedaba un escalón de cielorraso sin muro debajo
-  // y por la ranura se veía el cielo.
+  // La caja de escalera del primer piso, a la altura de los pasillos que la
+  // rodean: con 3,1 m quedaba un escalón de cielorraso sin muro debajo y por
+  // la ranura se veía el cielo.
   escaleraOeste: 2.75,
-  escaleraNorteL1: 2.75,
+  // Ambientes nuevos del primer piso (plano CAD + plano a mano): a la altura
+  // de las aulas vecinas.
+  gerencia: 2.75,
+  aula6C: 2.75,
+  prBil: 2.75,
+  aulaVertice: 2.75,
+  aula4A: 2.75,
+  aulaN2: 2.75,
+  aulaNE: 2.75,
+  aulaTaller: 2.7,
   pasilloTrofeos: 2.85,
   secretaria: 2.85,
   aulaS1: 2.85,

@@ -39,7 +39,7 @@ import { phrasesFromQuery } from './story/phrases';
 import { localSaveStore, type SaveStore } from './story/save';
 import { DialogueRunner, StoryEngine } from './story/StoryEngine';
 import type { ActivityId, CharacterDef, ChapterId, Effect, InteractableDef, ObjectiveDef, Spot, StationDef, ZoneId } from './story/types';
-import { ACT, EVAC_ROUTE, INTERACTABLES, LOCKS, PLACES, START, STAIR_GUIDES, isJardinRoom, outsideRoom, placeForRoom } from './story/world';
+import { ACT, DOOR_LOCKS, ENTRANCE_U, EVAC_ROUTE, INTERACTABLES, LOCKS, PLACES, START, STAIR_GUIDES, isJardinRoom, outsideRoom, placeForRoom } from './story/world';
 import { focusByGaze, focusByRay, type Candidate } from './Interaction';
 import { GameProps, PENALTY_SPOT, GOAL_MOUTH_U } from './world/GameProps';
 import { Doors } from './world/Doors';
@@ -597,7 +597,7 @@ export class GameDirector {
 
   private spawn(def: CharacterDef): void {
     const st = this.engine.stationFor(def.id);
-    const place = st ? this.stationSpot(st) : { spot: { u: 37.4, v: 3, level: 0 as Level }, yaw: 0 };
+    const place = st ? this.stationSpot(st) : { spot: { u: ENTRANCE_U, v: 3, level: 0 as Level }, yaw: 0 };
     let handle: NpcHandle | null = null;
     try {
       // Si la gente sobrevivió a una reconstrucción, el personaje ya existe: se reusa.
@@ -791,6 +791,12 @@ export class GameDirector {
       setDynamicSolid(l.id, locked ? l.rect : null);
       this.props.setLock(l, locked, animate);
     }
+    // Puertas del juego cerradas con llave (la de la portería al atrio): su
+    // hoja y su colisión las maneja `Doors`.
+    for (const l of DOOR_LOCKS) {
+      const locked = SESSION.started && !SESSION.freeRoam && !this.engine.zone(l.zone);
+      this.doors.setLocked(l.door.id, locked, !animate);
+    }
   }
 
   private openZone(zone: ZoneId): void {
@@ -804,6 +810,8 @@ export class GameDirector {
         // Audio opcional.
       }
     }
+    // La puerta del juego se abre sola al sacarle la llave (y suena como cualquiera).
+    for (const l of DOOR_LOCKS) if (l.zone === zone) this.doors.setLocked(l.door.id, false);
   }
 
   // =================================================================== efectos
@@ -865,7 +873,18 @@ export class GameDirector {
           break;
       }
     }
-    if (objectivesChanged) this.syncStations(false);
+    if (objectivesChanged) {
+      this.syncStations(false);
+      // Un "llegá a…" que se abre con el jugador ya adentro de ese lugar se
+      // cumple ahí mismo: el atrio de la entrada es parte del hall (CAD) y a
+      // Rubén se lo saluda parado en él; sin esto "Entrá a Recepción" esperaba
+      // a que el jugador saliera a la vereda y volviera a entrar.
+      const here = placeForRoom(this.room);
+      if (here && SESSION.started && this.engine.availableObjectives().some((o) => o.target.kind === 'reach' && o.target.place === here.id)) {
+        this.react(this.engine.enterPlace(here.id));
+        return;
+      }
+    }
     this.refreshObjectives(true);
     this.refreshCandidates();
     this.save();
@@ -1173,7 +1192,10 @@ export class GameDirector {
       return { verb: SESSION.phrases ? 'Hablar' : 'Saludar', target: `${n.def.name} · ${n.def.role}` };
     }
     if (kind === 'lock') return { verb: 'Cerrado', target: 'Puerta', locked: true };
-    if (kind === 'door') return { verb: this.doors.isOpen(id) ? 'Cerrar' : 'Abrir', target: `Puerta · ${this.doors.label(id)}` };
+    if (kind === 'door') {
+      if (this.doors.isLocked(id)) return { verb: 'Cerrado', target: `Puerta · ${this.doors.label(id)}`, locked: true };
+      return { verb: this.doors.isOpen(id) ? 'Cerrar' : 'Abrir', target: `Puerta · ${this.doors.label(id)}` };
+    }
     if (kind === 'sw') return { verb: this.lights?.isOn(id) ? 'Apagar' : 'Encender', target: `Luces · ${this.lights?.label(id) ?? ''}` };
     const it = this.items.find((i) => i.def.id === id)!;
     const ready = this.engine.interactableReady(it.def);
@@ -1193,6 +1215,12 @@ export class GameDirector {
       this.audio.click(on ? 1500 : 1150);
       if (this.focus?.key === key) this.setFocus(this.focus);
     } else if (kind === 'door') {
+      const l = this.doors.isLocked(id) ? DOOR_LOCKS.find((x) => x.door.id === id) : undefined;
+      if (l) {
+        this.sfx('error');
+        this.notify('info', 'Está cerrado', (!SESSION.phrases && l.silentReason) || l.reason);
+        return;
+      }
       this.doors.toggle(id);
       // El texto del aviso cambia (Abrir ↔ Cerrar) sin esperar a mirar otra cosa.
       if (this.focus?.key === key) this.setFocus(this.focus);

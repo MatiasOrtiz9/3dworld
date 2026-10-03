@@ -5,7 +5,11 @@ import { Rig, F_FARM_L, F_FARM_R, F_SHIN_L, F_SHIN_R } from '../src/world/people
 import { bodyDims, makeAppearance } from '../src/world/people/Looks';
 import { treadFloor } from '../src/world/people/Places';
 import { Rng } from '../src/utils/rng';
-import { FURNITURE, ITEMS, KINDER_ROOMS, LEVEL_Y, STAIRS, roomAt, setDynamicSolid, stairY } from '../src/world/SchoolLayout';
+import { FURNITURE, ITEMS, KINDER_ROOMS, LEVEL_Y, STAIRS, U, V, WALLS, miguelCaneU, riserCount, roomAt, setDynamicSolid, stairY } from '../src/world/SchoolLayout';
+import { hiddenBySchool } from '../src/world/people/Culling';
+import { resolveAnchor, standNear } from '../src/game/story/anchors';
+import { character } from '../src/game/story/characters';
+import { interactable } from '../src/game/story/world';
 import { CROSS_AT, CROSS_HALF, Sidewalks, sidewalkOptions, type Walker } from '../src/world/people/Sidewalks';
 import { generateCityPlan } from '../src/world/CityLayout';
 import { CityIndex } from '../src/world/CityIndex';
@@ -29,6 +33,55 @@ function run(sim: PeopleSim, seconds: number, view: SimView = FAR): void {
 
 const students = (sim: PeopleSim) => sim.agents.filter((a) => STUDENT.has(a.role) && !a.named && a.alive);
 const frac = (list: Agent[], pred: (a: Agent) => boolean) => (list.length === 0 ? 0 : list.filter(pred).length / list.length);
+
+/** Tramo [u0, u1] de un vano sobre el frente del hall (planta baja). */
+function hallFront(type: string, pick: (c: number) => boolean): [number, number] {
+  const line = V.hallDoors;
+  for (const w of WALLS) {
+    if (w.level !== 0 || Math.abs(w.a[1] - line) > 0.05 || Math.abs(w.b[1] - line) > 0.05) continue;
+    const dir = Math.sign(w.b[0] - w.a[0]);
+    for (const o of w.openings) {
+      const u0 = w.a[0] + dir * o.t0;
+      const u1 = w.a[0] + dir * o.t1;
+      if (o.type === type && pick((u0 + u1) / 2)) return [Math.min(u0, u1), Math.max(u0, u1)];
+    }
+  }
+  throw new Error(`sin vano ${type} sobre el frente del hall`);
+}
+
+/**
+ * Cuenta quién cruza el frente del hall por la puerta de la portería y por
+ * la entrada vidriada, paso a paso (10 Hz). `seen` marca a quién "ve" la
+ * cámara antes de cada paso (sin, todos fuera de cuadro).
+ */
+function frontCrossings(sim: PeopleSim, seen?: (a: Agent) => boolean): (seconds: number, view: SimView) => { porch: number; glass: number } {
+  const line = V.hallDoors;
+  const porteria = hallFront('door', (c) => c > U.recW && c < U.salonW);
+  const entrance = hallFront('entrance', (c) => c < U.recW);
+  const last = new Map<Agent, [number, number]>();
+  return (seconds, view) => {
+    let porch = 0;
+    let glass = 0;
+    for (let t = 0; t < seconds; t += 0.1) {
+      if (seen) for (const a of sim.agents) a.visible = seen(a);
+      sim.update(0.1, view);
+      for (const a of sim.agents) {
+        const prev = last.get(a);
+        if (!a.alive || a.level !== 0) {
+          last.delete(a);
+          continue;
+        }
+        last.set(a, [a.u, a.v]);
+        // Un salto largo es una reubicación (aparecer en la vereda), no un paso.
+        if (!prev || (prev[1] - line) * (a.v - line) >= 0 || Math.hypot(a.u - prev[0], a.v - prev[1]) > 2) continue;
+        const uc = prev[0] + ((line - prev[1]) / (a.v - prev[1])) * (a.u - prev[0]);
+        if (uc > porteria[0] - 0.05 && uc < porteria[1] + 0.05) porch++;
+        if (uc > entrance[0] - 0.05 && uc < entrance[1] + 0.05) glass++;
+      }
+    }
+    return { porch, glass };
+  };
+}
 
 describe('gente — población', () => {
   it('reparto por rol según el tamaño de la multitud (VR 90, Alta 180)', () => {
@@ -112,7 +165,8 @@ describe('gente — lugares', () => {
   });
 
   it('puestos (cabina, cantina, fila, portón, acto) sobre lugares válidos', () => {
-    expect(roomAt(places.porter.u, places.porter.v, 0)?.id).toBe('hall');
+    // El portero, en la portería (la oficina de recepción del CAD), detrás de su ventanilla.
+    expect(roomAt(places.porter.u, places.porter.v, 0)?.id).toBe('recepcionOf');
     expect(places.cantina.length).toBe(2);
     expect(places.queue.length).toBeGreaterThanOrEqual(4);
     for (const q of places.queue) expect(nav.isMain(0, q.u, q.v), 'fila').toBe(true);
@@ -156,7 +210,7 @@ describe('gente — momentos del día', () => {
     expect(teaching.length).toBeGreaterThanOrEqual(2);
     // Personal en sus puestos.
     const porter = sim.agents.find((a) => a.staff === 'porter')!;
-    expect(sim.roomOf(porter)).toBe('hall');
+    expect(sim.roomOf(porter)).toBe('recepcionOf');
   });
 
   it('recreo: patios llenos, fila en la cantina, nadie en las aulas', () => {
@@ -238,8 +292,8 @@ describe('gente — personajes con nombre y reacciones', () => {
     }
     expect(bad).toBe(false);
     // Teleport, mirar y gestos.
-    sim.teleportNamed(a, { u: 37.4, v: -4, level: 0 }, Math.PI);
-    expect(a.u).toBeCloseTo(37.4, 5);
+    sim.teleportNamed(a, { u: 35.0, v: -4, level: 0 }, Math.PI);
+    expect(a.u).toBeCloseTo(35.0, 5);
     expect(a.level).toBe(0);
     sim.play(a, 'wave');
     expect(a.anim.gesture).toBe('wave');
@@ -329,9 +383,13 @@ describe('gente — esqueleto', () => {
   });
 
   it('en la escalera cada pie pisa su huella: ninguno se hunde', () => {
-    const s = STAIRS[0];
-    // La huella real coincide con la rampa de la simulación en el medio de cada escalón.
-    const n = Math.max(4, Math.round((s.y1 - s.y0) / 0.175));
+    // El tramo más largo que sube hacia +u (la escalera de chapa del edificio
+    // de bloque): la prueba de abajo camina en ese sentido.
+    const s = STAIRS.filter((x) => x.dir === 'u+').sort((p, q) => q.u1 - q.u0 - (p.u1 - p.u0))[0];
+    const base = LEVEL_Y[0] + s.y0;
+    // La huella real coincide con la rampa de la simulación en el medio de
+    // cada escalón (con los escalones que dibuja el constructor).
+    const n = riserCount(s);
     const vm = (s.v0 + s.v1) / 2;
     for (let i = 0; i < n; i++) {
       const u = s.u0 + ((i + 0.5) / n) * (s.u1 - s.u0);
@@ -347,8 +405,8 @@ describe('gente — esqueleto', () => {
     const pose = new Float32Array(POSE_N);
     // Mundo = local con x = −u (alcanza para la prueba: el rumbo apunta a +u).
     const floor = (x: number, z: number) => {
-      const y = treadFloor(-x, z, LEVEL_Y[0] + 0.8);
-      return Number.isNaN(y) ? LEVEL_Y[0] : y;
+      const y = treadFloor(-x, z, base + 0.8);
+      return Number.isNaN(y) ? base : y;
     };
     const f = rig.f;
     const sole = (sh: number) => -d.shin * f[sh * 12 + 4] + 0.035 * d.legS * f[sh * 12 + 7] + f[sh * 12 + 10];
@@ -493,9 +551,58 @@ describe('gente — revisión de la escuela habitada', () => {
         porter.visible = true;
         sim.update(0.1, FAR);
       }
-      expect(sim.roomOf(porter), phase).toBe('hall');
+      expect(sim.roomOf(porter), phase).toBe('recepcionOf');
       expect(Math.hypot(porter.u - sim.places.porter.u, porter.v - sim.places.porter.v)).toBeLessThan(0.3);
     }
+  });
+
+  it('la portería no es un acceso: nadie cruza su puerta al atrio en la entrada ni en la salida', () => {
+    // Su puerta al atrio y la entrada vidriada están sobre el mismo frente
+    // del hall; abierta para la grilla, la oficina era un segundo acceso
+    // (QA: 18–25 cruces en la entrada y 52–71 en la salida, y antes de Rubén
+    // atravesaban la hoja cerrada con llave, que es sólo del jugador).
+    for (const crowdSize of [110, 180]) {
+      const sim = new PeopleSim(42, { crowdSize, detailed: crowdSize > 110 });
+      const count = frontCrossings(sim);
+      const entrada = count(90, FAR);
+      expect(entrada.porch, `entrada, ${crowdSize}`).toBe(0);
+      // La gente igual entra: por la puerta vidriada.
+      expect(entrada.glass, `entrada, ${crowdSize}`).toBeGreaterThan(5);
+      sim.setPhase('salida');
+      const salida = count(90, FAR);
+      expect(salida.porch, `salida, ${crowdSize}`).toBe(0);
+      expect(salida.glass, `salida, ${crowdSize}`).toBeGreaterThan(20);
+    }
+    // El portero sigue llegando a su ventanilla, por la puerta del vestíbulo.
+    const sim = new PeopleSim(42, { crowdSize: 110, detailed: false });
+    expect(sim.nav.componentAt(0, sim.places.porter.u, sim.places.porter.v)).toBe(sim.nav.componentAt(0, U.recW - 1.5, -3.0));
+  });
+
+  it('portón con llave: la gente espera afuera sin buscar caminos imposibles y entra en cuanto abren', () => {
+    const sim = new PeopleSim(42, { crowdSize: 110, detailed: false });
+    // La llave de la historia (`lock-entrada`): el vano vidriado, macizo para todos.
+    const [e0, e1] = hallFront('entrance', (c) => c < U.recW);
+    const lock = { u0: e0 - 0.05, u1: e1 + 0.05, v0: V.hallDoors - 0.25, v1: V.hallDoors + 0.25, level: 0 as const };
+    // La cámara en el portón: quien está cerca se ve (y no se lo puede reubicar).
+    const gate: SimView = { cu: 35.24, cv: 1.0, cy: 1.7, fu: 0, fv: -1, player: null };
+    const count = frontCrossings(sim, (a) => a.alive && a.level === 0 && Math.hypot(a.u - 35.24, a.v - 1.0) < 14);
+    const waiting = () => sim.agents.filter((a) => a.alive && a.waitEpoch >= 0).length;
+    setDynamicSolid('test-porton', lock);
+    const shut = (() => {
+      try {
+        return { ...count(30, gate), pending: sim.nav.pendingJobs, waiting: waiting() };
+      } finally {
+        setDynamicSolid('test-porton', null);
+      }
+    })();
+    expect(shut.glass + shut.porch, 'con llave nadie pasa').toBe(0);
+    // Los que esperan afuera no piden caminos: la cola de búsquedas no crece.
+    expect(shut.pending).toBeLessThan(5);
+    expect(shut.waiting, 'esperando que abran').toBeGreaterThan(3);
+    const open = count(30, gate);
+    expect(open.porch).toBe(0);
+    expect(open.glass, 'al abrir entran por la puerta vidriada').toBeGreaterThan(5);
+    expect(waiting()).toBeLessThan(shut.waiting / 2);
   });
 
   it('las salas del jardín tienen su maestra durante la clase', () => {
@@ -560,7 +667,9 @@ describe('gente — revisión de la escuela habitada', () => {
 
   it('nadie se mete en los cestos del patio', () => {
     const sim = new PeopleSim(42, { crowdSize: 90, detailed: false });
-    const bins = { u0: 21.65, u1: 23.55, v0: -19.85, v1: -19.35, level: 0 as const };
+    // Donde los pone el juego (`GameProps.buildBins`: 1,9 × 0,5 m sobre el punto limpio).
+    const at = resolveAnchor(interactable('puntoLimpio')!.anchor);
+    const bins = { u0: at.u - 0.95, u1: at.u + 0.95, v0: at.v - 0.25, v1: at.v + 0.25, level: 0 as const };
     setDynamicSolid('test-bins', bins);
     try {
       sim.setPhase('clase');
@@ -607,7 +716,11 @@ describe('gente — revisión de la escuela habitada', () => {
 
   it('nadie de la multitud se mete dentro de un personaje con nombre', () => {
     const sim = new PeopleSim(42, { crowdSize: 180, detailed: true });
-    const ines = sim.spawnNamed('ines', { role: 'teacher', seed: 77, hairStyle: 'long' }, { u: 36.7, v: -7.3, level: 0 }, 0);
+    // Inés en su lugar del hall (la última estación: la de todos los días).
+    const stations = character('ines')!.stations;
+    const st = stations[stations.length - 1];
+    const at = standNear(resolveAnchor(st.at), { min: 0 });
+    const ines = sim.spawnNamed('ines', { role: 'teacher', seed: 77, hairStyle: 'long' }, { u: at.u, v: at.v, level: at.level }, 0);
     let worst = Infinity;
     for (let t = 0; t < 25; t += 0.1) {
       // Todos a la vista (cerca de la cámara): caminan a su paso, sin apuro.
@@ -660,6 +773,57 @@ describe('gente del barrio — veredas', () => {
     }
     return sw;
   }
+
+  it('la escuela tapa a quien camina del otro lado del edificio, nunca a quien está a la vista', () => {
+    // Desde el portón: la calle del fondo y la lateral del gimnasio, detrás del
+    // edificio; de una calle lateral a la otra, a través de la escuela.
+    expect(hiddenBySchool(35.24, 1.0, 30, -55)).toBe(true);
+    expect(hiddenBySchool(35.24, 1.0, 70, -15)).toBe(true);
+    expect(hiddenBySchool(70, -20, -12, -20)).toBe(true);
+    // A la vista: a lo largo de Laprida, la esquina del gimnasio, a lo largo
+    // de la lateral, de Miguel Cané y de la calle del fondo.
+    expect(hiddenBySchool(35, 4, 90, 4)).toBe(false);
+    expect(hiddenBySchool(35, 4, -20, 4)).toBe(false);
+    expect(hiddenBySchool(35, 4, 69.5, -1.5)).toBe(false);
+    expect(hiddenBySchool(69.8, -5, 69.8, -35)).toBe(false);
+    expect(hiddenBySchool(miguelCaneU(-10) - 1.5, -10, miguelCaneU(-30) - 1.5, -30)).toBe(false);
+    expect(hiddenBySchool(10, -46, 50, -46)).toBe(false);
+    // Con la gente del barrio de verdad: desde el portón, el atrio y la
+    // vereda, nadie de este lado de la fachada queda tapado y todos los de la
+    // calle del fondo (detrás del edificio) sí.
+    const sw = new Sidewalks(plan, frame, 42, sidewalkOptions(110, false));
+    // La cámara en el portón, mirando a la escuela (la burbuja acerca gente ahí).
+    sw.camX = frame.ox - 35.24;
+    sw.camZ = frame.oz + 1.0;
+    sw.camFX = 0;
+    sw.camFZ = -1;
+    const cams: Array<[number, number]> = [
+      [35.24, 1.0],
+      [35.24, -0.4],
+      [36.5, 4.5],
+    ];
+    let front = 0;
+    let back = 0;
+    for (let t = 0; t < 60; t += 0.1) {
+      sw.update(0.1);
+      if (Math.round(t * 10) % 10 !== 0) continue;
+      for (const { u, v } of sw.agents) {
+        for (const [cu, cv] of cams) {
+          const hidden = hiddenBySchool(cu, cv, u, v);
+          if (v > -0.5) {
+            expect(hidden, `${u.toFixed(1)},${v.toFixed(1)}`).toBe(false);
+            front++;
+          }
+          if (v < -40 && u > 8 && u < 55) {
+            expect(hidden, `${u.toFixed(1)},${v.toFixed(1)}`).toBe(true);
+            back++;
+          }
+        }
+      }
+    }
+    expect(front).toBeGreaterThan(0);
+    expect(back).toBeGreaterThan(0);
+  });
 
   it('la red: vueltas alrededor de cada manzana del barrio y sendas sólo en las esquinas', () => {
     const sw = new Sidewalks(plan, frame, 42, sidewalkOptions(90, false));

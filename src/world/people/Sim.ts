@@ -1,6 +1,6 @@
 import type { CharacterLook, NpcAnim, NpcRole, SchoolPhase } from '../../game/contracts';
 import { Rng } from '../../utils/rng';
-import { LEVEL_Y, levelOf, roomAt, schoolFloorLocal, type Level, type Rect } from '../SchoolLayout';
+import { LEVEL_Y, U, V, WALLS, inLot, levelOf, roomAt, schoolFloorLocal, schoolSolidLocal, type Level, type Rect } from '../SchoolLayout';
 import { GESTURES, SEATED, newAnimState, setBase, startGesture, tickAnim, type AnimId, type AnimState } from './Anim';
 import { bodyDims, dressStaff, makeAppearance, type Appearance, type BodyDims, type StaffKind } from './Looks';
 import { NAV_BOUNDS, NavGrid, type NavPoint, type PathJob, type PathLeg } from './NavGrid';
@@ -130,6 +130,11 @@ export class Agent {
   ghost = 0;
   /** Sin camino posible desde donde quedó: se reubica cuando nadie lo vea. */
   rescue = false;
+  /**
+   * Esperando afuera a que abran la escuela: apertura del portón en la que se
+   * quedó (`PeopleSim.gateEpoch`), −1 si no espera eso.
+   */
+  waitEpoch = -1;
   /** Fallos de camino seguidos (no se borra al empezar otra tarea, sí al llegar). */
   streak = 0;
   run = false;
@@ -216,17 +221,50 @@ export function composition(n: number): Record<NpcRole, number> & { pedestrians:
 
 /** Aulas por nivel, en orden de preferencia (las de planta baja primero: se ven). */
 const PRIMARY_ROOMS = ['aula5', 'aula4', 'aula1', 'aula6AC', 'aula2', 'aula6BD', 'aula3'];
-const SECONDARY_ROOMS = ['tecnologia', 'aulaS2', 'aulaS3', 'aulaS4', 'aulaBloqueC', 'aulaBloqueD', 'aulaSec', 'aulaS1', 'aulaC1', 'bilingue', 'aulaS5', 'aulaBloqueA'];
+const SECONDARY_ROOMS = ['tecnologia', 'aulaS2', 'aulaS3', 'aulaS4', 'aulaBloqueC', 'aulaBloqueD', 'aulaSec', 'aulaS1', 'aulaC1', 'bilingue', 'aulaS5', 'aulaBloqueA', 'aula4A', 'aula6C'];
 const KINDER_ROOMS = ['salaAmarilla', 'salaRoja', 'salaCeleste'];
 /** Cupo por aula: un aula llena al 100 % se ve artificial. */
 const ROOM_CAP = 18;
 
 /** Zonas de juego (local, planta baja). */
 const PLAY_KIDS: Rect = { u0: 34.2, v0: -31.5, u1: 49.2, v1: -23.9 };
-const PLAY_PRIMARY: Rect = { u0: 17.6, v0: -21.8, u1: 27.6, v1: -10.2 };
+// Dentro del patio central del CAD (u 14,83–27,36, v −8,53 a −20,96): con el
+// rectángulo viejo se jugaba en la punta del comedor y en el pasillo norte.
+const PLAY_PRIMARY: Rect = { u0: 16.2, v0: -20.4, u1: 26.9, v1: -10.2 };
 const PLAY_SECONDARY: Rect = { u0: 53.0, v0: -18.8, u1: 65.5, v1: -4.2 };
-/** Baños para los mandados durante la clase, por nivel. */
-const BATHROOMS: Record<number, string[]> = { 0: ['salaNorte'], 1: ['banosS', 'banosN'], 2: [] };
+/**
+ * Baños para los mandados durante la clase, por nivel. En el primer piso sólo
+ * Damas y Caballeros, que abren al pasillo de los trofeos: los del sector
+ * nuevo (`banosN`) abren al aula del vértice (CAD) y el mandado cruzaba dos
+ * aulas en plena clase.
+ */
+const BATHROOMS: Record<number, string[]> = { 0: ['salaNorte'], 1: ['banosS'], 2: [] };
+
+/** Centro de cada acceso vidriado de planta baja (del plano: hoy, el del hall). */
+function entranceCenters(): Array<readonly [number, number]> {
+  const out: Array<readonly [number, number]> = [];
+  for (const w of WALLS) {
+    if (w.level !== 0) continue;
+    const len = Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]);
+    if (len < 1e-6) continue;
+    for (const o of w.openings) {
+      if (o.type !== 'entrance') continue;
+      const t = (o.t0 + o.t1) / 2 / len;
+      out.push([w.a[0] + (w.b[0] - w.a[0]) * t, w.a[1] + (w.b[1] - w.a[1]) * t]);
+    }
+  }
+  return out;
+}
+
+/**
+ * Del lado de afuera del acceso vidriado: la vereda, la franja del frente y
+ * el atrio del portón (que para el plano es parte del hall), o fuera del predio.
+ */
+function outsideGate(level: Level, u: number, v: number): boolean {
+  if (level !== 0) return false;
+  if (v > V.facade || !inLot(u, v)) return true;
+  return v > V.hallDoors + 0.2 && u > U.east1 && u < U.salonW;
+}
 
 export class PeopleSim {
   readonly agents: Agent[] = [];
@@ -265,6 +303,12 @@ export class PeopleSim {
   /** Presupuesto de A* por cuadro (expansiones), para no trabar el cuadro. */
   pathBudget: number;
   private readonly hash = new Map<number, Agent[]>();
+  /** Centro de cada acceso vidriado de planta baja (el del hall). */
+  private readonly entrances = entranceCenters();
+  /** ¿Una llave de la historia cierra el portón? Se mira una vez por cuadro. */
+  private shutNow = false;
+  /** Veces que el portón pasó de cerrado a abierto: quien esperaba afuera vuelve a probar una vez por apertura. */
+  private gateEpoch = 0;
 
   constructor(
     seed: number,
@@ -755,6 +799,7 @@ export class PeopleSim {
     a.gone = false;
     a.walkOff = false;
     a.rescue = false;
+    a.waitEpoch = -1;
     // Sin restos de la ubicación anterior (si el momento se fija dos veces
     // antes del primer cuadro, alguien quedaba "sentado" en el aire).
     a.seat = null;
@@ -866,13 +911,10 @@ export class PeopleSim {
       case 'wander': {
         const rnd = () => this.rt.next();
         // Con medio metro de aire: a 35 cm de un muro se quedaban mirándolo.
-        const p = task.room ? this.places.randomIn(task.room, rnd, 0.5) : task.rect ? this.places.randomInRect(task.rect, rnd, task.level, 0.5) : null;
-        return p;
+        return this.awayFromNamed(() => (task.room ? this.places.randomIn(task.room, rnd, 0.5) : task.rect ? this.places.randomInRect(task.rect, rnd, task.level, 0.5) : null));
       }
-      case 'play': {
-        const p = this.places.randomInRect(task.rect, () => this.rt.next(), task.level, 0.3);
-        return p;
-      }
+      case 'play':
+        return this.awayFromNamed(() => this.places.randomInRect(task.rect, () => this.rt.next(), task.level, 0.3));
       case 'queue': {
         const i = Math.min(this.queue.indexOf(a) < 0 ? this.queue.length : this.queue.indexOf(a), this.places.queue.length - 1);
         return this.places.queue[i];
@@ -889,6 +931,22 @@ export class PeopleSim {
       default:
         return null;
     }
+  }
+
+  /**
+   * Un punto al azar (paseo, juego) que no caiga encima de un personaje con
+   * nombre: al llegar, el paseo se da por llegado hasta 0,7 m antes y se
+   * acomoda en su punto, y con el hall del CAD (más angosto) ese punto caía
+   * seguido sobre Inés y el alumno quedaba metido en ella. Unos intentos; si
+   * no hay otro, el último.
+   */
+  private awayFromNamed(pick: () => NavPoint | null): NavPoint | null {
+    let p: NavPoint | null = null;
+    for (let k = 0; k < 4; k++) {
+      p = pick();
+      if (!p || !this.namedNear(p.level, p.u, p.v, 0.9)) return p;
+    }
+    return p;
   }
 
   /** Suelta lo reservado por la tarea actual (silla, grupo, fila). */
@@ -922,14 +980,22 @@ export class PeopleSim {
       return;
     }
     if (a.rescue) {
-      if (a.visible) {
-        // Todavía a la vista: espera un poco más.
+      if (!a.visible) {
+        a.rescue = false;
+        this.place(a, task);
+        return;
+      }
+      // Todavía a la vista: espera un poco más. Salvo quien esperaba afuera a
+      // que abrieran la escuela y ya abrieron: ése vuelve a probar, una vez
+      // por apertura (si falla por otra cosa, sigue esperando como antes).
+      // Sin esto, antes de Rubén la gente del portón se quedaba parada ahí
+      // con la escuela ya abierta, hasta que el jugador mirara para otro lado.
+      if (a.waitEpoch < 0 || a.waitEpoch === this.gateEpoch || this.shutNow) {
         this.schedule(a, task, 2);
         return;
       }
+      a.waitEpoch = -1;
       a.rescue = false;
-      this.place(a, task);
-      return;
     }
     this.release(a);
     a.task = task;
@@ -1016,6 +1082,16 @@ export class PeopleSim {
       a.post = null;
     }
     a.goal = to;
+    // Escuela cerrada (una llave de la historia en el portón): quien está
+    // afuera y va adentro ni busca camino. Una búsqueda imposible recorre
+    // toda la vereda (~5 ms en escritorio) y antes de Rubén la gente del
+    // portón la repetía cada pocos segundos. Queda como un camino fallido:
+    // espera, en cuanto nadie lo vea se lo ubica adentro, y si está a la
+    // vista vuelve a probar cuando abren.
+    if (this.waitsForGate(a)) {
+      this.pathFailed(a);
+      return;
+    }
     const from: NavPoint = a.pre ? { u: a.pre[3], v: a.pre[4], level: 0 } : { u: a.u, v: a.v, level: a.level };
     this.requestPath(a, from, to);
   }
@@ -1063,7 +1139,9 @@ export class PeopleSim {
     }
     // Sin camino: se queda donde está un rato y vuelve a intentar. Si ya
     // falló varias veces (quedó en un rincón sin salida), la próxima tarea
-    // lo ubica directamente en cuanto esté fuera de cuadro.
+    // lo ubica directamente en cuanto esté fuera de cuadro. Si es que la
+    // escuela está cerrada, anota la apertura del portón que espera.
+    a.waitEpoch = this.waitsForGate(a) ? this.gateEpoch : -1;
     a.stage = 'act';
     const t = a.task;
     if (t.k === 'seat' && this.seatOwner.get(t.seat.id) === a && !this.isHome(a, t.seat)) this.seatOwner.delete(t.seat.id);
@@ -1071,6 +1149,12 @@ export class PeopleSim {
     a.streak++;
     a.rescue = a.streak >= 2;
     this.schedule(a, t.k === 'idle' || t.k === 'script' ? this.wanderTask('hall', 0) : t, 3 + this.rt.next() * 3);
+  }
+
+  /** ¿Está afuera, va adentro (a `goal`) y una llave de la historia cierra el portón? */
+  private waitsForGate(a: Agent): boolean {
+    const g = a.goal;
+    return this.shutNow && !a.named && g !== null && outsideGate(a.level, a.u, a.v) && !outsideGate(g.level, g.u, g.v);
   }
 
   /** Llegó al final del viaje. */
@@ -2073,6 +2157,17 @@ export class PeopleSim {
     // Cierres dinámicos (cestos del juego, puertas con llave): unas cientas
     // de celdas por cuadro con la colisión viva (~0,1 ms).
     this.nav.sweepDynamic(this.opts.detailed ? 300 : 200);
+    // El portón: ¿lo cierra una llave de la historia? Al abrirse, quien
+    // esperaba afuera vuelve a probar (ver `begin`).
+    let shut = this.entrances.length > 0;
+    for (const [u, v] of this.entrances) if (!schoolSolidLocal(u, v, LEVEL_Y[0], true)) shut = false;
+    if (this.shutNow && !shut) {
+      this.gateEpoch++;
+      // Las marcas del cierre viejo duraban unos segundos más: el primero que
+      // volvía a probar fallaba de nuevo y se quedaba esperando.
+      for (const [u, v] of this.entrances) this.nav.forgetDynamic(0, u, v, 2);
+    }
+    this.shutNow = shut;
     this.processPaths();
     this.rebuildHash();
     this.phaseEvents(dt);

@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { LEVEL_Y, setDynamicSolid, type Level } from '../src/world/SchoolLayout';
 import { resolveAnchor, roomById, roomCenter, standNear } from '../src/game/story/anchors';
 import { StoryEngine } from '../src/game/story/StoryEngine';
-import { EVAC_ROUTE, INTERACTABLES, LOCKS, PLACES, STAIR_GUIDES, interactable } from '../src/game/story/world';
+import { DOOR_LOCKS, ENTRANCE_U, EVAC_ROUTE, INTERACTABLES, LOCKS, PLACES, STAIR_GUIDES, interactable } from '../src/game/story/world';
+import { doorRect } from '../src/world/SchoolDoors';
 import type { Effect, ObjectiveDef, Spot, ZoneId } from '../src/game/story/types';
 import { createActivity } from '../src/game/activities';
 import { seeded } from '../src/game/activities/types';
@@ -14,15 +15,19 @@ import { flood, reached, walk } from './gameReachKit';
  * verdad no se alcanza. Usa la misma colisión que el jugador.
  */
 
-/** Portal sobre Laprida: donde empieza la historia. */
-const PORTAL: readonly [number, number] = [37.4, 3.2];
+/** Portal sobre Laprida, frente a la entrada vidriada: donde empieza la historia. */
+const PORTAL: readonly [number, number] = [ENTRANCE_U, 3.2];
 
 function applyLocks(open: (z: ZoneId) => boolean): void {
   for (const l of LOCKS) setDynamicSolid(l.id, open(l.zone) ? null : l.rect);
+  // Las puertas del juego con llave (la portería) quedan cerradas como las
+  // deja `Doors`: macizas para el jugador.
+  for (const l of DOOR_LOCKS) setDynamicSolid(l.id, open(l.zone) ? null : doorRect(l.door), { playerOnly: true });
 }
 
 afterEach(() => {
   for (const l of LOCKS) setDynamicSolid(l.id, null);
+  for (const l of DOOR_LOCKS) setDynamicSolid(l.id, null);
 });
 
 /** Celdas alcanzables por nivel desde el portal, subiendo por las escaleras abiertas. */
@@ -111,6 +116,8 @@ describe('alcance caminando', () => {
   it('antes de hablar con Rubén la escuela está cerrada; después, abierta', () => {
     const closed = reachable(() => false);
     expect(canReach(closed, { u: 37.45, v: -6, level: 0 }), 'hall alcanzable sin Rubén').toBe(false);
+    // Ni por adentro de la portería (tiene puerta al atrio y al vestíbulo).
+    expect(canReach(closed, { u: 37.6, v: -3.2, level: 0 }), 'portería alcanzable sin Rubén').toBe(false);
     const open = reachable((z) => z === 'entrada');
     expect(canReach(open, { u: 37.45, v: -6, level: 0 })).toBe(true);
     // Sin el primer piso abierto no se sube.

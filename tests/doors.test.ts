@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DOORS, doorRect } from '../src/world/SchoolDoors';
+import { DOORS, doorRect, leavesClash } from '../src/world/SchoolDoors';
 import { LOCKS } from '../src/game/story/world';
 import { LEVEL_Y, SCHOOL, WALLS, inRect, roomAt } from '../src/world/SchoolLayout';
 
@@ -33,6 +33,41 @@ describe('puertas que se abren', () => {
         const u = L.hinge[0] + L.dir[0] * 0.05 + d.swing[0] * mid;
         const v = L.hinge[1] + L.dir[1] * 0.05 + d.swing[1] * mid;
         expect(roomAt(u, v, d.level)?.id, d.id).toBe(d.room.id);
+      }
+    }
+  });
+
+  it('dos hojas abiertas no se atraviesan', () => {
+    // La portería tiene dos puertas en esquina que se abren a la vez (la del
+    // atrio, después de Rubén, y la del vestíbulo): las hojas se cruzaban.
+    for (const d of DOORS) {
+      for (const e of DOORS) {
+        for (const L of d.leaves) {
+          for (const M of e.leaves) expect(leavesClash(d, L, e, M), `${d.id} × ${e.id}`).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('la punta de la hoja abierta no se mete en otro muro', () => {
+    // La del Aula Maker, junto a la diagonal de Miguel Cané, entraba 3 cm en
+    // el muro: el ambiente se mide al eje y la diagonal tiene 30 cm.
+    for (const d of DOORS) {
+      for (const L of d.leaves) {
+        const tip = [L.hinge[0] + d.swing[0] * L.width, L.hinge[1] + d.swing[1] * L.width];
+        for (const w of WALLS) {
+          if (w.level !== d.level) continue;
+          const len = Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]);
+          const du = (w.b[0] - w.a[0]) / len;
+          const dv = (w.b[1] - w.a[1]) / len;
+          const t = (tip[0] - w.a[0]) * du + (tip[1] - w.a[1]) * dv;
+          if (t < 0 || t > len) continue;
+          // Sin vano a esa altura: la hoja (2 m) chocaría contra el muro.
+          if (w.openings.some((o) => t > o.t0 && t < o.t1 && (o.hb ?? 0) < 0.5)) continue;
+          const n = Math.abs(-(tip[0] - w.a[0]) * dv + (tip[1] - w.a[1]) * du);
+          const half = (w.kind === 'int' ? SCHOOL.wallT : SCHOOL.extT) / 2;
+          expect(n, `${d.id}: punta (${tip[0].toFixed(2)}, ${tip[1].toFixed(2)})`).toBeGreaterThan(half + 0.02);
+        }
       }
     }
   });

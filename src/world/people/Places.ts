@@ -11,6 +11,7 @@ import {
   deskTopOf,
   hasFloor,
   inPoly,
+  riserCount,
   roomAt,
   roomLevel,
   type Facing,
@@ -39,8 +40,11 @@ import type { NavGrid, NavPoint } from './NavGrid';
  * huella: sirve para la colisión, pero un pie apoyado sobre la rampa queda
  * medio escalón hundido en la huella de adelante o flotando sobre la de
  * atrás. Para apoyar los pies se usa esta altura escalonada, la misma que
- * dibuja `SchoolBuilder.stair` (n contrahuellas de ~0,175 m; la huella i
- * está a (i + 1) / n de la altura del tramo).
+ * dibuja `SchoolBuilder.stair`: `riserCount` contrahuellas (regla del paso
+ * cómodo) y la huella i a (i + 1) / n de la altura del tramo. Con n =
+ * alto / 0,175 los tramos donde las dos cuentas difieren (la escalera del ala
+ * oeste, la blanca, la exterior larga, la de chapa y la del jardín) dejaban
+ * los pies medio escalón arriba o abajo de lo dibujado.
  */
 export function treadFloor(u: number, v: number, nearY: number): number {
   let best = NaN;
@@ -49,7 +53,7 @@ export function treadFloor(u: number, v: number, nearY: number): number {
     if (u < s.u0 || u > s.u1 || v < s.v0 || v > s.v1) continue;
     const t =
       s.dir === 'u+' ? (u - s.u0) / (s.u1 - s.u0) : s.dir === 'u-' ? (s.u1 - u) / (s.u1 - s.u0) : s.dir === 'v+' ? (v - s.v0) / (s.v1 - s.v0) : (s.v1 - v) / (s.v1 - s.v0);
-    const n = Math.max(4, Math.round((s.y1 - s.y0) / 0.175));
+    const n = riserCount(s);
     const i = Math.min(n - 1, Math.max(0, Math.floor(t * n)));
     const y = LEVEL_Y[0] + s.y0 + ((i + 1) * (s.y1 - s.y0)) / n;
     const d = Math.abs(y - nearY);
@@ -173,6 +177,9 @@ const CLASS_KIND: Record<string, ClassKind> = {
   aulaBloqueC: 'secondary',
   aulaBloqueD: 'secondary',
   aulaC1: 'secondary',
+  // Aulas nuevas del primer piso (plano CAD + plano anotado), amuebladas.
+  aula4A: 'secondary',
+  aula6C: 'secondary',
   bilingue: 'secondary',
   tecnologia: 'secondary',
   salaAmarilla: 'kinder',
@@ -321,13 +328,16 @@ export class Places {
   private readonly roomById = new Map<string, Room>();
 
   /**
-   * Puestos del personal y fila de la cantina: se DERIVAN del equipamiento
-   * (la cabina de recepción, la línea de la cantina, el acceso vidriado), no
-   * se escriben a mano: el plano todavía se está ajustando y un puesto fijo
-   * quedaba adentro de una mesa cuando se movía un mueble.
+   * Puestos del personal y fila de la cantina: se DERIVAN del equipamiento y
+   * los muros (la ventanilla de la portería, la línea de la cantina, el acceso
+   * vidriado), no se escriben a mano: el plano todavía se está ajustando y un
+   * puesto fijo quedaba adentro de una mesa cuando se movía un mueble.
    */
-  /** Dentro de la cabina de recepción, de cara al hall (el portero no sale de ahí). */
-  readonly porter: Spot = { u: 41.25, v: -3.4, level: 0, yaw: Math.PI / 2 };
+  /**
+   * Dentro de la portería, detrás de su ventanilla al vestíbulo (el portero no
+   * sale de ahí). Se deriva del plano en `buildPosts`; esto es el respaldo.
+   */
+  readonly porter: Spot = { u: 37.25, v: -3.6, level: 0, yaw: Math.PI / 2 };
   /** Detrás de la línea de la cantina, de cara a los que compran. */
   readonly cantina: Spot[] = [];
   /** Fila de la cantina: la cabeza mira al mostrador y el resto hacia la cabeza. */
@@ -335,7 +345,7 @@ export class Places {
   /** Recibimiento en el acceso vidriado del hall: de cara a la calle. */
   readonly portal: Spot[] = [];
   /** Frente al portón, del lado de la vereda: donde esperan las familias. */
-  readonly sidewalkFront = { u0: 30.5, v0: 2.6, u1: 45.5, v1: 5.6 };
+  readonly sidewalkFront = { u0: 29.6, v0: 2.6, u1: 44.6, v1: 5.6 };
   /** Puntas de la vereda de Laprida (dentro de la grilla). */
   readonly sidewalkEnds: NavPoint[] = [
     { u: -6.5, v: 4.2, level: 0 },
@@ -345,10 +355,10 @@ export class Places {
   readonly speaker: Spot = { u: 53.2, v: -10.3, level: 0, yaw: -Math.PI / 2 };
   /** Filas del acto (de oeste a este), cada una de norte a sur; todos miran al oeste. */
   readonly actoRows: Spot[][] = [];
-  /** Recorrido del lampazo: el pasillo sur. */
+  /** Recorrido del lampazo: el eje del pasillo sur (CAD: 2,3 m entre las aulas y el patio). */
   readonly mopRoute: NavPoint[] = [
-    { u: 11.0, v: -8.25, level: 0 },
-    { u: 30.5, v: -8.25, level: 0 },
+    { u: 11.0, v: -7.36, level: 0 },
+    { u: 30.5, v: -7.36, level: 0 },
   ];
 
   constructor(private readonly nav: NavGrid) {
@@ -369,7 +379,10 @@ export class Places {
   /** Portero, cantina, fila y recibimiento, a partir del equipamiento y los muros. */
   private buildPosts(): void {
     const booth = ITEMS.find((it) => it.kind === 'booth' && itemLevel(it) === 0);
-    if (booth) {
+    const counter = this.receptionCounter();
+    if (counter) {
+      Object.assign(this.porter, counter);
+    } else if (booth) {
       // Adentro de la cabina, hacia el extremo del acceso, mirando al hall.
       const [fu, fv] = faceVec(booth.face);
       const alongV = booth.face === 'e' || booth.face === 'w';
@@ -451,7 +464,37 @@ export class Places {
         }
       }
     }
-    if (this.portal.length === 0) this.portal.push({ u: 37.4, v: -2.8, level: 0, yaw: 0 });
+    if (this.portal.length === 0) this.portal.push({ u: 35.24, v: -3.4, level: 0, yaw: 0 });
+  }
+
+  /**
+   * Puesto del portero: medio metro adentro de la ventanilla de atención de
+   * la oficina de recepción (la portería, CAD), de cara a quien llega por el
+   * vestíbulo. Ya no hay cabina suelta en el hall: la recepción es un
+   * ambiente con muros, y el puesto sigue a su ventanilla si se mueve.
+   */
+  private receptionCounter(): Spot | null {
+    for (const w of WALLS) {
+      if (w.level !== 0) continue;
+      const du = w.b[0] - w.a[0];
+      const dv = w.b[1] - w.a[1];
+      const len = Math.hypot(du, dv);
+      const tu = du / len;
+      const tv = dv / len;
+      for (const o of w.openings) {
+        if (o.type !== 'counter') continue;
+        const tc = (o.t0 + o.t1) / 2;
+        const cu = w.a[0] + tu * tc;
+        const cv = w.a[1] + tv * tc;
+        for (const side of [-1, 1]) {
+          const nu = -tv * side;
+          const nv = tu * side;
+          if (roomAt(cu + nu * 0.45, cv + nv * 0.45, 0)?.id !== 'recepcionOf') continue;
+          return { u: cu + nu * 0.5, v: cv + nv * 0.5, level: 0, yaw: yawOfLocal(-nu, -nv) };
+        }
+      }
+    }
+    return null;
   }
 
   room(id: string): Room | undefined {

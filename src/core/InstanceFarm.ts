@@ -10,7 +10,7 @@ import { CreateIcoSphere } from '@babylonjs/core/Meshes/Builders/icoSphereBuilde
 import { VertexBuffer } from '@babylonjs/core/Buffers/buffer';
 import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData';
 
-export type Primitive = 'box' | 'cylinder' | 'cylinderHi' | 'cone' | 'sphere' | 'plane' | 'blob' | 'blobHi';
+export type Primitive = 'box' | 'post' | 'cylinder' | 'cylinderHi' | 'cone' | 'sphere' | 'plane' | 'blob' | 'blobHi';
 
 /**
  * Granja de instancias finas (thin instances).
@@ -55,7 +55,9 @@ export class InstanceFarm {
     if (this.committed) {
       throw new Error('InstanceFarm: no se puede agregar después de commit()');
     }
-    const key = `${prim}|${material.name}`;
+    // Los postes conservan el prefijo de las cajas: `Materials` les da la UV
+    // métrica (y el resto del código los trata como cajas) por el nombre.
+    const key = prim === 'post' ? `box|post|${material.name}` : `${prim}|${material.name}`;
     let farm = this.farms.get(key);
     if (!farm) {
       farm = { mesh: this.createSource(prim, key, material), matrices: [], count: 0 };
@@ -180,6 +182,14 @@ export class InstanceFarm {
       case 'box':
         mesh = CreateBox(name, { size: 1 }, this.scene);
         break;
+      case 'post':
+        // Caja sin la cara de abajo (10 triángulos, no 12): patas, barrotes y
+        // parantes que apoyan en el piso, un muro o un zócalo, donde esa cara
+        // nunca se ve. Las patas de las sillas son ~1.500 copias y la granja
+        // no descarta instancias sueltas: se pagaban en todas las vistas.
+        mesh = CreateBox(name, { size: 1 }, this.scene);
+        dropBottom(mesh);
+        break;
       case 'cylinder':
         // 6 lados: un tronco o una columna no necesitan mas, y baja de 40 a 24 tris.
         mesh = CreateCylinder(name, { height: 1, diameter: 1, tessellation: 6 }, this.scene);
@@ -236,6 +246,19 @@ export class InstanceFarm {
     mesh.isPickable = false;
     return mesh;
   }
+}
+
+/** Quita los triángulos que miran hacia abajo (la base de una caja). */
+function dropBottom(mesh: Mesh): void {
+  const idx = mesh.getIndices();
+  const nrm = mesh.getVerticesData(VertexBuffer.NormalKind);
+  if (!idx || !nrm) return;
+  const keep: number[] = [];
+  for (let i = 0; i < idx.length; i += 3) {
+    if (nrm[idx[i] * 3 + 1] < -0.5) continue;
+    keep.push(idx[i], idx[i + 1], idx[i + 2]);
+  }
+  mesh.setIndices(keep);
 }
 
 /**

@@ -103,8 +103,15 @@ export class City {
     );
     const buildings = new BuildingBuilder(this.farm, this.mats, rng, nature, street);
     const neighborhood = new NeighborhoodBuilder(this.farm, this.mats, rng, nature, street, options.highDetailStreet ?? true);
+    // La escuela saca su azar de un generador propio (con su vegetación),
+    // derivado de la semilla igual en escritorio y en VR: con el compartido,
+    // cada cambio en la escuela volvía a sortear los árboles y balcones de
+    // todo el barrio que se arma después (pasó con los planos: +4 mil
+    // triángulos de copas por vista en el visor sin tocar una calle).
+    const schoolRng = new Rng(seed ^ 0x5c4001a7);
+    const schoolNature = new NatureBuilder(this.farm, this.mats, schoolRng, options.highDetailFoliage ?? true);
     // En VR la escuela usa mobiliario y herrería más livianos (misma arquitectura).
-    const schoolBuilder = new SchoolBuilder(this.farm, this.mats, rng, nature, street, options.highDetailStreet ?? true);
+    const schoolBuilder = new SchoolBuilder(this.farm, this.mats, schoolRng, schoolNature, street, options.highDetailStreet ?? true);
     const infra = new InfraBuilder(
       this.farm,
       this.mats,

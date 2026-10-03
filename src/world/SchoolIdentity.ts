@@ -7,7 +7,10 @@ import { Color3 } from '@babylonjs/core/Maths/math.color';
 import {
   FLAG,
   ITEMS,
+  MC_COS,
+  MC_SLOPE,
   MEETING_POINT,
+  PORTAL,
   SCHOOL,
   U,
   V,
@@ -70,10 +73,10 @@ export class SchoolIdentity {
     const q = new QuadBatch(frame);
     const S = 1; // mira al sur (+v)
     const N = -1; // mira al norte (−v)
-    const portalU = (32.95 + 41.9) / 2;
+    const portalU = (PORTAL.g0 + PORTAL.g1) / 2;
     // Portal sobre Laprida: marquesina y escudo.
     // El portal sobresale 0,85 m de la fachada (ver SchoolBuilder.portal).
-    q.wall(37.425, 0.875, 3.15, 8.2, 1.36, 0, S, R.sign);
+    q.wall((PORTAL.u0 + PORTAL.u1) / 2, 0.875, 3.15, 8.2, 1.36, 0, S, R.sign);
     q.wall(portalU, 0.875, 6.78, 0.72, 0.62, 0, S, R.crest);
     q.wall(FLAG.u, FLAG.v, FLAG.y, 1.6, 1.0, 0, S, R.flag);
     // Jardín: marquesina "Educación Inicial" y banda "CIMDIP" sobre la calle del norte.
@@ -84,10 +87,11 @@ export class SchoolIdentity {
     const banner = ITEMS.find((it) => it.kind === 'banner');
     if (banner) q.wall(banner.u, banner.v + 0.03, FY + 1.3, 0.84, 1.9, 0, S, R.totem);
 
-    // Recepción: mural del cruce de los Andes en el muro oeste, con el lema
+    // Recepción: mural del cruce de los Andes en el muro oeste (el del aula
+    // 5, entre el frente del hall y la boca del pasillo sur), con el lema
     // pintado debajo sobre el zócalo de mármol (0:18-0:23).
-    q.wall(U.east1 + 0.105, -5.1, FY + 2.3, 2.6, 1.5, 1, 0, R.sanMartin);
-    q.wall(U.east1 + 0.106, -5.1, FY + 1.05, 2.5, 0.62, 1, 0, R.motto);
+    q.wall(U.east1 + 0.105, -4.25, FY + 2.3, 2.6, 1.5, 1, 0, R.sanMartin);
+    q.wall(U.east1 + 0.106, -4.25, FY + 1.05, 2.5, 0.62, 1, 0, R.motto);
 
     // Aula Maker: el mural de vinilo sobre la medianera (dos paños) y
     // COMPARTE en el testero este; Educabot al costado de los muebles de la
@@ -101,21 +105,25 @@ export class SchoolIdentity {
       const [bu, bv] = makerWallAt(0, 1);
       q.wall(cu, cv, FY + 1.275, s1 - s0, 2.35, bu - au, bv - av, region);
     }
-    q.wall(U.tecE - 0.16, -33.15, FY + 1.275, 4.1, 2.35, -1, 0, R.makerC);
-    q.wall(15.89, -30.25, FY + 0.95, 0.45, 1.9, -1, 0, R.educabot);
-    q.wall(U.tecE - 0.11, -30.4, FY + 2.5, 0.5, 0.18, -1, 0, R.salida);
-    q.wall(14.92, V.nBlockN + 0.115, FY + 2.42, 0.5, 0.18, 0, S, R.salida);
+    // COMPARTE va sobre el banco de la láser, al norte del portón al patio.
+    q.wall(U.tecE - 0.16, -34.7, FY + 1.95, 2.05, 1.175, -1, 0, R.makerC);
+    // Educabot: en el costado del primer mueble, frente a la puerta.
+    q.wall(13.69, -31.89, FY + 0.95, 0.45, 1.9, 0, S, R.educabot);
+    q.wall(U.tecE - 0.11, -32.45, FY + 2.5, 0.5, 0.18, -1, 0, R.salida);
+    q.wall(13.2, V.nBlockN + 0.115, FY + 2.42, 0.5, 0.18, 0, S, R.salida);
 
     // Pasillo sur: carteleras de corcho de marco rojo cerca de la salida.
     q.wall(2.6, V.classTop - 0.115, FY + 1.9, 1.4, 1.0, 0, N, R.cork1);
-    q.wall(5.0, V.corrS + 0.115, FY + 1.9, 1.4, 1.0, 0, S, R.cork2);
-    q.wall(37.45, V.hallDoors - 0.13, 3.0, 0.42, 0.42, 0, N, R.clock);
+    q.wall(6.35, V.corrS + 0.115, FY + 1.9, 1.4, 1.0, 0, S, R.cork2);
+    // Reloj sobre la entrada, del lado del hall.
+    const entrance = (34.2 + 36.27) / 2;
+    q.wall(entrance, V.hallDoors - 0.13, 3.0, 0.42, 0.42, 0, N, R.clock);
     // El plano de evacuación cuelga en el frente de la oficina de recepción.
-    q.wall(34.72, V.recN - 0.115, 1.65, 1.0, 0.62, 0, -1, R.plan);
+    q.wall(37.6, V.recB - 0.115, 1.65, 1.0, 0.62, 0, -1, R.plan);
 
     // Tecnología: mural "imagina · diseña · crea" y cartel del aula maker.
     q.wall(25.0, V.nBlockN - 0.115, 1.95, 3.7, 1.48, 0, N, R.mural);
-    q.wall(15.7, V.nBlockN - 0.115, 1.8, 0.9, 1.46, 0, N, R.maker);
+    q.wall(14.6, V.nBlockN - 0.115, 1.8, 0.9, 1.46, 0, N, R.maker);
 
     // Aula de danzas: afiches de las muestras en el testero norte.
     q.wall(45.6, V.gymTop + 0.115, 2.35, 0.75, 1.12, 0, S, R.ballet1);
@@ -133,15 +141,16 @@ export class SchoolIdentity {
     // Carteles de los ambientes sobre sus puertas.
     const plate = (name: PlateName, u: number, v: number, nu: number, nv: number, w = 1.15, y = 2.42) =>
       q.wall(u, v, y, w, w * (64 / 504), nu, nv, plateRegion(name));
-    plate('E.P', 18.7, V.nBlockS + 0.115, 0, S);
-    plate('TECNOLOGÍA', 18.7, V.nBlockN + 0.115, 0, S);
-    plate('TECNOLOGÍA', 28.05, V.nBlockN + 0.115, 0, S);
-    plate('ADM', 10.7, V.corrN - 0.115, 0, N, 0.8);
-    plate('PROF.', 12.4, V.profB + 0.115, 0, S, 0.8);
-    plate('DIR. PRIM', 5.5, V.dirTop - 0.115, 0, N, 0.9);
-    plate('BUFFET', 29.4, V.corrS + 0.115, 0, S);
+    plate('E.P', 18.25, V.nBlockS + 0.115, 0, S);
+    // Sobre la boca del pasillo del Aula Maker (paso alto) y sobre su portón al patio este.
+    plate('TECNOLOGÍA', 13.3, V.nBlockS + 0.115, 0, S, 1.15, 2.78);
+    plate('TECNOLOGÍA', U.tecE + 0.115, -32.45, 1, 0, 1.15, 2.52);
+    plate('ADM', 9.6, V.admN - 0.115, 0, N, 0.8);
+    plate('PROF.', 11.5, V.profB + 0.115, 0, S, 0.8);
+    plate('DIR. PRIM', 4.3, V.corrS + 0.115, 0, S, 0.9);
+    plate('BUFFET', 28.67, V.corrS + 0.115, 0, S);
     // Su puerta es doble (vano de 2,25 m): el cartel va por encima del cabezal.
-    plate('SALÓN DE LOS ESPEJOS', U.salonW - 0.115, -12.1, -1, 0, 1.5, 2.46);
+    plate('SALÓN DE LOS ESPEJOS', U.salonW - 0.115, -11.85, -1, 0, 1.5, 2.46);
     plate('GIMNASIO · SUM', U.gymW - 0.115, -10.1, -1, 0, 1.5, 2.5);
     plate('GIMNASIO · SUM', 59.3, V.gymTop - 0.115, 0, N, 1.6, 2.55);
     plate('ARTE', 52.35, V.artB + 0.115, 0, S, 0.8);
@@ -155,9 +164,10 @@ export class SchoolIdentity {
       const nv = 1 / l;
       plate('JARDÍN DE INFANTES CIMPID', 60.75 + nu * 0.115, rearV(60.75) + nv * 0.115, nu, nv, 1.6);
     }
-    plate('PATIO AIRE LIBRE', 24.45, V.corrS + 0.115, 0, S, 1.3, 2.78);
-    plate('PATIO AIRE LIBRE', 36.65, V.hallTop + 0.115, 0, S, 1.3, 2.78);
-    plate('HALL DE ACCESO', 37.45, V.hallDoors - 0.115, 0, N, 1.3, 3.35);
+    plate('PATIO AIRE LIBRE', 23.02, V.corrS + 0.115, 0, S, 1.3, 2.78);
+    plate('PATIO AIRE LIBRE', 36.2, V.hallTop + 0.115, 0, S, 1.3, 2.78);
+    // Sobre la entrada, del lado del atrio (a 3,35 m quedaba sobre el cielorraso).
+    plate('HALL DE ACCESO', entrance, V.hallDoors + 0.115, 0, S, 1.3, 2.95);
 
     // Esquina de Laprida y Miguel Cané: carteles de calle y punto de encuentro.
     const pole = { u: -6.3, v: 3.3 };
@@ -165,8 +175,9 @@ export class SchoolIdentity {
       q.wall(pole.u + 0.5, pole.v + s * 0.035, 2.95, 0.9, 0.17, 0, s, R.lapr);
     }
     {
-      const du = 0.5382;
-      const dv = -0.8428;
+      // A lo largo de Miguel Cané, hacia el norte.
+      const du = MC_SLOPE * MC_COS;
+      const dv = -MC_COS;
       for (const s of [1, -1]) {
         const nu = -dv * s;
         const nv = du * s;

@@ -31,7 +31,7 @@ en visores WebXR (Quest).
   el recorrido del aniversario. Prólogo + cinco capítulos, 10 personajes con
   nombre, 6 actividades (robot Educabot, bandeja saludable, reciclaje,
   trivia de trofeos, coreografía, penales), simulacro de evacuación, estrellas
-  del jardín, acto final y créditos. 8 sellos del Pasaporte 40, 35 lugares,
+  del jardín, acto final y créditos. 8 sellos del Pasaporte 40, 36 lugares,
   misiones secundarias. Se guarda en `localStorage` (`cimdip-recorrido40-v1`).
 - **Interacción con respuesta**: puertas de aulas y oficinas (E o gatillo, y se
   abren solas al acercarse), interruptores de luz de las aulas, 22 carteles
@@ -366,15 +366,19 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     ciudad termina en 0: con el agua también en 0 había z-fighting en todo el
     canal.
 
-22. **`SchoolLayout` es la única fuente de coordenadas de la escuela.** Es la
-    planta baja del plano de evacuación, medida píxel a píxel y pasada a
-    metros (0,07 m/px): muros con sus vanos, ambientes, escaleras,
-    equipamiento, zonas de alumnos y estaciones. La usan `SchoolBuilder`,
-    `SchoolIdentity` (incluido el plano de evacuación colgado en el hall),
-    `CityIndex` (colisión por grilla de ocupación de 10 cm), la gente
-    (`people/`), el juego (`game/`) y el audio (`schoolAcoustics`). No inventar
-    ambientes: la planta alta no está en el plano y sale del recorrido
-    virtual (ver 30 y 31).
+22. **`SchoolLayout` es la única fuente de coordenadas de la escuela.** La
+    planta baja sale del plano CAD de evacuación (PDF "Planos de
+    Evacuación", Colegio CIMDIP "Miguel Cané", planta baja y primer piso),
+    registrado con el frente de 67,4 m (26,02 px/m; error medio 0,26–0,29 m
+    en los muros seguros). La foto del plano de S&O y el video de 2020 mandan
+    sólo en lo que el CAD no tiene o es más viejo: edificio de bloque, Arte,
+    Teatro, jardín, Tecnología, galería roja, escalera blanca, pasarela y
+    vestíbulo de salida. Muros con sus vanos, ambientes, escaleras,
+    equipamiento, zonas de alumnos y estaciones: los usan `SchoolBuilder`,
+    `SchoolIdentity` (incluido el plano colgado en el hall), `CityIndex`
+    (colisión por grilla de 10 cm), la gente (`people/`), el juego (`game/`)
+    y el audio (`schoolAcoustics`). No inventar ambientes que ningún plano
+    ni el video muestran.
 
 23. **Personas: un material, color = vértice × instancia.** Las piezas
     articuladas tienen el origen en su pivote para compartir matriz. Cada
@@ -436,14 +440,19 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     inicializar. `SchoolLayout` reexporta todo, así que el resto del código
     sigue importando de ahí.
 
-31. **La planta alta sale del recorrido de 2020, no de un plano.** Ver el
-    comentario de cabecera de `SchoolUpper`: escalera del hall en U, pasillo
-    de los trofeos, pasillo de lockers sobre el pasillo sur, galería roja
-    sobre el comedor, sector nuevo, ala oeste retirada del patio, pasarela
-    vidriada y edificio de bloque con el aula de danzas del 2º piso bajo la
-    bóveda del polideportivo (la bóveda se prolonga hasta `U1.vaultW`). El
-    jardín respeta la caja del plano aunque el real llega a la calle de
-    atrás: el plano manda sobre la distribución.
+31. **La planta alta sale del CAD del primer piso y del plano de planta
+    alta anotado a mano.** El CAD da muros, puertas, escaleras y baños; el
+    plano a mano da los nombres y cursos (Gerencia, Dirección de secundaria,
+    Preceptoría, Pr. Bil, Salón Emociones, Damas y Caballeros, Salón de los
+    Espejos del 2º piso) y manda en los tabiques: la fila norte son tres aulas
+    parejas (tabiques en u 17,4 y 22,45; el bilingüe es una L que conserva el
+    fondo del CAD al oeste del conducto). El plano a mano no sirve al este de
+    u ≈ 42 (sus cajas del edificio de bloque caen dentro del gimnasio): ahí
+    siguen el video y el CAD; el aula taller es una división de 2º A y el
+    salón del 2º piso es el aula de danzas de siempre. El video manda en las
+    alturas de los descansos (2,45 / 2,2) y en lo que los planos no dibujan.
+    La fila norte del primer piso queda 1,5 m al norte del bloque de planta
+    baja (el conducto es un pozo cerrado).
 
 32. **Huecos de losa (`VOIDS`) y volúmenes (`Volume`).** Donde una escalera
     atraviesa un piso, la losa de ese nivel y el cielorraso de abajo se
@@ -931,6 +940,73 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     (las claras quedan lima y las oscuras esmeralda) ni sumarlo a las caras
     que miran hacia arriba (es el "plástico pálido" del ítem 11).
 
+81. **Escaleras con los planos.** Torre del hall: el descanso está partido,
+    macizo al oeste (u 32,48–33,85) y hueco al este con el cuartito del CAD
+    debajo; su puerta está cerrada para la gente (`NavGrid.closedForCrowd`:
+    es un depósito sin salida). Las dos aberturas "de paso" de 2,45 m de la
+    torre (`HIGH_SILLS`) son sólidas a nivel de planta baja en
+    `schoolSolidLocal` mientras los pies estén más abajo que el umbral; la
+    grilla por nivel ignora los umbrales, así que no confiar sólo en ella
+    para aberturas que arrancan en un descanso. Escalera oeste: el tramo 7 va
+    de u 7,15 a 10,15 (12 contrahuellas en 2,2 m piden 3 m) y el muro oeste
+    del hueco en u 5,5 llega a altura completa: sin él se caía del descanso
+    a un recoveco cerrado de 2,2 m sin salida. Por la altura libre: muro
+    oeste de Preceptoría en u 8,9 y borde sur del hueco del hall en −10,4.
+
+82. **La escuela tiene su propio generador** (`seed ^ 0x5c4001a7`) y su
+    propio `NatureBuilder`, creados en `City.ts` e iguales en escritorio y
+    visor: tocar la escuela ya no reordena los árboles y balcones del barrio
+    (la pasada de los planos sumaba ~52 copas y ~4 mil triángulos por vista
+    sólo por eso), y se fue una de las diferencias entre escritorio y visor
+    (la escuela sacaba distinta cantidad de números según el perfil).
+
+83. **Portón y detalle barato.** Pilares, columnas y la reja de altura
+    completa del portal son constantes de colisión (`PORTAL_PILLARS`,
+    `PORTAL_COLUMNS`, `PORTAL_RAILS`) que también dibuja el builder; no están
+    en `FENCES` porque `FENCES` se dibuja como cerco de muro rojo. En el
+    visor las rejas de Laprida y Miguel Cané y la del portal dibujan una
+    barra de cada dos (amplía 33). Primitiva `post` de `InstanceFarm`: caja
+    sin cara inferior (10 triángulos), sólo donde esa cara nunca se ve (patas
+    y parantes de sillas, unas 1.450 instancias). El muro medianero de planta
+    baja bajo las aulas del primer piso mide 3,3 m (con 3,6 titilaba contra
+    sus caras) y las salas de `SOFFIT_ROOMS` tienen un cielorraso de losa
+    1 cm bajo su piso.
+
+84. **Puertas y planos.** `SchoolDoors` pasa una hoja simple a la otra jamba
+    también si al abrirse cruzaría la hoja abierta de otra puerta (la
+    portería: puerta del porche y del vestíbulo en esquina); `doors.test`
+    controla hoja contra hoja y punta contra muro (amplía 70). Desvíos del
+    CAD a propósito, dentro de su error de ~0,26 m: puertas de los boxes de
+    baño y del cuartito de 0,85 m (CAD 0,70–0,77) y la de Tecnología 10 cm
+    al este, para que la hoja no entre en el muro de Miguel Cané.
+
+85. **Juego y gente con la planta nueva.** `DOOR_LOCKS` (`story/world.ts`)
+    son puertas del juego que la historia tiene con llave: hoy la puerta de
+    la portería al porche hasta que se abre la entrada; no está en `LOCKS`
+    porque ahí dibujaría una segunda hoja. Esa puerta está cerrada para la
+    gente en todas las fases (`NavGrid.closedForCrowd`): abierta, la oficina
+    era una segunda entrada y la atravesaban aun con llave. Con la entrada
+    vidriada cerrada por la historia, la gente de afuera no busca camino
+    (una búsqueda imposible recorre toda la vereda): espera, a la que no se
+    ve se la ubica adentro y la que se ve reintenta una vez por apertura
+    (`gateEpoch`, `NavGrid.forgetDynamic`); sin esto, después de Rubén
+    quedaban congeladas en el portón. La grilla estática se arma con los
+    sólidos dinámicos del momento: `Population` tiene que crearse antes que
+    `GameDirector` (y `dispose` limpia las cerraduras antes de reconstruir).
+    Barreras de escalera: cubren todo lo que se alcanza desde el costado
+    (contrahuellas + 0,45 m + 0,25), no 0,5 m fijos. Un objetivo de llegar a
+    un lugar que se habilita estando adentro se cumple en el acto.
+    `Places.porter` sale de la abertura del mostrador; `treadFloor` usa
+    `riserCount`; los destinos al pasear evitan a los personajes con nombre
+    (0,9 m). Estaciones: Rubén en el porche al costado de la columna del
+    medio, Graciela detrás del mostrador, Martín en la puerta de
+    Preceptoría, Inés en Recepción (la Dirección de primaria del CAD mide
+    4,5 × 1,9 m y la hoja de su puerta la tapaba). En el visor, la gente de
+    los patios tampoco se dibuja desde la franja del frente y el atrio, ni
+    los peatones que tapa la escuela (`people/Culling.ts`,
+    `hiddenBySchool`); en el portón se dibujan como mucho los 60 más
+    cercanos (los personajes con nombre siempre).
+
 ---
 
 ## 6. Estado actual
@@ -993,7 +1069,8 @@ juego delante, mandos, colores, salir, sin errores).
    los aviarios, oficina bajo la escalera de chapa.
 5. **Limpiar código de la ciudad** que el barrio ya no usa
    (`BuildingBuilder`, canal, energía, parque, tranvías de `Life`).
-6. **Que visor y escritorio armen la misma ciudad** (ítem 42, heredado):
+6. **Que visor y escritorio armen la misma ciudad** (ítem 42, heredado; la
+   escuela ya tiene su propio generador, ver 82):
    `NatureBuilder.legacyDraws` saca los números de las ramas del generador
    compartido sólo con detalle alto, y `StreetLevel.facadeLife` decide los
    balcones con el generador compartido en un bucle de 8 pisos en escritorio

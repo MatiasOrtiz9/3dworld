@@ -38,6 +38,11 @@ const BOARD = hex('#f1f2f1');
 const GLASS = hex('#4f6470');
 const HANDLE = hex('#2b2f36');
 
+/** Puertas de aula: en clase se cierran (el resto, oficinas y salas, quedan abiertas). */
+function isClassDoor(def: DoorDef): boolean {
+  return /^aula|^tecnologia|^arte|^teatro|^bilingue/.test(def.room.id);
+}
+
 /** Ángulo de la hoja abierta: contra el muro del ambiente, como las dibujaba la escuela. */
 const OPEN_ANGLE = Math.PI / 2 - 0.04;
 /** Segundos para abrir o cerrar del todo. */
@@ -87,8 +92,15 @@ export class Doors {
   private readonly material: PBRMetallicRoughnessMaterial;
   private readonly states: DoorState[] = [];
   private readonly byId = new Map<string, DoorState>();
+  /**
+   * Puertas cerradas con llave por la historia (`DOOR_LOCKS`): no se abren
+   * solas al llegar nadie ni con E. Hoy, la de la portería al atrio.
+   */
+  private readonly locked = new Set<string>();
   private senseT = 0;
   private phaseSet = false;
+  /** Momento del día vigente: a qué vuelve una puerta al sacarle la llave. */
+  private lastPhase: SchoolPhase | null = null;
   /** Último lugar del jugador: las puertas lejanas no suenan. */
   private player = { u: 0, v: 0, level: 0 as Level };
 
@@ -190,10 +202,38 @@ export class Doors {
     return this.byId.get(id)?.def.label ?? 'Puerta';
   }
 
+  /** Cerrada con llave por la historia. */
+  isLocked(id: string): boolean {
+    return this.locked.has(id);
+  }
+
+  /**
+   * Cierra con llave (o abre) una puerta. Al cerrarla queda cerrada (sin
+   * animación con `instant`: al cargar la partida); al abrirla vuelve a lo que
+   * quiere su fase (las oficinas, abiertas).
+   */
+  setLocked(id: string, locked: boolean, instant = false): void {
+    const st = this.byId.get(id);
+    if (!st || this.locked.has(id) === locked) return;
+    if (locked) {
+      this.locked.add(id);
+      st.want = false;
+      st.held = 0;
+      st.playerSuppressed = false;
+      if (instant) {
+        st.open = 0;
+        st.dirty = true;
+      }
+    } else {
+      this.locked.delete(id);
+      st.want = !(this.lastPhase === 'clase' && isClassDoor(st.def));
+    }
+  }
+
   /** El jugador la abre o la cierra. Devuelve el nuevo estado (true = abierta). */
   toggle(id: string): boolean {
     const st = this.byId.get(id);
-    if (!st) return false;
+    if (!st || this.locked.has(id)) return false;
     const open = !(st.want || st.held > 0);
     st.want = open;
     st.held = 0;
@@ -211,9 +251,9 @@ export class Doors {
   setPhase(phase: SchoolPhase): void {
     const instant = !this.phaseSet;
     this.phaseSet = true;
+    this.lastPhase = phase;
     for (const st of this.states) {
-      const isClass = /^aula|^tecnologia|^arte|^teatro|^bilingue/.test(st.def.room.id);
-      if (!isClass) continue;
+      if (!isClassDoor(st.def) || this.locked.has(st.def.id)) continue;
       const want = phase !== 'clase';
       if (want !== st.want) {
         st.want = want;
@@ -239,6 +279,7 @@ export class Doors {
     }
     let any = false;
     for (const st of this.states) {
+      if (this.locked.has(st.def.id)) st.held = 0;
       if (st.held > 0) st.held -= dt;
       const target = st.want || st.held > 0 ? 1 : 0;
       if (st.open !== target) {

@@ -4,6 +4,7 @@
  * puede dibujar en cualquier canvas, también fuera de Babylon para revisarlo.
  */
 import {
+  MC_SLOPE,
   ROOMS,
   STAIRS,
   U,
@@ -688,14 +689,28 @@ function drawPlan(ctx: CanvasRenderingContext2D, r: Region): void {
   for (const room of ROOMS) {
     if ((room.level ?? 0) !== 0) continue;
     if (!room.name || room.name === 'Pasillo' || room.name === 'Aula') continue;
+    // Centro de área (el promedio de vértices se iba hacia el lado con más
+    // quiebres: el rótulo del hall caía sobre el de la recepción) y ancho del
+    // rótulo acotado al del ambiente: con las oficinas chicas del CAD los
+    // rótulos vecinos se encimaban. Los muy angostos (baños de la columna) van sin rótulo.
+    let a2 = 0;
     let cu = 0;
     let cv = 0;
-    for (const [u, v] of room.poly) {
-      cu += u;
-      cv += v;
+    let u0 = Infinity;
+    let u1 = -Infinity;
+    for (let i = 0, j = room.poly.length - 1; i < room.poly.length; j = i++) {
+      const [ui, vi] = room.poly[i];
+      const [uj, vj] = room.poly[j];
+      const cr = uj * vi - ui * vj;
+      a2 += cr;
+      cu += (ui + uj) * cr;
+      cv += (vi + vj) * cr;
+      u0 = Math.min(u0, ui);
+      u1 = Math.max(u1, ui);
     }
-    const [px, py] = at(cu / room.poly.length, cv / room.poly.length);
-    ctx.fillText(room.name.toUpperCase(), px, py, 90);
+    if (u1 - u0 < 2.5 || Math.abs(a2) < 1e-6) continue;
+    const [px, py] = at(cu / (3 * a2), cv / (3 * a2));
+    ctx.fillText(room.name.toUpperCase(), px, py, Math.min(90, (u1 - u0) * scale - 4));
   }
   // Escaleras en gris.
   ctx.fillStyle = '#b9bcc2';
@@ -738,15 +753,17 @@ function drawPlan(ctx: CanvasRenderingContext2D, r: Region): void {
       ctx.fillRect(px - 5, py - 5, 10, 10);
     }
   }
-  // Usted está aquí: el plano cuelga en el hall.
-  const [hx, hy] = at(U.east1 + 1.2, -4.4);
+  // Usted está aquí: el plano cuelga en el frente de la oficina de recepción
+  // (ver SchoolIdentity), del lado del hall.
+  const [hx, hy] = at(37.6, V.recB - 0.4);
   ctx.fillStyle = '#d0262d';
   ctx.beginPath();
   ctx.arc(hx, hy, 5, 0, Math.PI * 2);
   ctx.fill();
   ctx.font = '700 10px Arial, Helvetica, sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText('USTED ESTÁ AQUÍ', hx + 8, hy - 8);
+  // Debajo del punto: arriba quedaba encima del rótulo del hall.
+  ctx.fillText('USTED ESTÁ AQUÍ', hx + 8, hy + 12);
   // Calles.
   ctx.fillStyle = '#1f2430';
   ctx.textAlign = 'center';
@@ -754,7 +771,7 @@ function drawPlan(ctx: CanvasRenderingContext2D, r: Region): void {
   ctx.fillText('CALLE LAPRIDA', ox + 34 * scale, oy + 22);
   ctx.save();
   ctx.translate(ox - 22, oy - 20 * scale);
-  ctx.rotate(-Math.PI / 2 + 0.56);
+  ctx.rotate(-Math.PI / 2 + Math.atan(MC_SLOPE));
   ctx.fillText('CALLE MIGUEL CANÉ', 0, 0);
   ctx.restore();
 }

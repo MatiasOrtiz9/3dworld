@@ -1,12 +1,16 @@
 import {
+  ITEMS,
   LEVEL_Y,
   ROOMS,
   SCHOOL,
   STAIRS,
+  U,
+  V,
   WALKABLE,
   WALLS,
   inLot,
   levelOf,
+  roomAt,
   schoolFloorLocal,
   schoolSolidLocal,
   type Level,
@@ -64,13 +68,51 @@ const MIN_AREA = 150;
  */
 const HW = 1.6;
 
-/** Vanos que la gente NO usa aunque la colisión los deje pasar. */
-function closedForCrowd(type: string, u: number, v: number): boolean {
+/** Línea de servicio de la cantina: lo que queda detrás es de los que atienden. */
+const SERVICE_LINE = ITEMS.find((it) => it.kind === 'buffetLine' && (it.level ?? 0) === 0);
+
+/** ¿El punto (planta baja) cae detrás de la línea de la cantina, en su local? */
+function behindServiceLine(u: number, v: number): boolean {
+  const it = SERVICE_LINE;
+  if (!it) return false;
+  const room = roomAt(it.u, it.v, 0);
+  if (!room || roomAt(u, v, 0) !== room) return false;
+  // El frente de la línea mira a los que compran; atrás, el pasillo de servicio.
+  if (it.face === 's') return v < it.v - it.d / 2;
+  if (it.face === 'n') return v > it.v + it.d / 2;
+  if (it.face === 'e') return u < it.u - it.w / 2;
+  return u > it.u + it.w / 2;
+}
+
+/**
+ * Vanos que la gente NO usa aunque la colisión los deje pasar. `(nu, nv)` es
+ * la normal del muro: se miran los dos lados del vano.
+ */
+function closedForCrowd(level: Level, type: string, u: number, v: number, nu: number, nv: number): boolean {
   // Salidas de emergencia: siempre cerradas para el día a día.
   if (type === 'exit') return true;
   // Puerta roja del polideportivo a Laprida: de servicio. Sin esto, todo el
   // que va al gimnasio desde la vereda entraba por ahí y no por el portón.
   if (Math.abs(v) < 0.4 && u > 65.5) return true;
+  // Puerta de la portería al atrio (la celda sur de la oficina de recepción,
+  // CAD): es del portero. Abierta para la grilla, la oficina era un segundo
+  // acceso entre el atrio y el vestíbulo y la multitud la usaba en todos los
+  // momentos del día (en la salida, más que la entrada vidriada); antes de
+  // Rubén, incluso con la hoja cerrada con llave, porque esa llave es sólo
+  // del jugador (`DOOR_LOCKS`, ítem 35) y la gente no espera a que se abra.
+  // El portero llega a su ventanilla por la puerta del vestíbulo (`U.recW`).
+  if (level === 0 && Math.abs(v - V.hallDoors) < 0.2 && u > U.recW && u < U.salonW) return true;
+  // Puerta del cuartito bajo el descanso de la escalera del hall (testero
+  // norte del hall, CAD): es un depósito sin salida. Abierta para la grilla,
+  // la gente entraba ahí a esperar o a cruzar y quedaba encerrada contra la
+  // losa. En el testero, entre la escalera y el muro del quiosco, es la única
+  // abertura.
+  if (level === 0 && Math.abs(v - V.hallTop) < 0.2 && u > U.east1 && u < U.kioskE) return true;
+  // Puertas de servicio de la cantina: las que dan al pasillo de atrás del
+  // mostrador (CAD: la del patio central y la del patio este). Ese pasillo
+  // mide 1,1 m entre la línea y las heladeras: por ahí la gente cruzaba de un
+  // patio al otro y se trababa con los que atienden.
+  if (behindServiceLine(u + nu * 0.6, v + nv * 0.6) || behindServiceLine(u - nu * 0.6, v - nv * 0.6)) return true;
   return false;
 }
 
@@ -415,7 +457,7 @@ export class NavLevel {
         const half = (o.t1 - o.t0) / 2;
         const cu = w.a[0] + tu * tc;
         const cv = w.a[1] + tv * tc;
-        if (closedForCrowd(o.type, cu, cv)) {
+        if (closedForCrowd(this.level, o.type, cu, cv, nu, nv)) {
           this.forEachNear(cu, cv, half + 0.6, (k, u, v) => {
             const a = (u - cu) * tu + (v - cv) * tv;
             const p = (u - cu) * nu + (v - cv) * nv;
@@ -609,6 +651,22 @@ export class NavGrid {
         this.markClosed(nl, pu, pv);
       }
     }
+  }
+
+  /**
+   * Olvida las marcas de cierre dinámico alrededor de un punto: un cierre que
+   * se sabe abierto (el portón, al sacarle la llave). La marca duraba hasta
+   * `DYN_TTL` y quien probaba enseguida volvía a fallar. Si ahí sigue algo
+   * cerrado, la validación del camino lo vuelve a marcar.
+   */
+  forgetDynamic(l: Level, u: number, v: number, r: number): void {
+    const nl = this.levels[l];
+    if (!nl) return;
+    const i0 = Math.max(0, Math.floor((u - r - U0) / C));
+    const i1 = Math.min(NU - 1, Math.floor((u + r - U0) / C));
+    const j0 = Math.max(0, Math.floor((v - r - V0) / C));
+    const j1 = Math.min(NV - 1, Math.floor((v + r - V0) / C));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) nl.dyn[j * NU + i] = 0;
   }
 
   /** Altura del piso de ese nivel en (u, v). */

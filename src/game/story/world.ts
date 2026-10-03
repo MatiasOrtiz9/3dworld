@@ -1,4 +1,5 @@
-import { GYM_MID, LEVEL_Y, MEETING_POINT, STAIRS, U, V, makerWallAt, miguelCaneU, rearV, type Level } from '../../world/SchoolLayout';
+import { GYM_MID, LEVEL_Y, MEETING_POINT, STAIRS, U, U1, V, makerWallAt, miguelCaneU, rearV, riserCount, type Level, type Stair } from '../../world/SchoolLayout';
+import { DOORS, type DoorDef } from '../../world/SchoolDoors';
 import { openingNear, openingsOnLine, stairAt, stairFoot } from './anchors';
 import type { Anchor, InteractableDef, LockDef, PlaceDef, Spot, ZoneId } from './types';
 
@@ -23,7 +24,7 @@ export const PLACES: readonly PlaceDef[] = [
   { id: 'dirPrim', title: 'Dirección primaria', rooms: ['dirPrim'], blurb: 'Biblioteca con biblioratos y escritorio color cerezo.' },
   { id: 'preceptoriaPrim', title: 'Preceptoría primaria', rooms: ['sala'], blurb: 'Junto a la Dirección, sobre el pasillo de primaria.' },
   { id: 'prof', title: 'Sala de profesores', rooms: ['prof'], blurb: 'Mesas rojas, pizarrón verde y la mesada roja.' },
-  { id: 'adm', title: 'Administración', rooms: ['adm', 'hallAdm'], blurb: 'La ventanilla de atención y su hall.' },
+  { id: 'adm', title: 'Administración', rooms: ['adm'], blurb: 'La ventanilla de atención y la puerta roja, sobre el pasillo norte.' },
   { id: 'patioOeste', title: 'Espacio recreativo', rooms: ['patioOeste'], blurb: 'La palmera en su cantero, el mástil y la galería de columnas negras.' },
   { id: 'cantina', title: 'Cantina | Comedor', rooms: ['buffet'], blurb: 'La línea de servicio PRO FOOD y las mesas largas del comedor.' },
   { id: 'maker', title: 'Aula Maker', rooms: ['tecnologia', 'pasilloMaker'], blurb: 'Kits Educabot, cortadora láser, impresora 3D y el mural IMAGINA · DISEÑA · CREA · APRENDE · COMPARTE.' },
@@ -31,18 +32,22 @@ export const PLACES: readonly PlaceDef[] = [
   { id: 'salon', title: 'Salón de los espejos', rooms: ['salon'], blurb: 'Parquet, columnas rojas, espejos y el piano.' },
   { id: 'gimnasio', title: 'Polideportivo', rooms: ['gimnasio'], blurb: 'Arcos de handball, gradas y la bandera con el escudo.' },
   { id: 'arteTeatro', title: 'Arte y Teatro', rooms: ['arte', 'teatro'], blurb: 'Las aulas de Arte y de Teatro, junto al pasillo del gimnasio.' },
-  { id: 'trofeos', title: 'Pasillo de los trofeos', rooms: ['pasilloTrofeos'], blurb: 'La vitrina de trofeos sobre el dispenser y la Secretaría al fondo.' },
-  { id: 'secretaria', title: 'Secretaría', rooms: ['secretaria'], blurb: 'Secretaría del nivel primario, mirando a Laprida.' },
+  { id: 'trofeos', title: 'Pasillo de los trofeos', rooms: ['pasilloTrofeos'], blurb: 'La vitrina de trofeos sobre el dispenser y la Preceptoría al fondo, sobre la entrada.' },
+  // El plano del primer piso la marca "PR" (Preceptoría); el recorrido de
+  // 2020, "Secretaría nivel primario": es el mismo cuarto sobre la entrada.
+  { id: 'secretaria', title: 'Preceptoría · Secretaría', rooms: ['secretaria'], blurb: 'La PR sobre la entrada: Secretaría del nivel primario, mirando a Laprida.' },
   { id: 'sextos', title: '6° BD y 6° AC', rooms: ['aula6BD', 'aula6AC'], blurb: 'Las aulas de sexto, sobre el hall.' },
   { id: 'lockers', title: 'Pasillo de los lockers', rooms: ['pasilloL1'], blurb: 'Lockers de colores bajo las ventanas altas.' },
   { id: 'pasarela', title: 'Pasarela vidriada', rooms: ['pasarela'], blurb: 'Une el pasillo de los trofeos con el edificio de bloque.' },
-  { id: 'bloque', title: 'Edificio de bloque', rooms: ['pasilloBloque', 'aulaBloqueA', 'aulaBloqueC', 'aulaBloqueD'], blurb: 'Bloque a la vista, columnas rojas y la escalera de chapa.' },
-  { id: 'sectorNuevo', title: 'Sector nuevo', rooms: ['pasilloNorteL1', 'rellanoNorte'], blurb: 'Cerámico claro, mesada de venecitas y aulas con frente vidriado.' },
+  { id: 'bloque', title: 'Edificio de bloque', rooms: ['pasilloBloque', 'aulaBloqueA', 'aulaBloqueC', 'aulaBloqueD', 'aulaTaller'], blurb: 'Bloque a la vista, columnas rojas y la escalera de chapa.' },
+  { id: 'sectorNuevo', title: 'Sector nuevo', rooms: ['pasilloNorteL1'], blurb: 'Cerámico claro, mesada de venecitas y aulas con frente vidriado.' },
   { id: 'bilingue', title: 'Bilingual classroom', rooms: ['bilingue'], blurb: 'El aula bilingüe del sector nuevo.' },
   { id: 'biblioteca', title: 'Biblioteca', rooms: ['biblioteca'], blurb: 'El fichero rojo y las estanterías.' },
   { id: 'galeria', title: 'Galería roja', rooms: ['galeria'], blurb: 'Revestida en chapa roja, sobre el Espacio recreativo.' },
-  { id: 'secundaria', title: 'Ala del nivel secundario', rooms: ['dirSec', 'precepSec', 'aulaSec', 'pasilloOesteL1'], blurb: 'Dirección y Preceptoría de secundaria.' },
-  { id: 'danzas', title: 'Aula de danzas', rooms: ['aulaDanzas', 'hallDanzas'], blurb: 'En el segundo piso, bajo la bóveda del polideportivo.' },
+  // Nombre y cursos del plano del primer piso anotado a mano.
+  { id: 'emociones', title: 'Salón Emociones', rooms: ['aulaC2'], blurb: 'El aula de 5° A y 3° B junto a la galería roja: mesas naranjas y sillas rojas.' },
+  { id: 'secundaria', title: 'Ala del nivel secundario', rooms: ['dirSec', 'precepSec', 'aulaSec', 'pasilloOesteL1', 'gerencia'], blurb: 'Gerencia, Dirección y Preceptoría de secundaria, junto a la escalera del ala oeste.' },
+  { id: 'danzas', title: 'Aula de danzas', rooms: ['aulaDanzas', 'hallDanzas'], blurb: 'El Salón de los espejos del segundo piso, bajo la bóveda del polideportivo.' },
   { id: 'jardin', title: 'Jardín de infantes CIMPID', rooms: ['jardinRecepcion', 'jardinGaleria', 'jardinEscalera', 'jardinHall1', 'jardinGaleria1', 'jardinHall2'], blurb: 'Educación Inicial: tres pisos de salas de colores.' },
   { id: 'salaAmarilla', title: 'Sala Amarilla', rooms: ['salaAmarilla'], blurb: 'La casita de madera y las mesas redondas azules.' },
   { id: 'salaCeleste', title: 'Sala Celeste', rooms: ['salaCeleste'], blurb: 'Mesas de colores y sillitas de madera.' },
@@ -73,6 +78,26 @@ export function outsideRoom(u: number, v: number): string {
 const FY = LEVEL_Y[0];
 /** Punto del Aula Maker frente al mural, a 0,3 m de la pared. */
 const MAKER_MURAL = makerWallAt(6.4, 0.3);
+/** Centro de la entrada vidriada del hall (CAD: a la izquierda de la recepción). */
+export const ENTRANCE_U = 35.24;
+/**
+ * Mural de San Martín: centro del paño sobre el muro oeste del vestíbulo
+ * (el del aula 5), como lo cuelga `SchoolIdentity`.
+ */
+const MURAL_V = -4.25;
+/** Plano de evacuación: en el frente norte de la oficina de recepción (`SchoolIdentity`). */
+const PLANO_U = 37.6;
+/**
+ * La campana cuelga de una columna de la galería roja (las de planta baja
+ * están 0,2 m dentro de su borde): la del medio del patio, del lado del patio.
+ */
+const BELL: readonly [number, number] = [U1.gallery + 0.02, -13.4];
+/**
+ * Punto limpio: contra el muro del pasillo sur, entre las ventanas y el paso
+ * al patio. Donde estaba (frente al cantero norte) quedaba encima del banco
+ * nuevo y tapaba la puerta doble roja del pasillo norte.
+ */
+const BINS: readonly [number, number] = [20.9, -9.05];
 
 export const INTERACTABLES: readonly InteractableDef[] = [
   // --- Recepción -----------------------------------------------------------
@@ -81,7 +106,7 @@ export const INTERACTABLES: readonly InteractableDef[] = [
     kind: 'info',
     label: 'Mural de San Martín',
     verb: 'Mirar',
-    anchor: { room: 'hall', at: [U.east1 + 0.15, -5.6] },
+    anchor: { room: 'hall', at: [U.east1 + 0.15, MURAL_V] },
     y: 2.2,
     size: [0.3, 1.6, 2.6],
     range: 3.2,
@@ -96,9 +121,9 @@ export const INTERACTABLES: readonly InteractableDef[] = [
     kind: 'info',
     label: 'Plano de evacuación',
     verb: 'Leer',
-    anchor: { room: 'hall', at: [U.east1 + 0.15, -4.0] },
+    anchor: { room: 'hall', at: [PLANO_U, V.recB - 0.15] },
     y: 1.65,
-    size: [0.3, 0.9, 1.3],
+    size: [1.3, 0.9, 0.3],
     range: 2.6,
     card: {
       kicker: 'Recepción',
@@ -117,7 +142,7 @@ export const INTERACTABLES: readonly InteractableDef[] = [
     card: {
       kicker: 'Recepción',
       title: 'Placas de bronce',
-      text: 'Junto a la oficina de recepción, las placas de bronce sobre madera oscura acompañan la entrada de todos los días.',
+      text: 'Junto a las puertas vidriadas de la entrada, del lado del hall, las placas de bronce sobre madera oscura acompañan la entrada de todos los días.',
     },
   },
   {
@@ -263,7 +288,7 @@ export const INTERACTABLES: readonly InteractableDef[] = [
     kind: 'bell',
     label: 'Campana de bronce',
     verb: 'Tocar',
-    anchor: { room: 'patioOeste', at: [26.62, -14.0] },
+    anchor: { room: 'patioOeste', at: BELL },
     y: 2.25,
     size: [0.5, 0.6, 0.5],
     range: 2.8,
@@ -274,7 +299,7 @@ export const INTERACTABLES: readonly InteractableDef[] = [
     activity: 'reciclaje',
     label: 'Punto limpio',
     verb: 'Separar residuos',
-    anchor: { room: 'patioOeste', at: [22.6, -19.6] },
+    anchor: { room: 'patioOeste', at: BINS },
     y: 0.6,
     size: [2.2, 1.0, 0.7],
     ready: (q) => q.done('p.directora'),
@@ -447,14 +472,14 @@ export const INTERACTABLES: readonly InteractableDef[] = [
   {
     id: 'secretariaPc',
     kind: 'info',
-    label: 'Secretaría',
+    label: 'Preceptoría (PR)',
     verb: 'Mirar',
     anchor: { item: 'desk2', room: 'secretaria' },
     y: 1.0,
     size: [1.4, 1.0, 0.7],
     card: {
       kicker: 'Primer piso',
-      title: 'Secretaría del nivel primario',
+      title: 'Preceptoría · Secretaría del nivel primario',
       text: 'Al fondo del pasillo de los trofeos, con su ventanilla al pasillo. Por la ventana enrejada del portal se ve Laprida.',
     },
   },
@@ -545,7 +570,7 @@ export const INTERACTABLES: readonly InteractableDef[] = [
     card: {
       kicker: 'Sector nuevo',
       title: 'Bilingual classroom',
-      text: 'El aula bilingüe del sector nuevo: mesas en grupos y frente vidriado al pasillo de cerámico claro.',
+      text: 'El aula bilingüe del sector nuevo, la de 6° A y 2° B: frente vidriado al pasillo de cerámico claro y ventanas hacia Miguel Cané.',
     },
   },
   // --- Afuera ----------------------------------------------------------------
@@ -590,6 +615,20 @@ function slab(a: readonly [number, number], b: readonly [number, number], level:
   };
 }
 
+/** Lo que el pie sube de un paso (`STEP_UP` de la colisión en `SchoolLayout`). */
+const STEP_REACH = 0.45;
+
+/**
+ * Cuánto del tramo, desde su pie, se puede pisar de costado desde el piso: la
+ * parte cuyo escalón todavía queda al alcance del pie (la rampa `stairY` pasa
+ * por el medio de cada huella). Más un margen, y nunca más que el tramo.
+ */
+function sideReach(s: Stair): number {
+  const run = s.dir === 'u+' || s.dir === 'u-' ? s.u1 - s.u0 : s.v1 - s.v0;
+  const t = STEP_REACH / (s.y1 - s.y0) - 0.5 / riserCount(s);
+  return Math.min(run, Math.max(0.5, t * run + 0.25));
+}
+
 /** Cierra el pie de un tramo de escalera (lo que contiene el punto dado). */
 function stairLock(id: string, zone: ZoneId, u: number, v: number, reason: string): LockDef | null {
   const s = stairAt(STAIRS, u, v);
@@ -597,10 +636,13 @@ function stairLock(id: string, zone: ZoneId, u: number, v: number, reason: strin
   const level: Level = s.y0 > 6 ? 2 : s.y0 > 3 ? 1 : 0;
   const f = stairFoot(s);
   // Cinta a 15 cm del primer escalón, del lado de donde se llega; el macizo
-  // cubre también los primeros escalones para que nadie se suba de costado.
+  // cubre también los escalones que se pisan de costado desde el piso (con
+  // medio metro fijo, el tramo corto de la escalera exterior del patio este,
+  // de 1,1 m, se subía por el lado sin tocar la cinta).
   const a: [number, number] = [f.a[0] + f.out[0] * 0.15, f.a[1] + f.out[1] * 0.15];
   const b: [number, number] = [f.b[0] + f.out[0] * 0.15, f.b[1] + f.out[1] * 0.15];
-  const inner: [number, number] = [-f.out[0] * 0.5, -f.out[1] * 0.5];
+  const depth = sideReach(s);
+  const inner: [number, number] = [-f.out[0] * depth, -f.out[1] * depth];
   const rect = {
     u0: Math.min(a[0], b[0], a[0] + inner[0], b[0] + inner[0]) - 0.08,
     u1: Math.max(a[0], b[0], a[0] + inner[0], b[0] + inner[0]) + 0.08,
@@ -628,23 +670,28 @@ const ENTRADA = 'Rubén, el portero, abre la escuela: hablá con él en el porta
 /** Sin frases nadie habla: al portero se lo saluda (ver `phrases.ts`). */
 const ENTRADA_SILENT = 'Rubén, el portero, abre la escuela: saludalo en el portal.';
 
+/** Salida de emergencia del nicho del pasillo norte sobre Miguel Cané (CAD): su centro en v. */
+const NORTE_EXIT_V = -27.44;
+
 export const LOCKS: readonly LockDef[] = [
   // Antes de hablar con Rubén la escuela está cerrada: las puertas del portal
   // y también las salidas de emergencia, que de afuera no se abren.
-  doorLock('lock-entrada', 'entrada', 0, 37.45, V.hallDoors, ENTRADA),
+  doorLock('lock-entrada', 'entrada', 0, ENTRANCE_U, V.hallDoors, ENTRADA),
   doorLock('lock-salidaGimnasio', 'entrada', 0, 51.8, V.facade, ENTRADA),
   doorLock('lock-puertaGimnasio', 'entrada', 0, 66.75, V.facade, ENTRADA),
-  doorLock('lock-salidaNorte', 'entrada', 0, miguelCaneU(-24.3), -24.3, ENTRADA),
-  doorLock('lock-salidaOchavo', 'entrada', 0, 0.37, -8.2, ENTRADA),
+  doorLock('lock-salidaNorte', 'entrada', 0, miguelCaneU(NORTE_EXIT_V), NORTE_EXIT_V, ENTRADA),
+  // La del testero del pasillo sur, frente al ochavo (CAD).
+  doorLock('lock-salidaOchavo', 'entrada', 0, U.jog, -7.23, ENTRADA),
   // Acceso al Nivel Secundario: primer tramo de la escalera del hall y la escalera blanca del patio este.
-  stairLock('lock-hall', 'primerPiso', 33.65, -11.0, FIRST),
-  stairLock('lock-blanca', 'primerPiso', 33.55, -17.0, FIRST),
-  // "Acceso a primer piso" del ala oeste.
-  stairLock('lock-oeste', 'primerPiso', 10.8, -12.85, FIRST),
-  // Escalera principal del bloque norte: su puerta desde el pasillo norte.
-  doorLock('lock-norte', 'primerPiso', 0, 20.85, V.nBlockS, FIRST),
-  // Escalera exterior del patio este, contra el bloque norte.
-  stairLock('lock-exterior', 'primerPiso', 33.7, -28.2, FIRST),
+  stairLock('lock-hall', 'primerPiso', 33.24, -11.0, FIRST),
+  stairLock('lock-blanca', 'primerPiso', 33.13, -17.0, FIRST),
+  // "Acceso a primer piso" del ala oeste: el primer tramo, desde la caja de la escalera.
+  stairLock('lock-oeste', 'primerPiso', 8.6, -11.7, FIRST),
+  // Escalera exterior del patio este (CAD): el tramo corto que arranca del
+  // patio. Más arriba, el descanso de la esquina y el tramo largo quedan
+  // fuera del alcance del pie desde el suelo. (El bloque norte ya no tiene
+  // escalera propia: ni el CAD ni el recorrido la muestran.)
+  stairLock('lock-exterior', 'primerPiso', 34.45, -26.2, FIRST),
   // "Acceso a segundo piso": escalera de chapa del edificio de bloque.
   stairLock('lock-chapa', 'segundoPiso', 46.0, -15.3, SECOND),
   // Jardín: la puerta de la medianera vieja y las dos puertas sobre la calle.
@@ -666,6 +713,37 @@ export const LOCKS: readonly LockDef[] = [
   .filter((l): l is LockDef => l !== null)
   .map((l) => (l.reason === ENTRADA ? { ...l, silentReason: ENTRADA_SILENT } : l));
 
+/**
+ * Puertas del juego (`SchoolDoors`: las de oficinas y aulas, que dibuja y
+ * anima `Doors`) que la historia mantiene cerradas con llave. No son `LOCKS`:
+ * una cerradura en ese vano dibujaría una segunda hoja encima de la del juego.
+ */
+export interface DoorLockDef {
+  id: string;
+  zone: ZoneId;
+  /** La puerta del juego que queda cerrada. */
+  door: DoorDef;
+  reason: string;
+  silentReason?: string;
+}
+
+/** Puerta del juego cuyo vano pasa a menos de 0,6 m del punto, en ese nivel. */
+function gameDoorNear(level: Level, u: number, v: number): DoorDef | undefined {
+  return DOORS.find((d) => d.level === level && Math.hypot((d.a[0] + d.b[0]) / 2 - u, (d.a[1] + d.b[1]) / 2 - v) < 0.6);
+}
+
+/**
+ * La portería (la celda sur de la oficina de recepción, CAD) tiene una puerta
+ * al atrio y otra al vestíbulo: con sólo la entrada vidriada cerrada, se
+ * pasaba de la vereda al hall por adentro de la portería sin hablar con
+ * Rubén. Su puerta al atrio queda cerrada hasta que él abre la escuela.
+ */
+const PORTERIA_DOOR = gameDoorNear(0, 37.87, V.hallDoors);
+
+export const DOOR_LOCKS: readonly DoorLockDef[] = PORTERIA_DOOR
+  ? [{ id: 'lock-porteria', zone: 'entrada', door: PORTERIA_DOOR, reason: ENTRADA, silentReason: ENTRADA_SILENT }]
+  : [];
+
 // ============================================================ escaleras guía
 
 /**
@@ -684,27 +762,33 @@ export interface StairGuide {
 
 export const STAIR_GUIDES: readonly StairGuide[] = [
   {
+    // Escalera del hall en U (CAD): el primer tramo sube contra el muro oeste
+    // hasta el descanso de la torre; el segundo arranca 1,35 m dentro del
+    // descanso, del lado este, y llega al pasillo de los trofeos.
     id: 'hall',
     zone: 'primerPiso',
-    low: { u: 33.65, v: -8.3, level: 0 },
-    high: { u: 34.95, v: -11.4, level: 1 },
+    low: { u: 33.24, v: -8.3, level: 0 },
+    high: { u: 34.7, v: -11.4, level: 1 },
     path: [
-      [33.65, -8.3],
-      [33.65, -13.6],
-      [34.95, -13.6],
-      [34.95, -11.4],
+      [33.24, -8.3],
+      [33.24, -14.3],
+      [34.7, -14.3],
+      [34.7, -11.4],
     ],
   },
   {
+    // "Acceso a primer piso" del ala oeste: desde la caja de la escalera, el
+    // primer tramo sube hacia Miguel Cané, el descanso da la vuelta y el
+    // segundo llega a la caja de arriba, junto a la Preceptoría.
     id: 'oeste',
     zone: 'primerPiso',
-    low: { u: 12.75, v: -12.85, level: 0 },
-    high: { u: 11.9, v: -10.25, level: 1 },
+    low: { u: 10.6, v: -11.7, level: 0 },
+    high: { u: 10.0, v: -9.5, level: 1 },
     path: [
-      [12.75, -12.85],
-      [8.7, -12.85],
-      [8.7, -10.25],
-      [11.9, -10.25],
+      [10.6, -11.7],
+      [6.4, -11.7],
+      [6.4, -9.5],
+      [10.0, -9.5],
     ],
   },
   {
@@ -754,6 +838,9 @@ export function isJardinRoom(roomId: string): boolean {
 
 // ======================================================================= simulacro
 
+/** Eje del pasillo sur (CAD: entre las aulas, v −6,19, y el patio, v −8,53). */
+const CORR_SUR_V = (V.classTop + V.corrS) / 2;
+
 /**
  * Ruta del simulacro: del aula de primaria al punto de encuentro, por el
  * pasillo de primaria, el hall, el portal y la vereda de Laprida. Las
@@ -761,13 +848,16 @@ export function isJardinRoom(roomId: string): boolean {
  * control que hay que pasar.
  */
 export const EVAC_ROUTE: ReadonlyArray<readonly [number, number]> = [
-  [24.2, -6.2],
-  [24.2, -8.25],
-  [31.6, -8.25],
-  [36.6, -7.0],
-  [37.45, -3.4],
-  [37.45, 0.2],
-  [37.45, 3.0],
+  // Desde adentro del aula 4, por su puerta doble (u 24,2–25,8).
+  [25.0, -5.4],
+  [25.0, CORR_SUR_V],
+  [31.6, CORR_SUR_V],
+  // El hall, el vestíbulo (a la izquierda de la recepción) y la entrada, por
+  // la mitad este del portón: en su medio está la columna azul.
+  [36.0, -7.0],
+  [ENTRANCE_U + 0.6, -3.6],
+  [ENTRANCE_U + 0.6, 0.2],
+  [ENTRANCE_U + 0.6, 3.0],
   [20.0, 3.0],
   [2.0, 3.0],
   [-2.4, 2.4],
@@ -797,7 +887,7 @@ export const ACT = {
 /** Inicio de la historia: vereda de Laprida, frente al portal. */
 export const START = {
   feet: { u: 35.6, v: 8.4 },
-  look: { u: 37.45, v: -1.0, y: FY + 2.6 },
+  look: { u: ENTRANCE_U, v: -1.0, y: FY + 2.6 },
 };
 
 /** Las anclas del acto, como `Anchor` para los datos de personajes. */

@@ -11,8 +11,9 @@ import type { CharacterLook, NpcAnim, NpcHandle, PopulationApi, SchoolPhase, Sch
 import type { CityPlan } from '../CityLayout';
 import type { CityIndex } from '../CityIndex';
 import { STANDARD_SUN_COMP } from '../Materials';
-import { LEVEL_Y, ROOMS, inLot, inPoly, levelOf, roomLevel, toLocal, toWorld, type Level, type SchoolFrame } from '../SchoolLayout';
+import { LEVEL_Y, PORTAL, ROOMS, V, inLot, inPoly, levelOf, roomLevel, toLocal, toWorld, type Level, type SchoolFrame } from '../SchoolLayout';
 import { POSE_N, SIT, evalPose } from './Anim';
+import { SCHOOL_DEEP, hiddenBySchool } from './Culling';
 import { HUMAN_PARTS, buildHumanParts, type HumanPart } from './HumanGeometry';
 import { hexRgb, type RGB } from './Looks';
 import { NAV_BOUNDS } from './NavGrid';
@@ -73,6 +74,30 @@ const CONE_NEAR = 0.2;
 const CONE_FAR = 0.42;
 const CONE_FAR_D2 = 12 * 12;
 const _dir = new Vector3();
+
+/**
+ * Tope de gente de la escuela dibujada en el portón (perfiles livianos:
+ * visor, celular, baja). A la hora de entrada, parado en el portón o en el
+ * atrio, se dibujaban 80–90 personas (~60k triángulos con las del barrio) y
+ * la vista pasaba de 300k triángulos en el visor. Casi todo eran personas
+ * tapadas (los patios detrás de la fachada y la calle del fondo: ver
+ * `camOut` y `hiddenBySchool`); sin ellas quedan ~45. El tope es la red para
+ * cuando la multitud se junta ahí (antes de Rubén la escuela está cerrada y
+ * espera en la vereda; la salida): se dibujan las más cercanas, y las que
+ * quedan afuera son las del fondo de la vereda y del hall. El radio llega al
+ * punto de partida de la historia (8,4 m del portón). Los personajes con
+ * nombre no cuentan y se dibujan siempre (son el juego).
+ */
+const GATE_CAP = 60;
+const GATE_U = (PORTAL.gate0 + PORTAL.gate1) / 2;
+const GATE_V = V.facade;
+const GATE_R2 = 10 * 10;
+/**
+ * Histéresis del tope: quien ya estaba dibujado compite con su distancia²
+ * × 0,72 (15 % más cerca). Sin esto, en el borde del tope dos personas a la
+ * misma distancia se turnaban cuadro a cuadro y titilaban.
+ */
+const GATE_KEEP = 0.72;
 
 /**
  * Mapa grueso (1 m) de ambientes techados por nivel: 0 = afuera (patio,
@@ -154,6 +179,14 @@ export class Population implements PopulationApi {
   private readonly ringIdx: Int32Array;
   private readonly ringD2: Float64Array;
   private readonly ringSort: Float64Array;
+  /** Tope de gente de la escuela en el portón (`GATE_CAP`; sin tope en escritorio) y el vigente. */
+  private readonly baseGateCap: number;
+  private gateCap: number;
+  /** Candidatos de la escuela con el tope activo: índice, distancia², clave y orden. */
+  private gateIdx: Int32Array;
+  private gateD2: Float64Array;
+  private gateKey: Float64Array;
+  private gateSort: Float64Array;
 
   constructor(
     private readonly scene: Scene,
@@ -231,6 +264,12 @@ export class Population implements PopulationApi {
     const { meshes } = buildHumanParts(scene, opts.detailed ? 1 : 0);
     // Lugar para la multitud y una docena de personajes con nombre.
     const n = (this.people = this.sim.agents.length + this.street.agents.length + 12);
+    // En escritorio el portón entra en el presupuesto sin tope.
+    this.baseGateCap = this.gateCap = opts.detailed ? Infinity : GATE_CAP;
+    this.gateIdx = new Int32Array(n);
+    this.gateD2 = new Float64Array(n);
+    this.gateKey = new Float64Array(n);
+    this.gateSort = new Float64Array(n);
     for (const part of HUMAN_PARTS) this.channels.set(part, this.makeChannel(meshes[part], n * (TWICE.has(part) ? 2 : 1), true));
 
     // Sombra de contacto: un disco difuso bajo cada persona. En VR no hay
@@ -350,6 +389,7 @@ export class Population implements PopulationApi {
     this.near = this.baseNear * k;
     this.mid = this.baseMid * k;
     this.ringCap = Math.round(this.baseRingCap * k);
+    this.gateCap = Math.round(this.baseGateCap * k);
   }
 
   spawnCharacter(id: string, look: CharacterLook, at: SchoolPoint, facing?: number): NpcHandle {
@@ -470,10 +510,23 @@ export class Population implements PopulationApi {
     // Cámara en la calle (fuera del predio): quien está en un patio de la
     // escuela queda detrás de muros y medianeras (desde Lafinur se dibujaban
     // 12 personas invisibles en el visor). Se ve sólo de cerca, como un aula.
-    const camOut = !overhead && camFeet < 1 && !inLot(cu, cv);
+    // Lo mismo delante del frente del hall: la franja de 2 m entre la fachada
+    // y la línea municipal ya es del predio (`inLot`) y en el portón y el
+    // atrio se dibujaban ~30 personas de los patios, a 16–31 m, detrás de las
+    // aulas de Laprida y del hall (el portón pasaba de 300k triángulos en el
+    // visor). Sólo cuenta afuera de los ambientes: dentro de un aula junto a
+    // la fachada, el patio ya es "otro ambiente".
+    const camOut = !overhead && camFeet < 1 && (!inLot(cu, cv) || cv > V.hallDoors);
+    // Tope del portón (visor y celular): con la cámara en planta baja cerca
+    // del portón, la multitud se decide después, por cercanía.
+    const gate = this.gateCap < Infinity && !overhead && camLevel === 0 && (cu - GATE_U) ** 2 + (cv - GATE_V) ** 2 < GATE_R2;
+    let gc = 0;
     let drawn = 0;
     this.ensureCapacity();
-    for (const a of this.sim.agents) {
+    const agents = this.sim.agents;
+    for (let i = 0; i < agents.length; i++) {
+      const a = agents[i];
+      const was = a.visible;
       a.visible = false;
       if (!a.alive || a.hidden) continue;
       // Local → mundo (ver `toWorld`): el este (+u) es −x.
@@ -497,6 +550,12 @@ export class Population implements PopulationApi {
           if (camRoom === 0 ? d2 > inOut2 : room === 0 ? d2 > outIn2 : d2 > other2) continue;
         } else if (camOut && room === 0 && d2 > inOut2 && a.v < -1.5 && inLot(a.u, a.v)) continue;
       }
+      if (gate && !a.named) {
+        this.gateIdx[gc] = i;
+        this.gateD2[gc] = d2;
+        this.gateKey[gc++] = was ? d2 * GATE_KEEP : d2;
+        continue;
+      }
       a.visible = true;
       drawn++;
       // Detalle por distancia de verdad (con la altura): volando, quien
@@ -504,6 +563,33 @@ export class Population implements PopulationApi {
       const dy = cy - a.y - 1;
       const l2 = d2 + dy * dy;
       this.writePerson(a, wx, wz, l2 < near2 ? 0 : l2 < mid2 ? 1 : 2);
+    }
+    if (gc > 0) {
+      // Más candidatos que el tope: van los más cercanos (como en el barrio).
+      const gcap = this.gateCap;
+      const key = this.gateKey;
+      let lim = Infinity;
+      if (gc > gcap) {
+        const s = this.gateSort;
+        for (let k = 0; k < gc; k++) {
+          const v = key[k];
+          let j = k;
+          for (; j > 0 && s[j - 1] > v; j--) s[j] = s[j - 1];
+          s[j] = v;
+        }
+        lim = gcap > 0 ? s[gcap - 1] : -1;
+      }
+      let n = 0;
+      for (let k = 0; k < gc && n < gcap; k++) {
+        if (key[k] > lim) continue;
+        const a = agents[this.gateIdx[k]];
+        a.visible = true;
+        drawn++;
+        n++;
+        const dy = cy - a.y - 1;
+        const l2 = this.gateD2[k] + dy * dy;
+        this.writePerson(a, f.ox - a.u, f.oz + a.v, l2 < near2 ? 0 : l2 < mid2 ? 1 : 2);
+      }
     }
     // El barrio: misma malla y mismo material (ningún draw call nuevo con la
     // escuela a la vista), tope por cuadro y distancia que se ajusta sola.
@@ -514,6 +600,11 @@ export class Population implements PopulationApi {
     const sa = this.street.agents;
     const idx = this.ringIdx;
     const dd = this.ringD2;
+    // Con los ojos a la altura de una persona y fuera del edificio (vereda,
+    // portón, atrio u otra calle), la escuela tapa a quien camina del otro
+    // lado: desde el portón se dibujaban 12–16 caminantes de la calle del
+    // fondo y de la lateral del gimnasio, a 40–80 m detrás del edificio.
+    const behind = !overhead && camFeet < 1 && (cv > -SCHOOL_DEEP || !inLot(cu, cv));
     let nc = 0;
     for (let i = 0; i < sa.length; i++) {
       const a = sa[i];
@@ -527,6 +618,7 @@ export class Population implements PopulationApi {
         const d = Math.sqrt(d2);
         if ((dx * fx + dz * fz) / d < (d2 > CONE_FAR_D2 ? CONE_FAR : CONE_NEAR)) continue;
       }
+      if (behind && hiddenBySchool(cu, cv, a.u, a.v)) continue;
       idx[nc] = i;
       dd[nc++] = d2;
     }
@@ -690,6 +782,10 @@ export class Population implements PopulationApi {
     };
     for (const [part, ch] of this.channels) grow(ch, TWICE.has(part) ? 2 : 1, true);
     grow(this.shadow, 1, false);
+    this.gateIdx = new Int32Array(this.people);
+    this.gateD2 = new Float64Array(this.people);
+    this.gateKey = new Float64Array(this.people);
+    this.gateSort = new Float64Array(this.people);
   }
 
   private part(name: HumanPart, frame: number, sx: number, sy: number, sz: number, color: RGB): void {

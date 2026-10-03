@@ -125,7 +125,7 @@ export const OBJECTIVES: readonly ObjectiveDef[] = [
     id: 'c1.patio',
     chapter: 'c1',
     title: 'Separá los residuos en el punto limpio',
-    hint: 'Espacio recreativo, cerca del cantero de la palmera.',
+    hint: 'Espacio recreativo: contra el muro del pasillo sur, cerca de la palmera.',
     requires: ['p.directora'],
     target: { kind: 'interact', id: 'puntoLimpio' },
     onComplete: [{ do: 'stamp', id: 'patio' }],

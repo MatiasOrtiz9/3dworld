@@ -6,7 +6,7 @@ import { DIALOGUES, TALK, dialogue } from '../src/game/story/dialogues';
 import { ACTIVITY_REWARDS, OBJECTIVES, RULES, objective } from '../src/game/story/objectives';
 import { DialogueRunner, StoryEngine } from '../src/game/story/StoryEngine';
 import type { Effect, ObjectiveDef } from '../src/game/story/types';
-import { INTERACTABLES, LOCKS, PLACES, interactable, outsideRoom } from '../src/game/story/world';
+import { DOOR_LOCKS, INTERACTABLES, LOCKS, PLACES, interactable, outsideRoom } from '../src/game/story/world';
 import { createActivity } from '../src/game/activities';
 import { seeded } from '../src/game/activities/types';
 
@@ -119,7 +119,6 @@ describe('datos de la historia', () => {
       'lock-hall',
       'lock-jardin',
       'lock-jardinCalle1',
-      'lock-norte',
       'lock-oeste',
       'lock-puertaGimnasio',
       'lock-salidaGimnasio',
@@ -136,6 +135,20 @@ describe('datos de la historia', () => {
       setDynamicSolid(l.id, l.rect);
       expect(schoolSolidLocal(mu, mv, feet), `${l.id} cerrada`).toBe(true);
       setDynamicSolid(l.id, null);
+    }
+  });
+
+  it('la puerta de la portería al atrio es del juego y queda con llave hasta que Rubén abre', () => {
+    const l = DOOR_LOCKS.find((x) => x.id === 'lock-porteria');
+    expect(l, 'lock-porteria').toBeDefined();
+    expect(l!.zone).toBe('entrada');
+    expect(l!.door.room.id).toBe('recepcionOf');
+    // Ninguna cerradura de la historia comparte el vano: sería otra hoja encima.
+    const mid = (a: readonly [number, number], b: readonly [number, number]) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const [du, dv] = mid(l!.door.a, l!.door.b);
+    for (const k of LOCKS) {
+      const [ku, kv] = mid(k.a, k.b);
+      expect(Math.hypot(ku - du, kv - dv), k.id).toBeGreaterThan(0.6);
     }
   });
 });

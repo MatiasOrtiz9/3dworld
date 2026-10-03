@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { generateCityPlan } from '../src/world/CityLayout';
 import { CityIndex } from '../src/world/CityIndex';
 import {
+  PORTAL_COLUMNS,
+  PORTAL_PILLARS,
+  PORTAL_RAILS,
   ROOMS,
   SCHOOL,
   STATION_SPOTS,
@@ -155,7 +158,7 @@ describe('escuela CIMDIP & Miguel Cané — planta del plano de evacuación', ()
 
   it('el ala oeste se apoya sobre la diagonal de Miguel Cané', () => {
     // A 30 cm dentro de la línea municipal hay muro; a 1 m, ambiente.
-    for (const v of [-12, -16, -21, -35.5]) {
+    for (const v of [-12, -16, -19, -35.5]) {
       const inside = toWorld(f, miguelCaneU(v) + 1.0, v);
       expect(index.isSolid(inside.x, inside.z), `v=${v}`).toBe(false);
       const wall = toWorld(f, miguelCaneU(v), v);
@@ -164,17 +167,17 @@ describe('escuela CIMDIP & Miguel Cané — planta del plano de evacuación', ()
   });
 
   it('se entra desde Laprida y se recorren pasillos, patios y gimnasio', () => {
-    // Vereda → escalinata → vestíbulo → puertas → hall.
-    expect(walkable(index, f, [[37.4, 5], [37.4, -4]])).toBe(true);
+    // Vereda → escalinata → portón (al costado de la columna del medio, que
+    // está sobre el eje de la entrada) → atrio → puertas → hall.
+    expect(walkable(index, f, [[35.84, 5], [35.84, -1.2], [35.24, -3.6]])).toBe(true);
     // Hall → pasillo sur → hasta el ochavo, pasando frente a las cinco aulas.
-    expect(walkable(index, f, [[36.5, -4], [34.2, -8.0], [2, -8.0]])).toBe(true);
-    // Pasillo sur → pasillo oeste → pasillo norte → salida a Miguel Cané (por
-    // delante de la columna forrada del cruce).
-    expect(walkable(index, f, [[14.8, -8.2], [14.8, -24.0], [11.4, -24.0], [11.4, -24.3], [9.6, -24.3]])).toBe(true);
-    // Pasillo sur → patio oeste por su abertura, rodeando el cantero de la palmera.
-    expect(walkable(index, f, [[24.4, -8.2], [24.4, -10.8], [19.0, -10.8], [19.0, -15.0]])).toBe(true);
+    expect(walkable(index, f, [[35.24, -3.6], [34.2, -7.4], [2, -7.4]])).toBe(true);
+    // Pasillo sur → pasillo oeste → pasillo norte → nicho → salida a Miguel Cané.
+    expect(walkable(index, f, [[13.65, -7.4], [13.65, -22.1], [9.7, -22.1], [9.7, -24.2], [11.5, -26.0], [11.5, -27.45], [10.3, -27.45]])).toBe(true);
+    // Pasillo sur → patio oeste por su paso, rodeando los canteros.
+    expect(walkable(index, f, [[23.02, -7.4], [23.02, -10.0], [17.2, -10.0], [17.2, -15.0]])).toBe(true);
     // Hall → patio este por la puerta del testero norte.
-    expect(walkable(index, f, [[36.65, -9], [36.65, -18]])).toBe(true);
+    expect(walkable(index, f, [[36.2, -9], [36.2, -18]])).toBe(true);
     // Hall → pasaje → gimnasio por la puerta doble.
     expect(walkable(index, f, [[39, -9.8], [52, -9.8]])).toBe(true);
     // Gimnasio → salida a Laprida.
@@ -184,9 +187,25 @@ describe('escuela CIMDIP & Miguel Cané — planta del plano de evacuación', ()
     // Pasillo → jardín por su puerta, por la galería hasta la recepción.
     expect(walkable(index, f, [[61.4, -22.5], [61.4, -36.5]])).toBe(true);
     // Pasillo norte → pasillo de bloque → Aula Maker por su puerta vidriada.
-    expect(walkable(index, f, [[18.7, -24.3], [14.95, -24.3], [14.95, -30.4], [17.0, -31.2], [22.0, -31.2]])).toBe(true);
-    // Pasillo oeste → Administración → baño (por sus puertas al pasillo).
-    expect(walkable(index, f, [[14.8, -18.5], [12.3, -18.5]])).toBe(true);
+    expect(walkable(index, f, [[18.7, -22.1], [13.3, -22.1], [13.3, -31.5], [22.0, -31.5]])).toBe(true);
+    // Pasillo oeste → baño de la columna de Administración, por su puerta.
+    expect(walkable(index, f, [[13.6, -19.0], [11.6, -19.0]])).toBe(true);
+  });
+
+  it('el portal: pilares, columnas y reja son macizos y se pasa por el portón', () => {
+    // Se atravesaban (jugador y gente): la reja de toda la altura, los
+    // pilares de granito y la columna del medio, justo en el eje de la entrada.
+    for (const r of [...PORTAL_PILLARS, ...PORTAL_COLUMNS]) {
+      const p = toWorld(f, (r.u0 + r.u1) / 2, (r.v0 + r.v1) / 2);
+      expect(index.isSolid(p.x, p.z), `${r.u0}`).toBe(true);
+      expect(index.isPedestrianBlocked(p.x, p.z), `${r.u0}`).toBe(true);
+    }
+    for (const [a, b] of PORTAL_RAILS) {
+      const p = toWorld(f, (a[0] + b[0]) / 2, a[1]);
+      expect(index.isPedestrianBlocked(p.x, p.z)).toBe(true);
+    }
+    // A cada lado de la columna del medio queda un paso de ~1,2 m.
+    for (const u of [34.5, 35.95]) expect(walkable(index, f, [[u, 3], [u, -1.5]]), `${u}`).toBe(true);
   });
 
   it('las aulas, el gimnasio y los muros bloquean', () => {

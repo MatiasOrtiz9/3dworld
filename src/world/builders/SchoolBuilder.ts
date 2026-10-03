@@ -25,6 +25,13 @@ import {
   FRONT_PLANTERS,
   ITEMS,
   MC_COS,
+  MC_SLOPE,
+  PORTAL,
+  PORTAL_COLUMNS,
+  PORTAL_PILLARS,
+  PORTAL_RAILS,
+  PORTAL_RAIL_V,
+  PORTAL_WINDOWS,
   ROOFS,
   ROOMS,
   SCHOOL,
@@ -137,7 +144,6 @@ const STYLES: Readonly<Record<string, RoomStyle>> = {
   // Administración y su hall: revoque gris texturado hasta 2,4 m, bloque de
   // hormigón a la vista arriba, cielorraso de placas.
   adm: { wall: 'block', wainscot: ['render', 2.4], stripe: false, ceiling: 'panels', lights: 'panel' },
-  hallAdm: { wall: 'block', wainscot: ['render', 2.4], stripe: false, ceiling: 'panels', lights: 'panel' },
   wcAdm: { wall: 'ceramic', stripe: false, ceiling: 'panels' },
   pasilloMaker: { wall: 'block', stripe: false, ceiling: 'panels', lights: 'panel' },
   // Aula Maker: paredes blancas con vinilos, cielorraso de placas y paneles LED.
@@ -155,13 +161,17 @@ const STYLES: Readonly<Record<string, RoomStyle>> = {
   gimnasio: { stripe: false },
   jardin: { wall: 'yellow', stripe: false },
   torreHall: { stripe: false, lights: 'none' },
+  // Ambientes del bloque norte que el CAD agrega (sin recorrido): el aula
+  // como las de primaria, el depósito y el local del fondo, blancos.
+  aulaNorte: { wainscot: ['woodIn', 1.05], stripe: false },
+  depositoNucleo: { stripe: false },
+  localFinNorte: { stripe: true },
 
   // ---------------------------------------------------- plantas altas
   // Pasillo de lockers y sector nuevo: cerámico beige, cielorraso de placas
   // y la guarda roja de toda la escuela (5:12–6:56).
   pasilloL1: { ceiling: 'panels', lights: 'panel' },
   pasilloNorteL1: { ceiling: 'panels', lights: 'panel' },
-  rellanoNorte: { ceiling: 'panels', lights: 'panel' },
   pasilloOesteL1: { ceiling: 'panels', lights: 'panel' },
   pasilloTrofeos: { lights: 'tube' },
   secretaria: { wall: 'greige', stripe: false },
@@ -185,13 +195,22 @@ const STYLES: Readonly<Record<string, RoomStyle>> = {
   precepSec: { wall: 'cream', stripe: true, ceiling: 'panels', lights: 'panel' },
   aulaSec: { stripe: false, ceiling: 'panels' },
   escaleraOeste: { stripe: false, lights: 'none' },
-  escaleraNorteL1: { lights: 'none' },
   // Edificio de bloque: bloque de hormigón a la vista, cerámico blanco y
   // cubierta de chapa blanca sobre perfiles negros (8:08–8:42).
   pasilloBloque: { wall: 'block', stripe: false, ceiling: 'panels' },
   aulaBloqueD: { wall: 'block', stripe: false, curtain: 'violet' },
   aulaBloqueC: { wall: 'block', stripe: false },
   aulaBloqueA: { stripe: false, curtain: 'violet' },
+  // Ambientes del primer piso que agregan el CAD y el plano a mano: con las
+  // terminaciones de sus vecinos (ningún material nuevo).
+  gerencia: { wall: 'cream', stripe: false, curtain: 'curtainWhite', valance: 'curtainRed', ceiling: 'panels' },
+  aula6C: { stripe: true, curtain: 'violet', ceiling: 'panels' },
+  aula4A: { wainscot: ['woodIn', 1.05], stripe: false, curtain: 'violet', ceiling: 'panels' },
+  aulaVertice: { stripe: false, curtain: 'curtainWhite', ceiling: 'panels' },
+  aulaN2: { stripe: true, curtain: 'curtainWhite', ceiling: 'panels' },
+  aulaNE: { stripe: false, curtain: 'curtainWhite', ceiling: 'panels' },
+  prBil: { wall: 'cream', stripe: false, ceiling: 'panels', lights: 'panel' },
+  aulaTaller: { stripe: false, curtain: 'violet' },
   // Aula de danzas: el cielorraso es la bóveda del polideportivo.
   aulaDanzas: { wainscot: ['block', 0.8], stripe: false, ceiling: null, lights: 'dome' },
   hallDanzas: { stripe: false, ceiling: null, lights: 'none' },
@@ -209,6 +228,9 @@ const STYLES: Readonly<Record<string, RoomStyle>> = {
   espacioMusica: { stripe: false },
   sum: { stripe: false, lights: 'panel', ceiling: 'panels' },
 };
+
+/** Ambientes de un piso alto sobre un patio de planta baja: llevan losa vista por debajo. */
+const SOFFIT_ROOMS: ReadonlySet<string> = new Set(['aulaNE']);
 
 interface Side {
   bands: Array<[number, number, Material]>;
@@ -534,11 +556,13 @@ export class SchoolBuilder {
     );
     this.prisms.plan(
       this.m.paving,
+      // Hasta el testero de la salida del pasillo sur (el rincón del ochavo).
       [
         [miguelCaneU(0), 0],
         [U.w, 0],
         [U.w, V.classTop],
-        [miguelCaneU(V.corrS), V.corrS],
+        [U.jog, V.classTop],
+        [U.jog, V.jogN],
       ],
       0,
       0.06,
@@ -548,9 +572,11 @@ export class SchoolBuilder {
     this.prisms.plan(this.m.lawn, [APEX, [miguelCaneU(top), top], [U.teaE, top], [U.teaE, rearV(U.teaE)]], 0, 0.05, {
       bottom: false,
     });
+    // Donde no hay aulas del primer piso contra la medianera: detrás de las
+    // del Aula Maker y del patio este las copas entraban en ellas.
     for (const [u, v] of [
-      [27, -38.6],
-      [38, -36.8],
+      [43.5, -37.8],
+      [54.5, -37.0],
       [49, -34.4],
     ] as const) {
       const p = toWorld(f, u, v);
@@ -628,6 +654,9 @@ export class SchoolBuilder {
       // la losa desde el patio (oscura, como en el video).
       for (const piece of subtractRects(r.poly, voidsAt(level))) {
         this.prisms.plan(mat[r.floor], piece, top - 0.14, top);
+        // Bajo un aula sobre el patio se ve un cielorraso de losa, no la cara
+        // inferior del piso (el cerámico del aula parecía un techo de baldosas).
+        if (SOFFIT_ROOMS.has(r.id)) this.prisms.plan(this.m.slab, piece, top - 0.15, top - 0.15, { top: false, sides: false });
       }
     }
   }
@@ -1260,7 +1289,7 @@ export class SchoolBuilder {
       if (UPPER.some((p) => p !== vol && p.floors >= level && inPoly(p.poly, probe[0], probe[1]))) continue;
       if (roomAt(probe[0], probe[1])?.id === 'gimnasio') continue;
       // El portal del acceso lleva su propia composición.
-      if (Math.abs(c[1]) < 0.05 && c[0] > 32.4 && c[0] < 42.4) continue;
+      if (Math.abs(c[1]) < 0.05 && c[0] > U.east1 - 0.5 && c[0] < U.salonW + 0.5) continue;
       const street = !inLot(probe[0], probe[1]);
       this.upperWindow(c, [du, dv], -inward, street, level * H);
     }
@@ -1616,9 +1645,6 @@ export class SchoolBuilder {
     const lo = alongU ? s.u0 : s.v0;
     const hi = alongU ? s.u1 : s.v1;
     const railTop = FY + s.y1 + 0.85;
-    // Tabique entre los dos tramos de la escalera principal (ver `cores`):
-    // 3,2 m de alto, de 12 cm.
-    if (alongU && Math.abs(edge + 27.47) < 0.2 && s.u0 < 25.9 && s.u1 > 23.3 && FY + s.y1 + 0.9 <= 3.25) return -27.47 + inward * 0.06;
     for (const w of WALLS) {
       if (w.level !== level) continue;
       const parallel = alongU ? Math.abs(w.a[1] - w.b[1]) < 0.01 : Math.abs(w.a[0] - w.b[0]) < 0.01;
@@ -1682,18 +1708,17 @@ export class SchoolBuilder {
       this.piece(m.metalDark, at(10.85), at(11.55), 0.37, FY + y, FY + y + 0.32, face + 0.225);
     }
     this.piece(m.yellow, at(11.0), at(11.45), 0.3, FY + 1.9, FY + 2.15, face + 0.2);
-    // Testero de Miguel Cané: pizarrón interactivo y dos estanterías.
+    // Testero de Miguel Cané: pizarrón interactivo entre las dos ventanas
+    // altas y una estantería con cajas celestes (la otra son los muebles
+    // Educabot, junto a la puerta).
     const mcIn = (v: number, off: number): P => {
       const u = miguelCaneU(v);
       // Normal hacia adentro (este) de la línea de Miguel Cané.
-      return [u + off * MC_COS, v + off * 0.6386 * MC_COS];
+      return [u + off * MC_COS, v + off * MC_SLOPE * MC_COS];
     };
-    this.piece(m.metalDark, mcIn(-33.45, 0.17), mcIn(-34.95, 0.17), 0.05, FY + 0.88, FY + 2.12);
-    this.piece(m.board, mcIn(-33.5, 0.2), mcIn(-34.9, 0.2), 0.02, FY + 0.92, FY + 2.08);
-    for (const [v0, v1] of [
-      [-31.9, -32.6],
-      [-35.7, -36.4],
-    ] as const) {
+    this.piece(m.metalDark, mcIn(-34.2, 0.17), mcIn(-35.7, 0.17), 0.05, FY + 0.88, FY + 2.12);
+    this.piece(m.board, mcIn(-34.25, 0.2), mcIn(-35.65, 0.2), 0.02, FY + 0.92, FY + 2.08);
+    for (const [v0, v1] of [[-36.4, -37.1]] as const) {
       this.piece(m.timber, mcIn(v0, 0.35), mcIn(v1, 0.35), 0.4, FY, FY + 1.8);
       this.piece(m.blue, mcIn(v0, 0.35), mcIn(v1, 0.35), 0.36, FY + 1.8, FY + 2.0);
     }
@@ -1706,7 +1731,7 @@ export class SchoolBuilder {
     }
   }
 
-  /** Núcleo gris del plano, descanso de la escalera exterior y descanso principal. */
+  /** Descansos de las escaleras. */
   private cores(): void {
     // Descansos: macizos los bajos, losa los de los pisos altos.
     for (const l of LANDINGS) {
@@ -1720,8 +1745,6 @@ export class SchoolBuilder {
       this.box(steel ? this.m.metalTread : this.m.stair, (l.u0 + l.u1) / 2, (l.v0 + l.v1) / 2, l.u1 - l.u0, top - bottom, l.v1 - l.v0, bottom);
       if (steel) this.box(this.m.metalDark, l.u1 - 0.05, l.v1 - 0.05, 0.08, bottom - LEVEL_Y[1], 0.08, LEVEL_Y[1]);
     }
-    // Tabique entre tramos.
-    this.box(this.m.white, 24.6, -27.47, 2.6, 3.2, 0.12, 0);
   }
 
   // ============================================================ equipamiento
@@ -2726,6 +2749,13 @@ export class SchoolBuilder {
       const p = toWorld(this.f, u + fu * ahead + su * side, v + fv * ahead + sv * side);
       this.farm.addBoxOnGround(m, p.x, p.z, w, h, d, y, rot);
     };
+    // Patas y parantes: postes (cajas sin base). Apoyan en el piso o nacen
+    // dentro del asiento, así que esa cara no se ve; con ~1.500 patas en la
+    // escuela son 3 mil triángulos menos en cada vista.
+    const post = (ahead: number, side: number, w: number, h: number, y: number) => {
+      const p = toWorld(this.f, u + fu * ahead + su * side, v + fv * ahead + sv * side);
+      this.farm.add('post', this.m.metalDark, new Vector3(p.x, y + h / 2, p.z), new Vector3(w, h, w), rot);
+    };
     // Asiento a `FURNITURE.seat` (la gente se sienta a esa altura).
     const legs = (FURNITURE.seat - 0.04) * s;
     part(mat, 0, 0, 0.42 * s, 0.04 * s, 0.42 * s, FY + legs);
@@ -2736,8 +2766,8 @@ export class SchoolBuilder {
       // bajo cada silla. Las de atrás siguen hasta el respaldo (hacen de
       // parantes): sin ellas el respaldo flotaba sobre el asiento.
       for (const b of [-1, 1]) {
-        part(this.m.metalDark, 0.18 * s, b * 0.18 * s, 0.03, legs, 0.03, FY);
-        part(this.m.metalDark, -0.18 * s, b * 0.18 * s, 0.03, legs + 0.36 * s, 0.03, FY);
+        post(0.18 * s, b * 0.18 * s, 0.03, legs, FY);
+        post(-0.18 * s, b * 0.18 * s, 0.03, legs + 0.36 * s, FY);
       }
       return;
     }
@@ -2746,17 +2776,17 @@ export class SchoolBuilder {
     const leg = 0.022;
     const k = 0.18 * s;
     for (const a of [-1, 1]) {
-      for (const b of [-1, 1]) part(this.m.metalDark, a * k, b * k, leg, legs, leg, FY);
+      for (const b of [-1, 1]) post(a * k, b * k, leg, legs, FY);
     }
     // Parantes del respaldo: del asiento a 1 cm del borde superior (con la
     // punta en el plano del borde, el canto del respaldo titilaba).
-    for (const t of [-1, 1]) part(this.m.metalDark, -0.2 * s * 0.92, t * k, leg, 0.37 * s, leg, FY + legs + 0.02 * s);
+    for (const t of [-1, 1]) post(-0.2 * s * 0.92, t * k, leg, 0.37 * s, FY + legs + 0.02 * s);
   }
 
   /** Tubos fluorescentes en todos los ambientes cubiertos. */
   private lights(): void {
     for (const r of ROOMS) {
-      if (!r.roofed || r.id === 'gimnasio' || r.id === 'escalera' || r.id === 'nicho') continue;
+      if (!r.roofed || r.id === 'gimnasio' || r.id === 'nicho') continue;
       const kind = STYLES[r.id]?.lights ?? 'tube';
       if (kind === 'none') continue;
       const ceil = LEVEL_Y[roomLevel(r)] + (CEILING_H[r.id] ?? (STYLES[r.id]?.ceiling === null ? 2.9 : 3.1));
@@ -2836,23 +2866,21 @@ export class SchoolBuilder {
    */
   private portal(): void {
     const m = this.m;
-    const u0 = 33.55;
-    const u1 = 41.3;
+    // Centrado en el frente del hall del CAD (antes, en el del plano de S&O).
+    const { u0, u1 } = PORTAL;
     const uc = (u0 + u1) / 2;
     const w = u1 - u0;
     // El portal sobresale ~0,85 m de la fachada y sube a ~8,2 m (0:09–0:16).
     // Arriba es un marco gris grafito que deja ver las tres ventanas enrejadas
     // del primer piso (la Secretaría y 6° BD), con su retiro hasta el muro.
-    const front = 0.85;
+    const front = PORTAL.front;
     const depth = 0.2;
     const vf = front - depth / 2;
     const y0 = 4.0;
     const top = 8.2;
-    const wins: Array<[number, number]> = [
-      [34.6, 36.0],
-      [36.8, 38.2],
-      [39.1, 40.5],
-    ];
+    // Las tres ventanas del primer piso que enmarca: las del muro del primer
+    // piso (SchoolUpper), así el recorte del paño siempre coincide con ellas.
+    const wins = PORTAL_WINDOWS;
     const wy0 = H + 1.45;
     const wy1 = H + 2.85;
     // Paño frontal, cortado alrededor de las ventanas.
@@ -2889,34 +2917,46 @@ export class SchoolBuilder {
       this.box(mat, uc, front + 0.02, w, 0.14, 0.04, y);
     }
     // Marquesina roja con filetes (2,45–3,85 m); el texto va en el atlas.
-    this.box(m.red, 37.425, front - 0.15, 8.25, 1.4, 0.3, 2.45);
+    this.box(m.red, uc, front - 0.15, 8.25, 1.4, 0.3, 2.45);
     // Banda roja del primer piso del edificio de bloque, al este del portal (0:15).
-    this.box(m.red, 46.125, 0.17, 8.35, 0.6, 0.04, 3.05);
+    this.box(m.red, (U.salonW + U.gymW) / 2, 0.17, U.gymW - U.salonW, 0.6, 0.04, 3.05);
     // Planta baja: dos pilares revestidos en granito y tres columnas azul
     // marino, con la reja de malla cuadrada de toda la altura (2020) y su
     // portón abierto frente a las puertas.
-    const g0 = 32.95;
-    const g1 = 41.9;
-    for (const pu of [g0 + 0.4, g1 - 0.4]) this.box(m.stone, pu, front / 2, 0.8, 2.45, front, 0);
-    for (const u of [33.7, 37.5, 41.0]) this.box(m.navy, u, front - 0.2, 0.3, 2.45, 0.3, 0.12);
-    for (let u = g0 + 0.85; u < g1 - 0.8; u += 0.15) {
-      if (u > 35.6 && u < 39.3) continue;
-      this.box(m.bars, u, front - 0.05, 0.02, 2.3, 0.02, 0.12);
+    // Pilares, columnas y reja salen de SchoolLayout (la colisión usa las
+    // mismas medidas).
+    const { g0, g1, gate0, gate1 } = PORTAL;
+    const span = (r: { u0: number; v0: number; u1: number; v1: number }) => [(r.u0 + r.u1) / 2, (r.v0 + r.v1) / 2, r.u1 - r.u0, r.v1 - r.v0] as const;
+    for (const r of PORTAL_PILLARS) {
+      const [cu, cv, wu, dv] = span(r);
+      this.box(m.stone, cu, cv, wu, 2.45, dv, 0);
+    }
+    // Columnas azul marino: a los costados del portón y en su medio, frente
+    // al centro de la entrada (0:16), y la tercera junto al pilar del este.
+    for (const r of PORTAL_COLUMNS) {
+      const [cu, cv, wu, dv] = span(r);
+      this.box(m.navy, cu, cv, wu, 2.45, dv, 0.12);
+    }
+    // (En el visor, un barrote de cada dos, como el cerco.)
+    for (let u = g0 + 0.85; u < g1 - 0.8; u += this.detailed ? 0.15 : 0.3) {
+      if (u > gate0 && u < gate1) continue;
+      this.box(m.bars, u, PORTAL_RAIL_V, 0.02, 2.3, 0.02, 0.12);
     }
     for (const y of [0.2, 1.3, 2.38]) {
-      this.box(m.bars, (g0 + 0.85 + 35.6) / 2, front - 0.05, 35.6 - g0 - 0.85, 0.03, 0.02, y);
-      this.box(m.bars, (39.3 + g1 - 0.8) / 2, front - 0.05, g1 - 0.8 - 39.3, 0.03, 0.02, y);
+      for (const [a, b] of PORTAL_RAILS) this.box(m.bars, (a[0] + b[0]) / 2, PORTAL_RAIL_V, b[0] - a[0], 0.03, 0.02, y);
     }
-    // Escalinata de tres huellas hasta el nivel del vestíbulo.
+    // Escalinata de tres huellas hasta el nivel del vestíbulo, entre los pilares.
+    const s0 = g0 + 0.8;
+    const s1 = g1 - 0.8;
     for (const [v0, v1, h] of [
       [1.4, 2.0, 0.08],
       [0.8, 1.4, 0.1],
       [0, 0.8, FY],
     ] as const) {
-      this.box(m.slab, (33.4 + 40.85) / 2, (v0 + v1) / 2, 40.85 - 33.4, h, v1 - v0, 0);
+      this.box(m.slab, (s0 + s1) / 2, (v0 + v1) / 2, s1 - s0, h, v1 - v0, 0);
     }
     // Mástil inclinado con la bandera, a la izquierda del portal.
-    const p = toWorld(this.f, 33.35, 1.1);
+    const p = toWorld(this.f, u0 - 0.2, 1.1);
     this.farm.add('box', m.metal, new Vector3(p.x, 5.35, p.z + 0.35), new Vector3(0.06, 0.06, 1.9), 0, -0.6);
   }
 
@@ -2997,13 +3037,10 @@ export class SchoolBuilder {
     // Árbol de hoja ancha frente al edificio de bloque (0:12).
     const tree = toWorld(this.f, 47.0, 3.0);
     this.nature.broadleaf(tree.x, tree.z, 0.8, 0.06);
-    // Cartel de salida de emergencia sobre el ochavo, a lo largo del muro en
-    // diagonal y 5 mm afuera de su cara (alineado a los ejes, una punta
-    // quedaba enterrada y la otra a 6 cm del muro).
-    const oa: P = [U.w, V.classTop];
-    const ob: P = [miguelCaneU(V.corrS), V.corrS];
-    const och = (t: number): P => [oa[0] + (ob[0] - oa[0]) * t, oa[1] + (ob[1] - oa[1]) * t];
-    this.piece(m.exitSign, och(0.405), och(0.595), 0.05, 2.45, 2.67, -(SCHOOL.extT / 2 + 0.03));
+    // Cartel de salida de emergencia sobre la salida del ochavo, en el
+    // testero del pasillo sur y 5 mm afuera de su cara.
+    const exitMid = (V.classTop + V.jogN) / 2;
+    this.piece(m.exitSign, [U.jog, exitMid + 0.2], [U.jog, exitMid - 0.2], 0.05, 2.45, 2.67, -(SCHOOL.extT / 2 + 0.03));
     // Poste de los carteles de calle (Laprida y Miguel Cané) y del punto de
     // encuentro; las chapas las pinta SchoolIdentity.
     this.cyl(m.metalDark, -6.3, 3.3, 0.07, 3.35, 0);
@@ -3022,11 +3059,12 @@ export class SchoolBuilder {
     ] as const) {
       for (let u = a; u <= b; u += 0.86) tooth(u, 0.05, y, true);
     }
-    // Hacia el patio oeste: pasillo de lockers, sector nuevo y galería.
+    // Hacia el patio de aire del primer piso: pasillo de lockers (sur), ala
+    // oeste y fila norte, hasta la galería.
     const parapet = 2 * H + 0.55;
-    for (let u = U1.wing + 0.3; u < U1.gallery; u += 0.86) tooth(u, V.corrS - 0.05, parapet, true);
-    for (let u = U.patioW + 0.3; u < U.bufW; u += 0.86) tooth(u, V.corrN + 0.05, parapet, true);
-    for (let v = V.corrS - 0.3; v > V.corrN; v -= 0.86) tooth(U1.wing + 0.05, v, parapet, false);
+    for (let u = U.patioW + 0.3; u < U1.gallery; u += 0.86) tooth(u, V.corrS - 0.05, parapet, true);
+    for (let u = U.patioW + 0.3; u < U1.gallery; u += 0.86) tooth(u, V.nBlockS + 0.05, parapet, true);
+    for (let v = V.corrS - 0.3; v > V.nBlockS; v -= 0.86) tooth(U.patioW + 0.05, v, parapet, false);
   }
 
   private palm(u: number, v: number, h: number, base = 0): void {
@@ -3059,7 +3097,9 @@ export class SchoolBuilder {
       const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
       const du = (b[0] - a[0]) / len;
       const dv = (b[1] - a[1]) / len;
-      const n = Math.floor(len / 0.16);
+      // En el visor, un barrote de cada dos: son ~300 cajas que, como la
+      // granja no descarta instancias sueltas, se pagaban en todas las vistas.
+      const n = Math.floor(len / (this.detailed ? 0.16 : 0.32));
       for (let k = 0; k <= n; k++) {
         const d = (k * len) / n;
         const p: P = [a[0] + du * d, a[1] + dv * d];
