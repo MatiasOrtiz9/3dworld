@@ -189,7 +189,7 @@ const CLASS_KIND: Record<string, ClassKind> = {
 };
 
 /** Mobiliario que hace de mesa delante de una silla. */
-const TABLES = new Set<Item['kind']>(['desk', 'table', 'teacherDesk', 'desk2', 'workbench', 'counter', 'longTable', 'hexTable', 'roundTable']);
+const TABLES = new Set<Item['kind']>(['desk', 'table', 'teacherDesk', 'desk2', 'workbench', 'counter', 'longTable', 'hexTable', 'roundTable', 'cafeTable']);
 
 /** Altura de la tapa de cada mesa sobre el piso, como la dibuja `SchoolBuilder`. */
 const TABLE_TOP: Partial<Record<Item['kind'], number>> = {
@@ -671,8 +671,11 @@ export class Places {
           break;
         }
         case 'hexTable':
-        case 'roundTable': {
+        case 'roundTable':
+        case 'cafeTable': {
           // Las sillas de estas mesas las dibuja el constructor, no están en el plano.
+          // Las mesas altas del patio (con `h`) son de pie: sin sillas.
+          if (it.kind === 'cafeTable' && it.h !== undefined) break;
           const small = it.kind === 'roundTable';
           for (let k = 0; k < 4; k++) {
             const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
@@ -697,9 +700,12 @@ export class Places {
           }
           break;
         }
+        case 'boxBench':
         case 'bench':
         case 'benchSeat':
         case 'coatBench': {
+          // Los bancos de chapa altos (72 cm) son mesitas, no asientos.
+          if (it.kind === 'boxBench' && (it.h ?? 0.46) > 0.6) break;
           const len = Math.max(it.w, it.d);
           const alongU = it.w >= it.d;
           const n = Math.max(1, Math.floor(len / 0.55));

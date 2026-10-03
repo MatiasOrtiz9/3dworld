@@ -1044,6 +1044,22 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     igual, sin tocar el audio). Salida del gimnasio a Laprida y portón del patio sobre
     Miguel Cané: el modelo sigue el video y el plano de S&O (2,1 m entre la
     esquina y la primera pilastra; el CAD de 3,4 m cortaba la pilastra).
+89. **Patio aire libre nuevo (video de 2026, después de la pandemia).** La fuente
+    del Espacio recreativo (`patioOeste`) es ahora el video de WhatsApp del
+    3/10/2026 (no se versiona). Gradas curvas azules con cantero en la esquina
+    noroeste (`amphi`, colisión en franjas por el arco en `obstacleRects`), dos
+    mástiles, bicicletero y banco blanco contra el muro norte (bloque visto,
+    puerta doble blanca), mesas de pie rojo con damero y sillas negras
+    (`cafeTable`; con `h` son mesas altas de pie, sin asientos), cantero rojo
+    largo con bancos de chapa roja y azul (`boxBench`, los de 72 cm son
+    mesitas), macetas blancas (`pot`), guirnaldas de banderines (`bunting`,
+    decal en `schoolProps`) y el comedor con zócalo de bloque y carpintería
+    blanca. Se fueron el cantero azul largo, el de ladrillo, los árboles
+    pelados, los banquitos rojos y el aro. La palmera queda (ancla de la
+    historia) en su cazuela, más alta para que las frondas no bajen. El paso de
+    u 17,2 del pasillo sur al fondo del patio queda libre (`schoolLayout`). Los
+    arbolitos del video contra el pasillo sur no van: la copa de `tree` entra
+    en el pasillo techado.
 
 ---
 

@@ -282,6 +282,18 @@ function boxes(it: Item): Box[] {
       return [all(y ?? 0, (y ?? 0) + (h ?? 1.0))];
     case 'floorPatch':
       return [all(0.002, 0.01, 'decal')];
+    // Patio aire libre nuevo (video 2026).
+    case 'amphi':
+      return [all(0, 1.1)];
+    case 'cafeTable':
+      return [all(0, h ?? FURNITURE.tableTop)];
+    case 'boxBench':
+      return [all(0, h ?? 0.46)];
+    case 'pot':
+      return [all(0, 0.9)];
+    case 'bunting':
+      // Cuelga de muro a muro por encima de todo: como un decal, no choca.
+      return [all((y ?? 3.1) - 0.5, y ?? 3.1, 'decal')];
     case 'hoop': {
       const [fu, fv] = faceDir(it.face);
       return [thin(0.04, 1.85, 2.3), box(u + fu * 0.25, v + fv * 0.25, 0.4, 0.4, 1.65, 1.97, 'ring')];

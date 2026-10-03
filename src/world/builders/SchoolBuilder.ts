@@ -2003,13 +2003,14 @@ export class SchoolBuilder {
         break;
       }
       case 'planter': {
-        this.box(this.mat(it.color, m.blue), u, v, w, 0.6, d, FY);
-        this.box(m.soil, u, v, w - 0.12, 0.04, d - 0.12, FY + 0.58);
+        const ph = it.h ?? 0.6;
+        this.box(this.mat(it.color, m.blue), u, v, w, ph, d, FY);
+        this.box(m.soil, u, v, w - 0.12, 0.04, d - 0.12, FY + ph - 0.02);
         const n = Math.max(1, Math.round(Math.max(w, d) / 1.1));
         for (let k = 0; k < n; k++) {
           const t = (k + 0.5) / n - 0.5;
           const p = toWorld(this.f, u + (w >= d ? t * (w - 0.5) : 0), v + (w >= d ? 0 : t * (d - 0.5)));
-          this.nature.shrub(p.x, p.z, this.rng.range(0.55, 0.8), FY + 0.6);
+          this.nature.shrub(p.x, p.z, this.rng.range(0.55, 0.8), FY + ph);
         }
         break;
       }
@@ -2780,6 +2781,96 @@ export class SchoolBuilder {
         this.box(m.slab, u, v, w + 0.2, 0.3, d + 0.2, FY + (it.y ?? 0));
         this.cyl(m.metalDark, u, v, w, 1.4, FY + (it.y ?? 0) + 0.3, true);
         break;
+      case 'amphi': {
+        // Gradas curvas del patio nuevo (video 2026): tres escalones de
+        // hormigón pintado de azul en cuarto de círculo con centro en la
+        // esquina del ítem; el de arriba es un cantero. Cada escalón son
+        // gajos rectos (cajas de la granja, sin malla propia).
+        const mat = this.mat(it.color, m.navy);
+        const cu = u - w / 2;
+        const cv = v - d / 2;
+        const r = Math.min(w, d);
+        const n = this.detailed ? 9 : 6;
+        const half = Math.PI / 4 / n;
+        for (const [a0, a1, h] of [
+          [0.66, 1, 0.42],
+          [0.36, 0.66, 0.84],
+          [0, 0.36, 1.1],
+        ] as const) {
+          const rIn = a0 * r * Math.cos(half);
+          const rOut = a1 * r;
+          for (let k = 0; k < n; k++) {
+            const t = ((k + 0.5) / n) * (Math.PI / 2);
+            const mid = (rIn + rOut) / 2;
+            const p = toWorld(this.f, cu + Math.cos(t) * mid, cv + Math.sin(t) * mid);
+            this.farm.add('box', mat, new Vector3(p.x, FY + h / 2, p.z), new Vector3(rOut - rIn, h, 2 * rOut * Math.sin(half) + 0.03), this.yaw(Math.cos(t), Math.sin(t)));
+          }
+        }
+        for (const t of [0.25, 0.75, 1.25]) {
+          const p = toWorld(this.f, cu + Math.cos(t) * r * 0.2, cv + Math.sin(t) * r * 0.2);
+          this.nature.shrub(p.x, p.z, this.rng.range(0.6, 0.85), FY + 1.1);
+        }
+        break;
+      }
+      case 'cafeTable': {
+        // Mesa del patio nuevo: pie central rojo con cruz, tapa de madera
+        // rojiza y un damero de azulejos; las bajas con cuatro sillas
+        // plásticas negras (como las redondas), las altas son de pie.
+        const hgt = (it.h ?? FURNITURE.tableTop) - 0.05;
+        this.box(this.mat(it.color, m.timberDark), u, v, w, 0.05, d, FY + hgt);
+        this.box(m.red, u, v, 0.09, hgt, 0.09, FY);
+        this.box(m.red, u, v, w * 0.7, 0.04, 0.07, FY);
+        this.box(m.red, u, v, 0.07, 0.04, d * 0.7, FY);
+        if (it.h !== undefined) break;
+        if (this.detailed) {
+          const c = 0.11;
+          this.box(m.frame, u, v, 4 * c + 0.02, 0.004, 4 * c + 0.02, FY + hgt + 0.05);
+          for (let a = 0; a < 4; a++) {
+            for (let b = 0; b < 4; b++) {
+              if ((a + b) % 2 === 0) this.box(m.navy, u + (a - 1.5) * c, v + (b - 1.5) * c, c, 0.003, c, FY + hgt + 0.054);
+            }
+          }
+        }
+        for (let k = 0; k < 4; k++) {
+          const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
+          this.chair(m.metalDark, u + Math.cos(a) * (w / 2 + FURNITURE.roundChair), v + Math.sin(a) * (w / 2 + FURNITURE.roundChair), [-Math.cos(a), -Math.sin(a)]);
+        }
+        break;
+      }
+      case 'boxBench': {
+        // Chapa plegada en U, pintada (rojo o azul): tapa y dos laterales.
+        const mat = this.mat(it.color, m.red);
+        const h = it.h ?? 0.46;
+        this.box(mat, u, v, w, 0.04, d, FY + h - 0.04);
+        for (const s of [-1, 1]) {
+          if (w >= d) this.box(mat, u + s * (w / 2 - 0.02), v, 0.04, h - 0.04, d, FY);
+          else this.box(mat, u, v + s * (d / 2 - 0.02), w, h - 0.04, 0.04, FY);
+        }
+        break;
+      }
+      case 'pot': {
+        this.cyl(m.frame, u, v, w, 0.55, FY, true);
+        this.cyl(m.soil, u, v, w - 0.06, 0.02, FY + 0.53);
+        const p = toWorld(this.f, u, v);
+        this.nature.shrub(p.x, p.z, this.rng.range(0.5, 0.7), FY + 0.55);
+        break;
+      }
+      case 'bunting': {
+        // Guirnalda de banderines (papel picado del video 2026) de muro a
+        // muro: cordón y banderines de colores; en VR, la mitad.
+        const y = FY + (it.y ?? 3.1);
+        this.piece(m.metalDark, [u - w / 2, v], [u + w / 2, v], 0.01, y - 0.01, y);
+        const cols = [m.red, m.blue, m.yellow, m.chairGreen, m.lime, m.frame];
+        const step = this.detailed ? 0.24 : 0.48;
+        const n = Math.floor(w / step);
+        for (let k = 0; k < n; k++) {
+          const fu = u - w / 2 + (k + 0.5) * (w / n);
+          // Cuelga un poco más en el medio (catenaria baja).
+          const sag = 0.25 * (1 - ((2 * (k + 0.5)) / n - 1) ** 2);
+          this.box(cols[k % cols.length], fu, v, 0.14, 0.16, 0.008, y - 0.17 - sag);
+        }
+        break;
+      }
       case 'bareTree': {
         // Árbol pelado de invierno: tronco y cinco ramas abiertas (2:01–2:13),
         // cada una en dos tramos que se afinan y se bifurcan. Antes eran cinco

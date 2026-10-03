@@ -517,7 +517,13 @@ export type ItemKind =
   | 'louvredDoor' // puerta de chapa con celosía (bajo la escalera exterior)
   | 'condenser' // unidad exterior de aire acondicionado colgada de la fachada
   | 'bareTree' // árbol sin hojas (el video es de invierno)
-  | 'hedge'; // mata de cañas/arbustos de un cerco vivo
+  | 'hedge' // mata de cañas/arbustos de un cerco vivo
+  // Patio aire libre nuevo (video 2026, después de la pandemia).
+  | 'amphi' // gradas curvas azules en una esquina, con cantero arriba (centro del arco en la esquina u−w/2, v−d/2)
+  | 'cafeTable' // mesa de patio: pie rojo, tapa de madera con damero; sin `h`, cuatro sillas negras; con `h`, mesa alta de pie
+  | 'boxBench' // banco/mesita de chapa plegada en U (con color; alto en `h`)
+  | 'pot' // maceta redonda blanca con planta
+  | 'bunting'; // guirnalda de banderines de colores (a lo largo de u, a la altura `y`)
 
 /** Hacia dónde mira el frente del objeto (o la cara útil de algo contra un muro). */
 export type Facing = 'n' | 's' | 'e' | 'w';
