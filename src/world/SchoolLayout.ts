@@ -238,17 +238,13 @@ const WALLS_PB: Wall[] = [
   hw(V.wcN, U.wcW, U.wingE),
   // Lado norte del Espacio recreativo: ventanas sobre el cantero largo y la
   // puerta doble roja vidriada (la del CAD).
-  // Video 2026: del lado del patio el muro quedó de bloque visto y la puerta, blanca.
-  wallFinish(
-    hw(V.corrN, U.patioW, U.bufW, 'int', [
-      [15.3, 17.2, 'window', 1.25, 2.2],
-      [17.7, 19.6, 'window', 1.25, 2.2],
-      [20.1, 22.0, 'window', 1.25, 2.2],
-      [22.45, 24.05, 'double', undefined, undefined, 'frame'],
-      [24.55, 26.45, 'window', 1.25, 2.2],
-    ]),
-    { patioOeste: 'block' },
-  ),
+  hw(V.corrN, U.patioW, U.bufW, 'int', [
+    [15.3, 17.2, 'window', 1.25, 2.2],
+    [17.7, 19.6, 'window', 1.25, 2.2],
+    [20.1, 22.0, 'window', 1.25, 2.2],
+    [22.45, 24.05, 'double', undefined, undefined, 'red'],
+    [24.55, 26.45, 'window', 1.25, 2.2],
+  ]),
   hw(V.corrN, U.bufW, U.east1),
   // Al final del pasillo norte, puertas dobles vidriadas a un local chico y de
   // ahí al patio este (3:22–3:28); el recorrido sigue a la cantina (3:29).
@@ -314,28 +310,28 @@ const WALLS_PB: Wall[] = [
   ]),
   // Comedor hacia el patio: paños vidriados con marco de madera oscura y la
   // puerta del CAD.
-  // Video 2026: zócalo de bloque visto y carpintería blanca.
-  wallFinish(
-    vw(U.bufW, V.corrN, V.corrS, 'int', [
-      [-8.85, -10.95, 'window', 0.9, 2.4, 'frame'],
-      [-11.35, -13.45, 'window', 0.9, 2.4, 'frame'],
-      [-13.85, -15.95, 'window', 0.9, 2.4, 'frame'],
-      [-16.35, -18.45, 'window', 0.9, 2.4, 'frame'],
-      [-18.8, -20.3, 'double', undefined, undefined, 'frame'],
-    ]),
-    { patioOeste: 'block' },
-  ),
+  vw(U.bufW, V.corrN, V.corrS, 'int', [
+    [-8.85, -10.95, 'window', 0.9, 2.4, 'timberDark'],
+    [-11.35, -13.45, 'window', 0.9, 2.4, 'timberDark'],
+    [-13.85, -15.95, 'window', 0.9, 2.4, 'timberDark'],
+    [-16.35, -18.45, 'window', 0.9, 2.4, 'timberDark'],
+    [-18.8, -20.3, 'double', undefined, undefined, 'timberDark'],
+  ]),
   // Frente de la cantina al pasillo: puerta doble y paño vidriado sobre zócalo rojo.
   hw(V.corrS, U.bufW, U.east1, 'int', [
     [27.86, 29.47, 'double'],
     [29.8, 32.2, 'window', 1.2, 2.6],
   ]),
   // Frente del comedor al patio este (10:00–10:05): puerta de chapa bajo la
-  // escalera exterior y la puerta vidriada de la cantina.
-  vw(U.east1, V.corrN, V.corrS, 'int', [
-    [-15.25, -16.15, 'door', undefined, undefined, 'frame'],
-    [-19.75, -20.7, 'door', undefined, undefined, 'frame'],
-  ]),
+  // escalera exterior y la puerta vidriada de la cantina. Video 2026: del
+  // lado del patio, revestido de bloque gris como el resto del patio.
+  wallFinish(
+    vw(U.east1, V.corrN, V.corrS, 'int', [
+      [-15.25, -16.15, 'door', undefined, undefined, 'frame'],
+      [-19.75, -20.7, 'door', undefined, undefined, 'frame'],
+    ]),
+    { patioEste: 'block' },
+  ),
 
   // --- Aulas sobre Laprida (CAD: cinco iguales de 6,5 × 6,2 m) ----------------
   hw(V.classTop, U.jog, U.east1, 'int', [
@@ -378,8 +374,9 @@ const WALLS_PB: Wall[] = [
       [35.6, 36.8, 'door', undefined, undefined, 'frame'],
       [37.1, 40.3, 'window', 1.4, 3.1],
     ]),
-    // Del lado del jardincito el muro es verde oliva (10:08).
-    finish: { patioEste: 'olive' },
+    // Del lado del patio: verde oliva en 2020 (10:08), bloque gris en el
+    // video de 2026 (HANDOFF 89).
+    finish: { patioEste: 'block' },
   },
   // Torre de la escalera, de dos plantas: al norte llega la escalera exterior
   // blanca del patio este, al este sale la pasarela vidriada (a la altura del
@@ -401,7 +398,7 @@ const WALLS_PB: Wall[] = [
     // pasaba por una mitad).
     [-9.2, -10.7, 'double', undefined, undefined, 'frame'],
     [-6.8, -8.34, 'double', undefined, undefined, 'red'],
-  ]), { patioEste: 'olive' }),
+  ]), { patioEste: 'block' }),
 
   // --- Salón de los espejos, pasaje y gimnasio -------------------------------
   // Testero norte del aula de danzas: piano, cómoda y afiches; sin ventanas.
@@ -1038,44 +1035,42 @@ const ITEMS_PB: Item[] = [
   item('bamboo', U.east1 - 0.35, -16.8, 0.45, 0.45),
   item('bamboo', U.east1 - 0.35, -14.35, 0.45, 0.45),
 
-  // Espacio recreativo = "Patio aire libre" rehecho después de la pandemia
-  // (video 2026, ver HANDOFF 89): piso de baldosas claras, gradas curvas
-  // azules con cantero en la esquina noroeste, mástiles detrás, bicicletas y
-  // banco blanco contra el muro de bloque, mesas de pie rojo con damero y
-  // sillas negras, el cantero rojo largo con bancos de chapa roja y azul, los
-  // árboles en sus cazuelas contra el pasillo sur, la palmera, mesas altas y
-  // macetas blancas bajo la galería y guirnaldas de banderines.
-  // Lejos de la hoja de la puerta doble del pasillo oeste y de la del norte.
-  item('amphi', U.patioW + 0.11 + 1.7, V.corrN + 0.11 + 1.7, 3.4, 3.4),
+  // Espacio recreativo (2:00-2:13): cantero azul largo con pastos y asientos de
+  // madera contra el lado norte, cantero angosto junto al pasillo oeste,
+  // cantero de ladrillo, mástil, árboles, la palmera en su cantero con
+  // asientos, banquitos cilíndricos rojos, aro de básquet y la galería del
+  // comedor con columnas negras. Patio cuadrado del CAD (12,5 × 12,4 m).
+  // Termina antes de la hoja abierta de la puerta doble al pasillo norte.
+  item('planter', 18.45, V.corrN + 0.57, 6.1, 0.9),
+  ...[16.4, 18.45, 20.5].map((u) => ({ ...item('wallPanel', u, V.corrN + 0.9, 2.0, 0.3, 's', false), y: 0.6, h: 0.05, color: 'timberDark' })),
+  item('planter', U.patioW + 0.52, -15.3, 0.8, 4.6),
+  { ...item('planter', 16.6, -18.9, 1.5, 0.6), color: 'brick' },
   { ...item('flagpole', 16.6, -17.1, 0.1, 0.1), h: 8 },
-  { ...item('flagpole', 15.3, -17.0, 0.1, 0.1), h: 7 },
-  item('bikeRack', 19.3, V.corrN + 0.4, 1.8, 0.5, 's'),
-  { ...item('bench', 21.0, V.corrN + 0.4, 1.6, 0.45, 's'), color: 'frame' },
+  item('bareTree', 18.2, -18.9, 0.6, 0.6),
+  { ...item('floorPatch', 24.4, -17.6, 2.5, 2.5, 's', false), color: 'darkGreen' },
+  item('bareTree', 24.6, -17.8, 0.6, 0.6),
+  // Macizo: la gente lo atravesaba (se sienta desde adelante, ver Places).
+  { ...item('bench', 21.6, -19.6, 1.2, 0.4, 's'), color: 'timberDark' },
+  item('planter', 23.4, -12.6, 2.4, 2.4),
+  // 8,1 m: con 6 m las frondas entraban por el muro y el cielorraso de la
+  // galería roja; así pasan por encima de su pretil. A 2 m de su borde.
+  { ...item('palm', 23.4, -12.6, 0.4, 0.4), h: 8.1, y: 0.6 },
   ...[
-    [18.9, -17.3],
-    [21.3, -17.3],
-    [23.7, -17.3],
-    [19.5, -14.7],
-    [21.9, -14.7],
-  ].map(([u, v]) => item('cafeTable', u, v, 0.8, 0.8)),
-  // Deja libre el paso de u 17,2 del pasillo sur hacia el fondo del patio.
-  { ...item('planter', 20.2, -11.6, 3.6, 0.7), color: 'red', h: 0.85 },
-  ...(
-    [
-      [19.0, 'red', 0.46],
-      [20.2, 'blue', 0.72],
-      [21.4, 'red', 0.46],
-    ] as const
-  ).map(([u, color, h]) => ({ ...item('boxBench', u, -10.95, 1.0, 0.45, 's'), color, h })),
-  // Los árboles jóvenes del video contra el pasillo sur no entran: la copa
-  // de `tree` (2,6 m) se metería en el pasillo techado (vegetation.test).
-  ...[16.2, 18.4, 25.0].map((u) => item('pot', u, -9.0, 0.5, 0.5)),
-  { ...item('floorPatch', 23.4, -12.6, 1.1, 1.1, 's', false), color: 'soil' },
-  { ...item('palm', 23.4, -12.6, 0.4, 0.4), h: 8.7, y: 0 },
-  ...[-11.8, -15.0, -17.4].map((v) => ({ ...item('cafeTable', U.bufW - 0.4, v, 0.5, 0.9), h: 1.05 })),
-  ...[-13.4, -16.4].map((v) => item('pot', U.bufW - 0.4, v, 0.5, 0.5)),
-  ...[-12.1, -13.5, -16.0].map((v) => ({ ...item('bunting', 20.25, v, 10.5, 0.05, 's', false), y: 3.1 })),
+    [23.4, -11.3, 2.4, 0.4],
+    // Termina donde empieza el asiento del lado sur (sin encimarse en la esquina).
+    [22.1, -12.65, 0.4, 2.3],
+  ].map(([u, v, w, d]) => ({ ...item('wallPanel', u, v, w, d, 's', false), y: 0.45, h: 0.05, color: 'timberDark' })),
+  item('planter', 19.6, -11.6, 3.5, 0.6),
+  ...[
+    [20.9, -13.5],
+    [21.5, -14.4],
+    [24.9, -14.6],
+  ].map(([u, v]) => ({ ...item('roundColumn', u, v, 0.35, 0.35), color: 'red', h: 0.4 })),
   ...GALLERY_POSTS.map((v) => ({ ...item('wallPanel', U1.gallery + 0.2, v, 0.12, 0.12), h: 3.25, color: 'metalDark' })),
+  item('planter', U.bufW - 0.42, -12.0, 0.6, 2.4),
+  item('planter', U.bufW - 0.42, -17.2, 0.6, 2.4),
+  // En el paño lleno entre dos ventanas del pasillo oeste.
+  item('hoop', U.patioW + 0.13, -18.7, 0.6, 0.45, 'e', false),
 
   // Frente del local del fondo del pasillo norte al patio este: toldo azul
   // marino sobre sus puertas vidriadas.
@@ -1097,16 +1092,41 @@ const ITEMS_PB: Item[] = [
     ] as const
   ).map(([u, v]) => ({ ...item('wallPanel', u, v, 0.25, 0.25), h: 3.25, color: 'facade' })),
 
-  // Patio este = "Espacio recreativo" de piso verde (9:40–10:06): franja
-  // pintada de verde junto al comedor, jardincito con la palmera bajo la
-  // pasarela, bicicletero, torre de juegos de madera con dos toboganes,
-  // aviarios y la choza de paja contra la medianera (pintada de azul con
-  // los azulejos de los chicos), hamacas, tobogán, domo trepador y el
-  // cerco de cañas delante del muro norte del edificio de bloque.
-  { ...item('floorPatch', 34.8, -19.9, 4.6, 9.7, 's', false), color: 'patioGreen' },
-  { ...item('floorPatch', 38.775, -15.4, 3.25, 4.0, 's', false), color: 'gravel' },
-  { ...item('palm', U.salonW - 2.15, -17.6, 0.4, 0.4), h: 3.6, y: 0 },
-  item('tree', 36.7, -19.6, 0.6, 0.6),
+  // Patio este = patio de juegos. El tramo entre el hall, el comedor y el
+  // salón de los espejos sigue el video de 2026 (HANDOFF 89): piso de
+  // baldosas claras, cantero rojo al pie de la escalera blanca con bancos de
+  // chapa roja y azul, gradas curvas azules con dos mástiles detrás, mesas de
+  // pie rojo con damero y sillas negras, mesas altas y macetas blancas contra
+  // el ventanal del hall, la palmera, banco blanco contra el muro de bloque
+  // del salón y guirnaldas de banderines. Al norte siguen los juegos (2020):
+  // bicicletero, torre de juegos de madera con dos toboganes, aviarios y la
+  // choza de paja contra la medianera azul, hamacas, tobogán, domo trepador
+  // y el cerco de cañas delante del muro norte del edificio de bloque.
+  // Deja libres la puerta bajo la escalera (v −15,25…−16,15), el pie de la
+  // escalera, la puerta de la cantina y la del hall.
+  { ...item('planter', U.kioskE - 1.28, -17.95, 0.7, 2.7), color: 'red', h: 0.85 },
+  ...(
+    [
+      [-17.0, 'red', 0.46],
+      [-18.1, 'blue', 0.72],
+      [-19.2, 'red', 0.46],
+    ] as const
+  ).map(([v, color, h]) => ({ ...item('boxBench', U.kioskE - 0.66, v, 0.45, 1.0, 'e'), color, h })),
+  item('amphi', 35.9 + 1.3, -21.05 + 1.3, 2.6, 2.6),
+  { ...item('flagpole', 35.55, -20.9, 0.1, 0.1), h: 8 },
+  { ...item('flagpole', 35.55, -19.6, 0.1, 0.1), h: 7 },
+  ...[
+    [37.4, -15.0],
+    [39.4, -19.6],
+    [39.0, -15.9],
+  ].map(([u, v]) => item('cafeTable', u, v, 0.8, 0.8)),
+  ...[38.0, 39.4].map((u) => ({ ...item('cafeTable', u, V.hallTop - 0.5, 0.9, 0.5), h: 1.05 })),
+  ...[37.2, 40.15].map((u) => item('pot', u, V.hallTop - 0.4, 0.5, 0.5)),
+  item('pot', 39.9, -20.3, 0.5, 0.5),
+  { ...item('bench', U.salonW - 0.35, -15.02, 0.45, 1.2, 'w'), color: 'frame' },
+  { ...item('floorPatch', 38.39, -17.6, 1.0, 1.0, 's', false), color: 'soil' },
+  { ...item('palm', 38.39, -17.6, 0.4, 0.4), h: 3.6, y: 0 },
+  ...([[37.93, -15.4, 5.05], [37.1, -20.1, 6.8]] as const).map(([u, v, w]) => ({ ...item('bunting', u, v, w, 0.05, 's', false), y: 3.3 })),
   item('bikeRack', 34.8, -25.0, 1.8, 0.5, 'e'),
   // Al este del tramo largo de la escalera exterior: el tobogán oeste quedaba encima.
   item('playTower', 36.6, -28.7, 2.6, 2.2, 's'),
