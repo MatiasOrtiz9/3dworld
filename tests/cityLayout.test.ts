@@ -101,25 +101,12 @@ describe('barrio de la escuela', () => {
     expect(has('z', 1.5 * pitch)).toBe(true);
   });
 
-  it('la ciudad sigue más allá del barrio, sin invadirlo ni tapar la escuela', () => {
+  it('no hay ciudad de fondo: sólo la escuela y su anillo de manzanas', () => {
     for (const seed of SEEDS) {
-      const plan = generateCityPlan(seed);
-      const pitch = plan.blockSize + plan.streetWidth;
-      const { masses, blocks, streets } = plan.backdrop;
-      expect(blocks).toHaveLength(18);
-      expect(masses.length).toBeGreaterThan(150);
-      expect(streets.length).toBeGreaterThan(8);
-      const tower = plan.blocks.find((b) => b.kind === 'tower')!;
-      for (const m of masses) {
-        // Fuera del barrio (calles perimetrales incluidas).
-        const inside = Math.abs(m.x + pitch / 2) < 2 * pitch + m.w / 2 && Math.abs(m.z) < 1.5 * pitch + m.d / 2;
-        expect(inside, `volumen en (${m.x.toFixed(0)}, ${m.z.toFixed(0)})`).toBe(false);
-        expect(m.h).toBeGreaterThan(5);
-        // Nada del fondo compite con la torre del barrio.
-        expect(m.h).toBeLessThan(tower.height + 5);
-        // Al norte, detrás de la escuela, la ciudad es baja: no asoma tras el portal.
-        if (m.z < -1.5 * pitch) expect(m.h).toBeLessThanOrEqual(40);
-      }
+      const { masses, blocks, streets } = generateCityPlan(seed).backdrop;
+      expect(masses).toHaveLength(0);
+      expect(blocks).toHaveLength(0);
+      expect(streets).toHaveLength(0);
     }
   });
 

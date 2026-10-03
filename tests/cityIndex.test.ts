@@ -154,26 +154,8 @@ describe('CityIndex.groundHeight', () => {
   });
 });
 
-describe('CityIndex — ciudad de fondo y equipamiento de vereda', () => {
+describe('CityIndex — calles perimetrales y equipamiento de vereda', () => {
   const pitch = plan.blockSize + plan.streetWidth;
-
-  it('las manzanas de enfrente (capa 1) son macizas y sus veredas, elevadas', () => {
-    expect(plan.backdrop.blocks.length).toBe(18);
-    for (const k of plan.backdrop.blocks) {
-      expect(index.blockAt(k.cx, k.cz)).toBeNull();
-      expect(index.isSolid(k.cx, k.cz)).toBe(true);
-      expect(index.isSolid(k.cx + k.half - 0.5, k.cz)).toBe(true);
-      // La vereda alrededor no choca y está a la cota de vereda.
-      expect(index.isSolid(k.cx + k.half + 2, k.cz)).toBe(false);
-      expect(index.groundHeight(k.cx + k.half + 2, k.cz)).toBe(SIDEWALK_H);
-    }
-  });
-
-  it('cada volumen del horizonte (capa 2) bloquea su planta', () => {
-    const far = plan.backdrop.masses.filter((m) => m.layer === 2);
-    expect(far.length).toBeGreaterThan(40);
-    for (const m of far) expect(index.isSolid(m.x, m.z)).toBe(true);
-  });
 
   it('las calles perimetrales se caminan de punta a punta', () => {
     for (const z of [-1.5 * pitch, 1.5 * pitch]) {

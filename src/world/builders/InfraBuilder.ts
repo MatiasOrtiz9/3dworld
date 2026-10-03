@@ -7,7 +7,6 @@ import { CROSS_AT, KERB_W, LANE_FRAC, RAMP_LEN, SIDEWALK_H, type Block, type Cit
 import type { NatureBuilder } from './NatureBuilder';
 import type { BuildingBuilder } from './BuildingBuilder';
 import type { StreetLevel } from './StreetLevel';
-import { DistantCity } from './DistantCity';
 import { GROUND_MARGIN } from '../TimeOfDay';
 import { PALETTE } from '../Palette';
 
@@ -81,31 +80,6 @@ export class InfraBuilder {
       [b.x1, o.x1, b.z0, b.z1],
     ] as const) {
       this.farm.add('box', paving, new Vector3((x0 + x1) / 2, -0.5, (z0 + z1) / 2), new Vector3(x1 - x0, 1, z1 - z0));
-    }
-    new DistantCity(this.street.tint, this.street.fullDetail).build(plan);
-
-    // Cinturón de árboles más allá de la capa 1, entre las torres del
-    // horizonte (antes estaba donde hoy están las manzanas de enfrente). Los
-    // que caen sobre la capa 1 o sobre una torre no se plantan. En el visor
-    // no va: a más de 200 m la niebla los deja en un 90 % y costaban ~15k
-    // triángulos (desde la calle los tapan las manzanas de enfrente).
-    const count = this.street.fullDetail ? Math.round(110 * this.greenDensity) : 0;
-    const masses = plan.backdrop.masses.filter((m) => m.layer === 2);
-    const push = o.x1 - b.x1;
-    for (let i = 0; i < count; i++) {
-      const side = this.rng.int(0, 3);
-      const out = 6 + Math.pow(this.rng.next(), 1.6) * 55 + push;
-      const t = this.rng.next();
-      const x = side === 0 ? b.x0 - out : side === 1 ? b.x1 + out : o.x0 - 40 + t * (o.x1 - o.x0 + 80);
-      const z = side === 2 ? b.z0 - out : side === 3 ? b.z1 + out : o.z0 - 40 + t * (o.z1 - o.z0 + 80);
-      const conifer = !this.rng.chance(0.85);
-      const scale = conifer ? this.rng.range(0.9, 1.3) : this.rng.range(0.9, 1.5);
-      const blocked =
-        (x > o.x0 - 2 && x < o.x1 + 2 && z > o.z0 - 2 && z < o.z1 + 2) ||
-        masses.some((m) => Math.abs(x - m.x) < m.w / 2 + 3 && Math.abs(z - m.z) < m.d / 2 + 3);
-      if (blocked) continue;
-      if (conifer) this.nature.conifer(x, z, scale, 0);
-      else this.nature.broadleaf(x, z, scale, 0);
     }
   }
 

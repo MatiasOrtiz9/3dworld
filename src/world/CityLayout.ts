@@ -311,7 +311,8 @@ export function generateCityPlan(seed: number, options: LayoutOptions = {}): Cit
     canal: { slope: 0, offset: -1e6, halfWidth: 0 },
     schoolSite,
     // Azar propio: la ciudad de fondo no corre las alturas del barrio.
-    backdrop: generateBackdrop(new Rng((seed ^ 0x5ca1ab1e) >>> 0), pitch, blockSize),
+    // Sin ciudad de fondo (lo pidió el usuario): sólo la escuela y su anillo.
+    backdrop: { masses: [], blocks: [], streets: [] },
     props,
     // Azar propio también: los bancos no mueven nada de lo que ya se sorteaba.
     benches: generateBenches(new Rng((seed ^ 0x0be4c5) >>> 0), blocks, props, blockSize, streetWidth),
@@ -372,135 +373,6 @@ function generateBenches(rng: Rng, blocks: Block[], props: StreetProp[], blockSi
     }
   }
   return out;
-}
-
-/**
- * La ciudad de fondo (ver `Backdrop`).
- *
- * Capa 1: las manzanas de la grilla que rodean la hilera (gx −1…4, gz 0…4
- * fuera del barrio), cada una con lotes entre medianeras de 3 a 8 pisos: la
- * variedad de alturas de una cuadra porteña, con sus medianeras ciegas.
- * Capa 2: dos anillos más de grilla con torres y tiras, más altas hacia el
- * este (el centro) y el sur; al norte, detrás de la escuela, bajas.
- */
-function generateBackdrop(rng: Rng, pitch: number, blockSize: number): Backdrop {
-  const masses: BackdropMass[] = [];
-  const blocks: Backdrop['blocks'] = [];
-  const half = blockSize / 2;
-  const at = (g: number) => (g - 2) * pitch;
-  const inDistrict = (gx: number, gz: number) => gx >= 0 && gx <= 3 && gz >= 1 && gz <= 3;
-
-  for (let gx = -1; gx <= 4; gx++) {
-    for (let gz = 0; gz <= 4; gz++) {
-      if (inDistrict(gx, gz)) continue;
-      const cx = at(gx);
-      const cz = at(gz);
-      blocks.push({ cx, cz, half });
-      // Al norte (detrás de la escuela) la cuadra es más baja.
-      const maxFloors = gz === 0 ? 6 : 8;
-      const bar = rng.range(10, 13);
-      // Cuatro tiras alrededor del pulmón de manzana, cada una partida en lotes.
-      const sides = [
-        { nx: 0, nz: -1, along: 'x' as const, len: blockSize, off: -half + bar / 2 },
-        { nx: 0, nz: 1, along: 'x' as const, len: blockSize, off: half - bar / 2 },
-        { nx: -1, nz: 0, along: 'z' as const, len: blockSize - bar * 2, off: -half + bar / 2 },
-        { nx: 1, nz: 0, along: 'z' as const, len: blockSize - bar * 2, off: half - bar / 2 },
-      ];
-      for (const s of sides) {
-        const lots = s.along === 'x' ? rng.int(2, 4) : rng.int(1, 2);
-        // Anchos de lote desparejos que suman el frente.
-        const weights = Array.from({ length: lots }, () => rng.range(0.7, 1.4));
-        const total = weights.reduce((a, b) => a + b, 0);
-        let start = -s.len / 2;
-        for (let i = 0; i < lots; i++) {
-          const lw = (weights[i] / total) * s.len;
-          const mid = start + lw / 2;
-          start += lw;
-          const floors = rng.int(3, maxFloors);
-          // Lotes de esquina (los extremos de las tiras largas): ventanas
-          // también hacia la calle lateral.
-          const corner = s.along === 'x' && (i === 0 || i === lots - 1) ? (i === 0 ? -1 : 1) : 0;
-          masses.push({
-            x: s.along === 'x' ? cx + mid : cx + s.off,
-            z: s.along === 'x' ? cz + s.off : cz + mid,
-            w: s.along === 'x' ? lw - 0.05 : bar,
-            d: s.along === 'x' ? bar : lw - 0.05,
-            h: 4 + (floors - 1) * 3,
-            floors,
-            tone: rng.int(0, 7),
-            nx: s.nx,
-            nz: s.nz,
-            sx: corner,
-            sz: 0,
-            layer: 1,
-          });
-        }
-      }
-    }
-  }
-
-  // Capa 2: anillos de grilla 2 y 3 alrededor de la capa 1.
-  for (let gx = -3; gx <= 6; gx++) {
-    for (let gz = -2; gz <= 6; gz++) {
-      if (gx >= -1 && gx <= 4 && gz >= 0 && gz <= 4) continue;
-      const cx = at(gx);
-      const cz = at(gz);
-      // Algunas manzanas son parque: el horizonte respira.
-      if (rng.chance(0.2)) continue;
-      const dist = Math.hypot(cx + 28, cz);
-      // Dirección de la cara con ventanas: hacia el barrio.
-      const nx = -cx / Math.hypot(cx, cz);
-      const nz = -cz / Math.hypot(cx, cz);
-      const east = cx < -150;
-      // Todo lo que queda al norte de la hilera (detrás de la escuela vista
-      // desde Laprida) es bajo: nada asoma por encima del portal.
-      const north = cz < -100;
-      const count = rng.int(1, 3);
-      for (let k = 0; k < count; k++) {
-        const tower = rng.chance(east || cz > 150 ? 0.55 : 0.3);
-        // Hasta 20 pisos (61 m): la torre del barrio (62–76 m) sigue siendo
-        // la más alta del paisaje; las del fondo son el perfil, no el hito.
-        const floors = tower ? rng.int(north ? 8 : 12, north ? 12 : dist > 260 ? 20 : 17) : rng.int(4, north ? 7 : 10);
-        const w = tower ? rng.range(14, 22) : rng.range(18, 34);
-        const d = tower ? rng.range(14, 22) : rng.range(10, 14);
-        const turn = rng.chance(0.5);
-        masses.push({
-          x: cx + rng.range(-half + w / 2, half - w / 2) * 0.8,
-          z: cz + rng.range(-half + d / 2, half - d / 2) * 0.8,
-          w: turn ? d : w,
-          d: turn ? w : d,
-          h: 4 + (floors - 1) * 3,
-          floors,
-          tone: rng.int(0, 7),
-          // Se redondea a la cara de la caja más cercana a esa dirección.
-          nx: Math.abs(nx) > Math.abs(nz) ? Math.sign(nx) : 0,
-          nz: Math.abs(nx) > Math.abs(nz) ? 0 : Math.sign(nz),
-          sx: Math.abs(nx) > Math.abs(nz) ? 0 : Math.sign(nx),
-          sz: Math.abs(nx) > Math.abs(nz) ? Math.sign(nz) : 0,
-          layer: 2,
-        });
-      }
-    }
-  }
-
-  // Calles entre las manzanas de la capa 1 (prolongación de la grilla).
-  const streets: Backdrop['streets'] = [];
-  const edge = (g: number) => (g - 2) * pitch;
-  const x0 = edge(-1) - pitch / 2;
-  const x1 = edge(4) + pitch / 2;
-  const z0 = edge(0) - pitch / 2;
-  const z1 = edge(4) + pitch / 2;
-  // Borde exterior de la capa 1.
-  streets.push({ axis: 'x', at: z0, from: x0, to: x1 }, { axis: 'x', at: z1, from: x0, to: x1 });
-  streets.push({ axis: 'z', at: x0, from: z0, to: z1 }, { axis: 'z', at: x1, from: z0, to: z1 });
-  // Las calles del barrio siguen hasta el borde exterior.
-  for (const x of [edge(0) + pitch / 2, edge(1) + pitch / 2, edge(2) + pitch / 2]) {
-    streets.push({ axis: 'z', at: x, from: z0, to: edge(1) - pitch / 2 }, { axis: 'z', at: x, from: edge(3) + pitch / 2, to: z1 });
-  }
-  for (const z of [edge(1) + pitch / 2, edge(2) + pitch / 2]) {
-    streets.push({ axis: 'x', at: z, from: x0, to: edge(0) - pitch / 2 }, { axis: 'x', at: z, from: edge(3) + pitch / 2, to: x1 });
-  }
-  return { masses, blocks, streets };
 }
 
 /** Puestos del mercado sobre su plataforma, con pasillos de 1,6 m entre ellos. */

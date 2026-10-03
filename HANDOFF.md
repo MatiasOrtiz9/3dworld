@@ -1007,6 +1007,12 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     `hiddenBySchool`); en el portón se dibujan como mucho los 60 más
     cercanos (los personajes con nombre siempre).
 
+86. **No hay ciudad de fondo** (lo pidió el usuario: "es innecesario tantos
+    edificios"). Sólo la escuela y su anillo de 8 manzanas: `plan.backdrop`
+    queda vacío, se borró `DistantCity` (capas 1–3 del horizonte) y el
+    cinturón de árboles de afuera. Lo que dicen los ítems 73 y 76 sobre la
+    ciudad lejana ya no aplica; la losa de suelo y la niebla siguen igual.
+
 ---
 
 ## 6. Estado actual
