@@ -20,6 +20,14 @@ const RADIUS = 0.45; // radio del cuerpo para la colisión
 const ACCELERATION = 11;
 const BRAKING = 15;
 const COLLISION_STEP = RADIUS * 0.5;
+/**
+ * Caída máxima que se baja caminando sin saltar. En la escuela, más que esto
+ * sólo pasa por el costado abierto de un tramo de escalera: sin el límite se
+ * atravesaba el pasamanos dibujado y se caía al piso de abajo. Un tramo
+ * empinado, mirado RADIUS + un sub-paso adelante, baja ~0,5 m: el límite
+ * queda por encima para no trabar a quien baja la escalera.
+ */
+const MAX_DROP = 0.65;
 const FORWARD = new Vector3(0, 0, 1);
 const RIGHT = new Vector3(1, 0, 0);
 
@@ -219,7 +227,7 @@ export class PlayerController {
       const nextX = px + stepX;
       if (
         stepX === 0 ||
-        !this.blocked(nextX + Math.sign(stepX) * RADIUS, pz)
+        !this.blocked(nextX + Math.sign(stepX) * RADIUS, pz, this.grounded)
       ) {
         px = nextX;
       } else {
@@ -229,7 +237,7 @@ export class PlayerController {
       const nextZ = pz + stepZ;
       if (
         stepZ === 0 ||
-        !this.blocked(px, nextZ + Math.sign(stepZ) * RADIUS)
+        !this.blocked(px, nextZ + Math.sign(stepZ) * RADIUS, this.grounded)
       ) {
         pz = nextZ;
       } else {
@@ -270,8 +278,10 @@ export class PlayerController {
     return this.camera.position.y - EYE_HEIGHT;
   }
 
-  private blocked(x: number, z: number): boolean {
-    return this.index.isSolid(x, z, this.feet());
+  /** ¿Hay algo en (x, z)? Con los pies en el piso, también un borde de más de MAX_DROP. */
+  private blocked(x: number, z: number, grounded: boolean): boolean {
+    const feet = this.feet();
+    return this.index.isSolid(x, z, feet) || (grounded && this.index.groundHeight(x, z, feet) < feet - MAX_DROP);
   }
 
   /** Espiral de búsqueda de un punto libre, para no aterrizar dentro de un muro. */

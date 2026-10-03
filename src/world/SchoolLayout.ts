@@ -387,7 +387,9 @@ const WALLS_PB: Wall[] = [
     [-13.45, -14.35, 'window', 1.2, 2.3],
     [-11.28, -12.42, 'double'],
     // "Acceso al Polideportivo": puerta doble de aluminio blanco.
-    [-9.35, -10.85, 'double', undefined, undefined, 'frame'],
+    // Corrida al norte lo justo para que la columna acolchada del hall no
+    // tape su hoja sur (el jugador sólo pasaba por la mitad norte).
+    [-9.2, -10.7, 'double', undefined, undefined, 'frame'],
     [-6.8, -8.34, 'double', undefined, undefined, 'red'],
   ]), { patioEste: 'olive' }),
 
@@ -1003,9 +1005,11 @@ const ITEMS_PB: Item[] = [
   item('buffetLine', 30.1, -18.6, 2.5, 0.75, 's'),
   { ...item('pendantRail', 30.0, -18.6, 3.8, 0.12, 's', false), y: 2.45 },
   item('displayCase', 31.75, -18.6, 0.8, 0.75, 's'),
-  item('fridgeGlass', 30.25, V.corrN + 0.49, 0.75, 0.7, 's'),
-  item('fridgeGlass', 31.05, V.corrN + 0.49, 0.75, 0.7, 's'),
-  { ...item('shelf', 29.05, V.corrN + 0.36, 1.3, 0.45, 's'), color: 'board' },
+  // Heladeras corridas al oeste: pegadas a la puerta del patio este la
+  // tapaban (el jugador quedaba trabado a 20 cm de entrar al buffet).
+  item('fridgeGlass', 29.7, V.corrN + 0.49, 0.75, 0.7, 's'),
+  item('fridgeGlass', 30.47, V.corrN + 0.49, 0.75, 0.7, 's'),
+  { ...item('shelf', 28.85, V.corrN + 0.36, 0.9, 0.45, 's'), color: 'board' },
   // Paneles símil hormigón detrás de la línea de servicio.
   { ...item('wallPanel', 30.0, V.corrN + 0.115, 4.2, 0.03, 's', false), y: 0, h: 2.7, color: 'render' },
   ...[-10.4, -12.2, -14.0, -15.8].map((v) => item('longTable', 28.75, v, 2.0, 0.8)),
@@ -1121,7 +1125,8 @@ const ITEMS_PB: Item[] = [
   // recepción (sus muros), a la derecha al entrar.
   item('banner', 34.9, -8.95, 0.9, 0.4, 's'),
   item('seats', 37.7, V.hallTop + 0.75, 1.65, 0.5, 's'),
-  item('seats', 39.15, V.hallTop + 0.75, 1.1, 0.5, 's'),
+  // Corto: más largo tapaba la puerta doble del salón de los espejos.
+  item('seats', 38.85, V.hallTop + 0.75, 0.6, 0.5, 's'),
   { ...item('paddedColumn', 39.4, -10.6, 0.4, 0.4), color: 'darkGreen' },
   item('plaques', 33.3, V.hallDoors - 0.12, 0.6, 0.04, 'n', false),
   // Base roja del frente vidriado de la recepción, del lado del vestíbulo (0:28).
@@ -1154,7 +1159,8 @@ const ITEMS_PB: Item[] = [
     [-13.6, 1.7],
   ].map(([v, d]) => ({ ...item('barre', 49.88, v, 0.06, d, 'w'), color: 'metalDark' })),
   // Barra de pie, suelta, frente a la ventana del oeste.
-  { ...item('barre', U.salonW + 1.15, -17.6, 0.06, 2.4, 'e'), color: 'metalDark' },
+  // A 1,75 m del muro: más cerca tapaba la puerta doble del patio este.
+  { ...item('barre', U.salonW + 1.75, -17.6, 0.06, 2.4, 'e'), color: 'metalDark' },
   item('piano', 44.0, -20.38, 1.5, 0.55, 's'),
   item('drawers', 46.5, -20.45, 1.8, 0.42, 's'),
   { ...item('drawers', 48.4, -20.5, 0.9, 0.34, 's'), h: 0.65 },
@@ -1175,7 +1181,9 @@ const ITEMS_PB: Item[] = [
   item('goal', 66.45, GYM_MID, 0.8, 3.1, 'w'),
   // Gradas delante de las pilastras (no metidas en ellas).
   // La última deja libre la puerta roja de la esquina.
-  ...[56.3, 59.2, 62.1, 65.0].map((u) => item('bleachers', u, -1.68, 2.7, 2.4, 'n')),
+  ...[56.3, 59.2, 62.1].map((u) => item('bleachers', u, -1.68, 2.7, 2.4, 'n')),
+  // La última, más corta: entera tapaba por dentro la puerta a la calle.
+  item('bleachers', 64.7, -1.68, 2.1, 2.4, 'n'),
   ...GYM_PILASTERS.flatMap((u) => [item('padPilaster', u, -20.55, 0.42, 0.3, 's'), item('padPilaster', u, -0.32, 0.42, 0.3, 'n')]),
   { ...item('wallMat', 67.2, -1.5, 0.1, 1.7, 'w', false), color: 'red', h: 1.9 },
   { ...item('wallMat', 66.3, -20.65, 1.6, 0.1, 's', false), color: 'red', h: 1.9 },
@@ -1429,8 +1437,34 @@ function stairIsSolidBelow(s: Stair): boolean {
 
 interface StairHit {
   y: number;
+  /**
+   * Altura con la que se decide si el escalón se alcanza. Igual a `y` salvo
+   * cerca del pie de un tramo: ver `FOOT_REACH`.
+   */
+  reach: number;
   /** Macizo desde el suelo hasta `y`. */
   solidBelow: boolean;
+}
+
+/**
+ * Franja del pie de un tramo (a lo largo del eje) donde la sonda del jugador,
+ * que mira un radio de cuerpo (0,45 m) más un sub-paso por delante, cae
+ * mientras sus pies siguen en el piso. Ahí la rampa ya está a ~0,58 m en los
+ * tramos empinados: más que un paso, y el jugador se quedaba a 1 cm del
+ * primer escalón para siempre. En la franja se mide la altura un radio más
+ * atrás (hacia el pie), que es la que pisará al avanzar.
+ */
+const FOOT_REACH = 0.7;
+const BODY_RADIUS = 0.45;
+
+function footReach(s: Stair, u: number, v: number, y: number): number {
+  const d =
+    s.dir === 'u+' ? u - s.u0 : s.dir === 'u-' ? s.u1 - u : s.dir === 'v+' ? v - s.v0 : s.v1 - v;
+  if (d > FOOT_REACH) return y;
+  const back = Math.min(d, BODY_RADIUS);
+  const bu = s.dir === 'u+' ? u - back : s.dir === 'u-' ? u + back : u;
+  const bv = s.dir === 'v+' ? v - back : s.dir === 'v-' ? v + back : v;
+  return stairY(s, bu, bv);
 }
 
 /** Tramos y descansos que contienen el punto, con la altura de su piso ahí. */
@@ -1438,12 +1472,13 @@ function stairHitsAt(u: number, v: number): StairHit[] {
   const out: StairHit[] = [];
   for (const s of STAIRS) {
     if (u >= s.u0 && u <= s.u1 && v >= s.v0 && v <= s.v1) {
-      out.push({ y: stairY(s, u, v), solidBelow: stairIsSolidBelow(s) });
+      const y = stairY(s, u, v);
+      out.push({ y, reach: footReach(s, u, v, y), solidBelow: stairIsSolidBelow(s) });
     }
   }
   for (const l of LANDINGS) {
     if (u >= l.u0 && u <= l.u1 && v >= l.v0 && v <= l.v1) {
-      out.push({ y: SCHOOL.floorY + l.y, solidBelow: l.y < 3 && !l.hollow });
+      out.push({ y: SCHOOL.floorY + l.y, reach: SCHOOL.floorY + l.y, solidBelow: l.y < 3 && !l.hollow });
     }
   }
   return out;
@@ -1586,8 +1621,8 @@ export function wallGapBehind(level: Level, u: number, v: number, face: Facing):
  * frente en planta baja, y el equipamiento que bloquea en cada nivel. Las
  * escaleras no están acá: se resuelven por altura (ver `schoolSolidLocal`).
  */
-function obstacleRects(level: Level): Rect[] {
-  const out: Rect[] = [];
+function obstacleRects(level: Level): Array<Rect & { m?: number }> {
+  const out: Array<Rect & { m?: number }> = [];
   if (level === 0) {
     // Canteros elevados de la franja de frente (entre la fachada y la reja),
     // pilares y columnas del portal.
@@ -1599,9 +1634,22 @@ function obstacleRects(level: Level): Rect[] {
     if (!it.solid || (it.level ?? 0) !== level) continue;
     const halfW = it.kind === 'tree' ? 0.35 : it.w / 2;
     const halfD = it.kind === 'tree' ? 0.35 : it.d / 2;
-    out.push({ u0: it.u - halfW, v0: it.v - halfD, u1: it.u + halfW, v1: it.v + halfD });
+    out.push({ u0: it.u - halfW, v0: it.v - halfD, u1: it.u + halfW, v1: it.v + halfD, m: itemMargin(it.kind) });
   }
   return out;
+}
+
+/**
+ * Margen de colisión de un mueble. Una baranda o una barra de 5 cm con el
+ * margen de medio cuerpo se volvía una franja de 45 cm: la del hueco de la
+ * escalera del bloque dejaba sin lugar el hall de danzas detrás de su puerta.
+ * Las columnas, que el jugador roza al pasar, con poco margen no tapan media
+ * puerta (la del pasaje al hall).
+ */
+function itemMargin(kind: Item['kind']): number | undefined {
+  if (kind === 'gate' || kind === 'barre') return 0.05;
+  if (kind === 'paddedColumn' || kind === 'roundColumn') return 0.1;
+  return undefined;
 }
 
 /** Canteros de la franja de frente, a ambos lados del acceso. */
@@ -1694,6 +1742,11 @@ function buildGrid(level: Level): Uint8Array {
       },
     );
   };
+  // Los tramos de muro llevan punta redonda sólo donde el muro termina de
+  // verdad (esquinas, cabezas sueltas). Contra un vano transitable el borde es
+  // recto: con la punta redonda (medio muro + margen, ~0,3 m) cada jamba se
+  // comía un tercio de la puerta y en una de 0,9 m el centro del cuerpo tenía
+  // 0,28 m libres — el jugador apenas corrido del eje se trababa en el marco.
   for (const w of WALLS) {
     if (w.level !== level) continue;
     const len = Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]);
@@ -1701,12 +1754,28 @@ function buildGrid(level: Level): Uint8Array {
     const dv = (w.b[1] - w.a[1]) / len;
     const half = wallThickness(w) / 2 + m;
     for (const [t0, t1] of solidPieces(w)) {
-      segment([w.a[0] + du * t0, w.a[1] + dv * t0], [w.a[0] + du * t1, w.a[1] + dv * t1], half);
+      const pa: P = [w.a[0] + du * t0, w.a[1] + dv * t0];
+      const pb: P = [w.a[0] + du * t1, w.a[1] + dv * t1];
+      mark(Math.min(pa[0], pb[0]) - half, Math.min(pa[1], pb[1]) - half, Math.max(pa[0], pb[0]) + half, Math.max(pa[1], pb[1]) + half, (u, v) => {
+        const ru = u - w.a[0];
+        const rv = v - w.a[1];
+        const t = ru * du + rv * dv;
+        return t >= t0 && t <= t1 && Math.abs(rv * du - ru * dv) <= half;
+      });
+      if (t0 <= 0) segment(pa, pa, half);
+      if (t1 >= len) segment(pb, pb, half);
     }
   }
   if (level === 0) for (const [a, b] of [...FENCES, ...PORTAL_RAILS]) segment(a, b, 0.05 + m);
   for (const r of obstacleRects(level)) {
-    mark(r.u0 - m, r.v0 - m, r.u1 + m, r.v1 + m, () => true);
+    const rm = r.m ?? m;
+    // Por el centro de la celda: marcar todo el recorrido de `each` (que
+    // redondea hacia afuera) agrandaba cada mueble hasta 10 cm más.
+    const u0 = r.u0 - rm;
+    const v0 = r.v0 - rm;
+    const u1 = r.u1 + rm;
+    const v1 = r.v1 + rm;
+    mark(u0, v0, u1, v1, (u, v) => u >= u0 - CELL / 2 && u <= u1 + CELL / 2 && v >= v0 - CELL / 2 && v <= v1 + CELL / 2);
   }
   return g;
 }
@@ -1773,7 +1842,7 @@ export function schoolSolidLocal(u: number, v: number, feetY: number = SCHOOL.fl
         if (h.solidBelow || h.y < feetY + HEADROOM) return true;
         continue;
       }
-      if (h.y <= feetY + STEP_UP && h.y >= feetY - STEP_DOWN) return false;
+      if (h.reach <= feetY + STEP_UP && h.y >= feetY - STEP_DOWN) return false;
       if (h.y < feetY - STEP_DOWN) {
         // Un tramo más abajo: es el hueco de la escalera, salvo que haya losa encima.
         if (!(level > 0 && hasFloor(level, u, v))) clear = false;

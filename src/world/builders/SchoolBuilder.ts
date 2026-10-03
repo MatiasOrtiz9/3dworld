@@ -1435,8 +1435,11 @@ export class SchoolBuilder {
       this.box(m.frame, U.gymW, (v0 + v1) / 2, 0.14, 0.05, v1 - v0, y1 - 0.05);
       for (let v = v0 + 0.1; v < v1; v += 0.12) this.box(m.mesh, U.gymW + 0.16, v, 0.012, y1 - y0, 0.012, y0);
     }
+    // La primera, junto a Laprida, baja a 9,10: con 9,25 tocaba la bóveda
+    // (que son cuerdas planas, por debajo del arco) y el cielorraso cortaba
+    // la esquina del vidrio.
     const mirrorWin: Array<[number, number, number, number]> = [
-      [-5.45, -4.55, 8.85, 9.25],
+      [-5.45, -4.55, 8.85, 9.1],
       [-7.65, -6.75, 8.85, 9.35],
       [-9.85, -8.95, 8.85, 9.45],
       [-12.05, -11.15, 8.85, 9.45],

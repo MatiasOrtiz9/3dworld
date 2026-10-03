@@ -472,7 +472,9 @@ const W1: Wall[] = [
   hw(V1.stairN, U.dirDiv, U.wingE, 'int', [[10.6, 12.1, 'double', undefined, undefined, 'frame']]),
   vw(U1.prW, V1.prS, V1.stairN),
   hw(V1.prS, U1.prW, U1.stairE),
-  vw(U1.stairE, V1.prS, V1.stairN, 'int', [door(-10.75, -11.55)]),
+  // Puerta de 0,9 m centrada entre la biblioteca (sur) y el escritorio
+  // (norte): más al sur, el cuarto de 1,34 m quedaba sin lugar para entrar.
+  vw(U1.stairE, V1.prS, V1.stairN, 'int', [door(-11.05, -11.95)]),
   hw(V1.aulaSec, miguelCaneU(V1.aulaSec), U.wingE),
   // Hacia el pasillo oeste: paño vidriado del aula y puerta doble de la Dirección.
   vw(U.wingE, V1.stairN, V1.northCorr, 'int', [
@@ -670,8 +672,10 @@ const W2: Wall[] = [
     [44.9, 46.3, 'double', undefined, undefined, 'frame'],
     [47.0, 48.6, 'window', 1.0, 2.0],
   ]),
-  // Testero sur: puerta corrediza al bajo de la bóveda.
-  hw(V1.danceS, U1.vaultW, U.gymW, 'int', [[46.0, 47.0, 'door', undefined, undefined, 'frame']], 2.1),
+  // Testero sur: puerta corrediza vidriada al bajo de la bóveda, cerrada.
+  // Como 'door' era un vano transitable que no llevaba a ningún ambiente (el
+  // constructor dibuja abiertas las puertas sin juego): una puerta falsa.
+  hw(V1.danceS, U1.vaultW, U.gymW, 'int', [[46.0, 47.0, 'window', 0.05, 1.95, 'frame']], 2.1),
   // Remate de la escalera (tres plantas).
   hw(V1.blockHall, U.salonW, U1.vaultW, 'ext', [[42.4, 43.6, 'window']]),
   vw(U.salonW, V1.blockHall, V1.blockA, 'ext', [[-14.6, -16.0, 'window']]),
@@ -699,23 +703,29 @@ const HALL_VOID_E = 33.95;
  */
 const HALL_F4_V0 = -13.93;
 /** Llegada del tramo de la pasarela. */
-const WALK_F_U1 = 36.66;
+// En la grilla de 0,1 m: con 36,66 el hueco de la losa (marcado por el centro
+// de la celda) seguía hasta 36,70 y dejaba una franja maciza de 4 cm justo en
+// la llegada, que trababa a quien bajaba de la pasarela.
+const WALK_F_U1 = 36.7;
 /** Llegada del segundo tramo del ala oeste al piso alto. */
 const WEST_F8_U1 = 9.0;
 
 export const UPPER_STAIRS: readonly Stair[] = [
   // "Acceso al Nivel Secundario", segundo tramo: vuelve al sur desde el
   // descanso de la torre y desemboca en el pasillo este.
-  { u0: HALL_F4_U0, v0: HALL_F4_V0, u1: U1.towerE, v1: V1.trophyN, dir: 'v+', y0: 2.45, y1: 3.3 },
+  // Los tramos que llegan entre muros van de cara a cara (no de eje a eje):
+  // los escalones se metían 5 cm en el muro y arriba la franja libre era la
+  // mitad del tramo dibujado.
+  { u0: HALL_F4_U0, v0: HALL_F4_V0, u1: U1.towerE - SCHOOL.extT / 2, v1: V1.trophyN, dir: 'v+', y0: 2.45, y1: 3.3 },
   // Arranque de la pasarela: cinco escalones desde el descanso.
-  { u0: U1.towerE, v0: V1.walkN, u1: WALK_F_U1, v1: V1.walkS, dir: 'u+', y0: 2.45, y1: 3.3 },
+  { u0: U1.towerE, v0: V1.walkN + SCHOOL.extT / 2, u1: WALK_F_U1, v1: V1.walkS - SCHOOL.extT / 2, dir: 'u+', y0: 2.45, y1: 3.3 },
   // "Acceso a primer piso", segundo tramo: del descanso sube al este, sobre
   // la Preceptoría de primaria (el cielorraso en pendiente), entre las caras
   // de sus muros sur y norte.
   { u0: 7.15, v0: V.dirTop + SCHOOL.wallT / 2, u1: WEST_F8_U1, v1: V.corrS - SCHOOL.wallT / 2, dir: 'u+', y0: 2.2, y1: 3.3 },
   // "Acceso a segundo piso": escalera de chapa en U del edificio de bloque.
   { u0: U1.blockStair0, v0: -16.0, u1: U1.blockStair1, v1: -14.6, dir: 'u+', y0: 3.3, y1: 4.95 },
-  { u0: U1.blockStair0, v0: V1.blockA, u1: U1.blockStair1, v1: -16.2, dir: 'u-', y0: 4.95, y1: 6.6 },
+  { u0: U1.blockStair0, v0: V1.blockA + SCHOOL.wallT / 2, u1: U1.blockStair1, v1: -16.2, dir: 'u-', y0: 4.95, y1: 6.6 },
 ];
 
 export const UPPER_LANDINGS: readonly Landing[] = [
@@ -831,13 +841,13 @@ const I1: Item[] = [
   // Como en el Aula 1: la pizarra entre la ventana a Miguel Cané y el rincón.
   // El parlante, del otro lado de la ventana (sobre el vidrio no se cuelga).
   ...classKit([U.w + 0.17, -5.2], 'e', 2.6, -3.2, 1.6, 3.3),
-  ...desks({ u0: 6.6, v0: -5.6, u1: 10.6, v1: -1.0 }, 'w', 'chairGreen', 'sage', 2, 3),
+  ...desks({ u0: 6.6, v0: -5.3, u1: 10.6, v1: -1.2 }, 'w', 'chairGreen', 'sage', 2, 3),
   ...classKit([U1.aulas[0] + 0.12, -3.1], 'e', 8.5, -3.1),
   // Mesas amarillas con sillas grises.
-  ...desks({ u0: 12.6, v0: -5.6, u1: 17.6, v1: -1.0 }, 'w', 'yellow', 'metal', 2, 3),
+  ...desks({ u0: 12.6, v0: -5.3, u1: 17.6, v1: -1.0 }, 'w', 'yellow', 'metal', 2, 3),
   ...classKit([U1.aulas[1] + 0.12, -3.1], 'e', 14.6, -3.1),
   // Mesas naranjas con sillas rojas (zócalo de madera).
-  ...desks({ u0: 19.6, v0: -5.6, u1: 23.6, v1: -1.0 }, 'w', 'orange', 'red', 2, 3, 'table'),
+  ...desks({ u0: 19.6, v0: -5.3, u1: 23.6, v1: -1.0 }, 'w', 'orange', 'red', 2, 3, 'table'),
   ...classKit([U1.aulas[2] + 0.12, -3.1], 'e', 21.4, -3.1),
   // Mesas rojas con sillas azul marino.
   // Dos filas: con tres, el respaldo de cada silla se metía en la mesa de atrás.
@@ -866,8 +876,10 @@ const I1: Item[] = [
   { ...item('gate', (U.east1 + SCHOOL.wallT / 2 + HALL_VOID_E + 0.05) / 2, V1.hallVoid + 0.025, HALL_VOID_E + 0.05 - U.east1 - SCHOOL.wallT / 2, 0.05, 's', true), color: 'red', h: 1.05 },
   { ...item('gate', HALL_VOID_E + 0.025, (V1.hallVoid + V1.trophyN) / 2, 0.05, V1.hallVoid - V1.trophyN, 'e', true), color: 'red', h: 1.05 },
   // PR: escritorio blanco con PC, biblioteca de cubos y split.
-  { ...item('desk2', 34.3, -0.55, 1.4, 0.6, 's'), color: 'board' },
-  { ...item('shelf', U.east1 + 0.3, -0.6, 0.4, 0.8, 'e'), color: 'board' },
+  { ...item('desk2', 34.45, -0.55, 1.2, 0.6, 's'), color: 'board' },
+  // Biblioteca baja y corta, contra la fachada: más larga quedaba sobre el
+  // eje de la puerta y no se podía entrar a un cuarto de 2 m.
+  { ...item('shelf', U.east1 + SCHOOL.wallT / 2 + 0.175, -0.5, 0.35, 0.6, 'e'), color: 'board' },
   { ...item('ac', U.east1 + 0.21, -0.6, 0.22, 0.86, 'e', false), y: 2.35 },
   // 6° BD: mesas rojas en U con sillas azul marino. La U abre hacia la
   // pizarra (sobre el tabique de 6° AC): con el fondo bajo la pizarra no
@@ -916,29 +928,33 @@ const I1: Item[] = [
   { ...item('filing', 23.9, V1.ductS + 0.375, 0.9, 0.55, 's'), h: 1.75 },
   { ...item('shelf', 24.95, V1.ductS + 0.3, 0.7, 0.4, 's'), color: 'board' },
   { ...item('shelf', 26.15, V1.ductS + 0.3, 1.1, 0.4, 's') },
-  ...[-26.4, -27.5].flatMap((v) => [
+  // Lejos del paso al pasillo norte (a 0,8 m tapaban casi todo el vano).
+  ...[-26.95, -27.95].flatMap((v) => [
     { ...item('table', 24.9, v, 1.2, 0.8) },
     { ...item('chair', 24.1, v, 0.42, 0.42, 'e', false), color: 'blue' },
     { ...item('chair', 25.7, v, 0.42, 0.42, 'w', false), color: 'blue' },
   ]),
   // Baños: un cubículo y una mesada.
   item('stall', U1.prBil - 0.8, -30.65, 1.4, 1.2, 'w'),
-  { ...item('sinkCounter', U.epE + 0.375, -30.5, 0.55, 0.9, 'e'), color: 'board' },
+  // Mesada contra el fondo: contra el muro oeste quedaba detrás de la puerta.
+  { ...item('sinkCounter', U.epE + 0.58, -29.95 - SCHOOL.wallT / 2 - 0.275, 0.9, 0.55, 'n'), color: 'board' },
   // Prof. bilingüe.
   { ...item('desk2', 25.6, -30.45, 1.4, 0.6, 's'), color: 'board' },
   // 4° A: tres filas de bancos mirando al tabique del Salón Emociones.
   ...desks({ u0: 28.0, v0: -30.2, u1: 32.0, v1: -25.0 }, 's', 'yellow', 'metal', 2, 3),
   ...classKit([30.2, V.nBlockS - 0.12], 'n', 30.2, -27.6),
   ...bareRoom([U.bufW - 0.12, -34.2], 'w', 2.4, [25.4, -34.2]),
-  ...bareRoom([U.bufW + 0.12, -33.6], 'e', 2.4, [29.0, -33.6]),
+  ...bareRoom([U.bufW + 0.12, -33.6], 'e', 2.4, [28.3, -33.6]),
   ...bareRoom([U1.neW + 0.17, -29.5], 'e', 2.4, [35.6, -29.5]),
 
   // Ala oeste: escalera, PR, aula y Dirección de secundaria.
   // PR: escritorio blanco con monitor contra el fondo y biblioteca.
   { ...item('desk2', 9.57, V1.stairN + 0.4, 1.1, 0.6, 's'), color: 'board' },
-  { ...item('shelf', U1.prW + 0.275, -11.3, 0.35, 1.0, 'e'), color: 'board' },
+  // Biblioteca contra el muro sur, en el rincón: contra el oeste, frente a
+  // la puerta, el cuarto (1,34 m de ancho) quedaba sin lugar para entrar.
+  { ...item('shelf', U1.prW + SCHOOL.wallT / 2 + 0.4, V1.prS - SCHOOL.wallT / 2 - 0.15, 0.8, 0.3, 'n'), color: 'board' },
   // Aula 4° E · 6° B: pizarra contra la Gerencia, dos bancos por fila.
-  ...desks({ u0: 7.0, v0: -17.4, u1: 11.6, v1: -13.8 }, 'w', 'chairGreen', 'sage', 2, 3),
+  ...desks({ u0: 7.0, v0: -17.4, u1: 11.6, v1: -14.1 }, 'w', 'chairGreen', 'sage', 2, 3),
   ...classKit([U.dirDiv + 0.12, -15.2], 'e', 9.3, -15.6),
   // Dirección de secundaria: escritorio de madera y bibliotecas con biblioratos.
   { ...item('desk2', 9.6, -20.0, 1.5, 0.75, 's'), color: 'cherry' },
@@ -970,7 +986,9 @@ const I2: Item[] = [
   // Aula de danzas: espejos de pared y barra doble al oeste, barras sueltas
   // contra las ventanas al polideportivo, espejos de pie al sur, banco rojo
   // con percheros y mueble con el equipo de música.
-  { ...item('mirror', U1.vaultW + 0.15, -8.4, 0.04, 9.4, 'e', false) },
+  // 1,8 m de alto: con los 1,9 de siempre el borde pisaba 2 cm el antepecho
+  // de las ventanas altas de encima (8,85) y dejaba una raya que titilaba.
+  { ...item('mirror', U1.vaultW + 0.15, -8.4, 0.04, 9.4, 'e', false), h: 1.8 },
   { ...item('barre', U1.vaultW + 0.4, -8.4, 0.06, 9.0, 'e'), color: 'timber' },
   { ...item('barre', U.gymW - 0.6, -5.2, 0.06, 2.4, 'w'), color: 'metalDark' },
   { ...item('barre', U.gymW - 0.6, -9.6, 0.06, 2.4, 'w'), color: 'metalDark' },

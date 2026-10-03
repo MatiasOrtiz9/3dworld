@@ -218,7 +218,7 @@ const I0: Item[] = [
   item('playhouse', 66.2, -34.3, 1.6, 1.4),
   ...[
     // Fuera del paso de la puerta de la galería.
-    [64.0, -33.5],
+    [64.3, -33.3],
     [65.6, -31.6],
     [63.4, -30.6],
     [65.8, -29.0],
@@ -240,7 +240,7 @@ const I1: Item[] = [
   // Sala Roja: carpa de circo (casita) y mesas redondas rojas.
   { ...item('playhouse', 66.1, -29.4, 1.6, 1.4), color: 'pinkWall' },
   ...[
-    [63.7, -30.2],
+    [64.2, -30.4],
     [63.9, -28.5],
   ].map(([u, v]) => ({ ...item('roundTable', u, v, 1.0, 1.0), color: 'red' })),
 ];

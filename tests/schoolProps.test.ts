@@ -873,6 +873,9 @@ describe('QA de vanos', () => {
       for (const o of g.w.openings) {
         if (o.type !== 'window') continue;
         const [hb, ht] = holeOf(o, g.w.h);
+        // Puerta vidriada cerrada (la corrediza del aula de danzas al bajo de
+        // la bóveda): una ventana a ras del piso, no un vano transitable.
+        if (hb < 0.1 && ht >= 1.9 && ht <= g.w.h - 0.15 + 1e-9) continue;
         // Las bandas vidriadas de las barandas bajas pueden ser angostas.
         if (hb < 0.6 || ht - hb < 0.25 || ht > g.w.h - 0.1 || (o.ht !== undefined && o.ht > g.w.h - 0.15 + 1e-9)) bad.push(`ventana ${hb}-${ht} en ${g.w.a}→${g.w.b} L${g.w.level}`);
       }
