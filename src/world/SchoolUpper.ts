@@ -262,7 +262,9 @@ const L1: Room[] = [
     name: 'Pasillo',
     caption: 'Toilette alumnos · lockers',
     poly: rect(U.dirDiv, V.corrS, U.east1, V.classTop),
+    // Cerámico beige del video (5:13); suena como cualquier cerámico.
     floor: 'ceramic',
+    floorLook: 'ceramicBeige',
     roofed: true,
   },
   // Cursos de la Planta Alta anotada a mano; 4° AC, del cartel del video.
@@ -410,6 +412,8 @@ const brick = (w: Wall): Wall => ({ ...w, ext: 'brickWhite' });
 const inner = (a: number, b: number): Op => [a, b, 'window', 1.0, 2.1];
 /** Puerta simple de aluminio con marco (las de las aulas del primer piso). */
 const door = (a: number, b: number): Op => [a, b, 'door', undefined, undefined, 'frame'];
+/** Puerta doble de aluminio con marco. */
+const double = (a: number, b: number): Op => [a, b, 'double', undefined, undefined, 'frame'];
 /**
  * Ventanas en tira de la galería roja, entre montantes cada ~1,4 m, de punta
  * a punta del voladizo sin meterse en los muros del patio que llegan a sus
@@ -434,18 +438,20 @@ const W1: Wall[] = [
   { ...hw(V.facade, CREST.step, U.east1, 'ext', LAPRIDA_EAST, CREST.east) },
   // Testero oeste hasta la punta de la Gerencia: la ventana de 4° AC a Miguel Cané.
   vw(U.w, MC0, V.facade, 'ext', [[-4.3, -2.7, 'window']]),
-  // Frente de las aulas: puerta y paño vidriado alto en cada una. 4° AC se
-  // entra sólo por la Gerencia (el CAD no le dibuja puerta al pasillo).
+  // Frente de las aulas: puerta doble de 1,9 m (las del CAD) y paño vidriado
+  // alto en cada una. 4° AC se entra sólo por la Gerencia (el CAD no le
+  // dibuja puerta al pasillo). La de S5 va 25 cm al este del CAD (24,2): ahí
+  // se metía en el tabique S4/S5 de 24,3, que da la mano.
   hw(V.classTop, U.w, U.east1, 'int', [
-    door(3.9, 4.8),
-    inner(6.0, 8.9),
-    door(9.6, 10.5),
-    door(12.95, 13.85),
-    inner(14.4, 17.6),
-    inner(18.7, 21.5),
-    door(22.0, 22.9),
-    door(24.6, 25.5),
-    inner(26.0, 28.8),
+    double(3.1, 5.0),
+    inner(6.0, 8.3),
+    double(8.6, 10.5),
+    double(12.5, 14.3),
+    inner(14.6, 17.6),
+    inner(18.7, 21.2),
+    double(21.5, 23.4),
+    double(24.45, 26.35),
+    inner(26.6, 28.8),
   ]),
   ...U1.aulas.map((u) => vw(u, V.classTop, V.facade)),
   hw(V1.banosDiv, U1.aulas[4], U.east1),
@@ -495,8 +501,9 @@ const W1: Wall[] = [
   // Fachada del portal: tres ventanas enrejadas con cortinas violetas; el
   // frente del portal sobresale y las enmarca (ver SchoolBuilder.portal).
   hw(V.facade, U.east1, U.salonW, 'ext', PORTAL_WINDOWS.map(([a, b]): Op => [a, b, 'window', 1.45, 2.85, undefined, 'whiteBars'])),
-  // Fondo del pasillo este: puerta de aluminio y ventanilla a la PR.
-  hw(V1.secretaria, U.east1, U1.trophyE, 'int', [door(32.72, 33.6), [34.2, 35.0, 'window', 0.96, 2.08]]),
+  // Fondo del pasillo este: ventanilla a la PR al oeste y puerta de aluminio
+  // al este (4:36–4:40, mirando al sur).
+  hw(V1.secretaria, U.east1, U1.trophyE, 'int', [[32.75, 33.8, 'window', 0.96, 2.08], door(34.25, 35.05)]),
   // Lado oeste del pasillo este: Damas, Caballeros y la boca del pasillo de lockers.
   vw(U.east1, V.facade, V.corrS, 'int', [
     door(-2.2, -3.1),
@@ -624,7 +631,14 @@ const W1: Wall[] = [
   vw(U1.prBil, V1.ductN, V1.northRow),
   // Fondo de la fila: el aula bilingüe, los baños y Prof. bilingüe abren al
   // aula del vértice, y 4° A al aula del fondo (así los dibuja el CAD).
-  hw(V1.northRow, miguelCaneU(V1.northRow), U.east1, 'int', [door(17.6, 18.5), door(19.8, 20.7), door(23.2, 24.1), door(28.9, 29.8)]),
+  // Vanos del CAD: doble de la bilingüe, la de los baños contra Prof.
+  // bilingüe y la de 4° A de 1,15 m.
+  hw(V1.northRow, miguelCaneU(V1.northRow), U.east1, 'int', [
+    double(17.15, 18.95),
+    door(21.45, 22.35),
+    door(23.2, 24.1),
+    [28.9, 30.05, 'door', undefined, undefined, 'frame'],
+  ]),
 
   // --- Sobre el comedor: galería roja y aulas ----------------------------
   // Chapa roja acanalada con una tira de ventanas con parasoles.
@@ -832,12 +846,12 @@ const I1: Item[] = [
   item('extinguisher', 12.0, V.classTop - 0.19, 0.17, 0.17, 'n', false),
   item('extinguisher', 30.3, V.classTop - 0.19, 0.17, 0.17, 'n', false),
   // Baranda de malla roja sobre el hueco de la escalera del ala oeste, de la
-  // Gerencia a la llegada del segundo tramo.
-  { ...item('gate', (U.dirDiv + SCHOOL.wallT / 2 + WEST_F8_U1) / 2, V.corrS + 0.025, WEST_F8_U1 - U.dirDiv - SCHOOL.wallT / 2, 0.05, 's', true), color: 'red', h: 1.05 },
+  // Gerencia a la llegada del segundo tramo: paño de metal desplegado con marco.
+  { ...item('gate', (U.dirDiv + SCHOOL.wallT / 2 + WEST_F8_U1) / 2, V.corrS + 0.025, WEST_F8_U1 - U.dirDiv - SCHOOL.wallT / 2, 0.05, 's', true), color: 'red', h: 1.05, mesh: true },
 
   // 4° AC: mesas grises con sillas rojas. Aula nivel secundario: bancos verdes.
   // Las aulas del primer piso tienen 6,2 m de fondo (el CAD): una fila menos.
-  ...desks({ u0: 0.82, v0: -5.9, u1: 3.7, v1: -0.9 }, 'w', 'chalk', 'red', 2, 3, 'table'),
+  ...desks({ u0: 0.82, v0: -5.5, u1: 3.7, v1: -0.7 }, 'w', 'chalk', 'red', 2, 3, 'table'),
   // Como en el Aula 1: la pizarra entre la ventana a Miguel Cané y el rincón.
   // El parlante, del otro lado de la ventana (sobre el vidrio no se cuelga).
   ...classKit([U.w + 0.17, -5.2], 'e', 2.6, -3.2, 1.6, 3.3),
@@ -867,32 +881,35 @@ const I1: Item[] = [
   // de Caballeros y la boca del pasillo de lockers), dos sillas plásticas
   // frente a la PR, pizarras verdes y matafuego.
   item('waterCooler', U.east1 + 0.27, -5.1, 0.32, 0.32, 'e', false),
-  { ...item('trophyShelf', U.east1 + 0.26, -5.3, 0.3, 0.85, 'e', false), y: 1.85 },
+  { ...item('trophyShelf', U.east1 + 0.26, -5.0, 0.3, 1.3, 'e', false), y: 1.85 },
   item('extinguisher', U.east1 + 0.185, -6.0, 0.17, 0.17, 'e', false),
-  item('plasticChair', 34.2, -2.45, 0.42, 0.42, 'n', false),
-  item('plasticChair', 34.8, -2.45, 0.42, 0.42, 'n', false),
+  item('plasticChair', 33.4, -2.4, 0.42, 0.42, 'n', false),
+  item('plasticChair', 33.85, -2.4, 0.42, 0.42, 'n', false),
   ...[-8.4, -9.05, -9.7].map((v) => ({ ...item('wallPanel', U1.trophyE - 0.12, v, 0.03, 0.5, 'w', false), y: 1.4, h: 0.4, color: 'chairGreen' })),
   // Barandas sobre el hueco del primer tramo (sobre el canto de la losa).
   { ...item('gate', (U.east1 + SCHOOL.wallT / 2 + HALL_VOID_E + 0.05) / 2, V1.hallVoid + 0.025, HALL_VOID_E + 0.05 - U.east1 - SCHOOL.wallT / 2, 0.05, 's', true), color: 'red', h: 1.05 },
   { ...item('gate', HALL_VOID_E + 0.025, (V1.hallVoid + V1.trophyN) / 2, 0.05, V1.hallVoid - V1.trophyN, 'e', true), color: 'red', h: 1.05 },
   // PR: escritorio blanco con PC, biblioteca de cubos y split.
-  { ...item('desk2', 34.45, -0.55, 1.2, 0.6, 's'), color: 'board' },
+  { ...item('desk2', 33.66, -0.55, 1.1, 0.6, 's'), color: 'board' },
   // Biblioteca baja y corta, contra la fachada: más larga quedaba sobre el
   // eje de la puerta y no se podía entrar a un cuarto de 2 m.
   { ...item('shelf', U.east1 + SCHOOL.wallT / 2 + 0.175, -0.5, 0.35, 0.6, 'e'), color: 'board' },
   { ...item('ac', U.east1 + 0.21, -0.6, 0.22, 0.86, 'e', false), y: 2.35 },
-  // 6° BD: mesas rojas en U con sillas azul marino. La U abre hacia la
-  // pizarra (sobre el tabique de 6° AC): con el fondo bajo la pizarra no
-  // quedaba lugar para el docente delante de ella.
-  ...[36.4, 37.7, 39.0].map((u) => ({ ...item('table', u, -1.5, 1.2, 0.6), color: 'red' })),
-  ...[-2.45, -3.65].flatMap((v) => [
-    { ...item('table', 35.77, v, 0.6, 1.2), color: 'red' },
-    { ...item('table', 40.1, v, 0.6, 1.2), color: 'red' },
+  // 6° BD: mesas rojas en U contra los muros oeste, sur (ventanas) y este,
+  // con las sillas azul marino del lado del muro mirando hacia adentro
+  // (4:42–4:54). La U abre hacia la pizarra (tabique de 6° AC); la columna
+  // oeste no llega al barrido de la puerta.
+  ...[-1.3, -2.5, -3.7].flatMap((v) => [
+    { ...item('table', 36.15, v, 0.6, 1.2), color: 'red' },
+    { ...item('table', 39.67, v, 0.6, 1.2), color: 'red' },
+    ...[-0.3, 0.3].flatMap((d) => [
+      { ...item('chair', 35.62, v + d, 0.42, 0.42, 'e', false), color: 'navy' },
+      { ...item('chair', 40.2, v + d, 0.42, 0.42, 'w', false), color: 'navy' },
+    ]),
   ]),
-  ...[36.4, 37.7, 39.0].map((u) => ({ ...item('chair', u, -0.95, 0.42, 0.42, 'n', false), color: 'navy' })),
-  ...[-2.45, -3.65].flatMap((v) => [
-    { ...item('chair', 36.3, v, 0.42, 0.42, 'w', false), color: 'navy' },
-    { ...item('chair', 39.55, v, 0.42, 0.42, 'e', false), color: 'navy' },
+  ...[37.3, 38.5].flatMap((u) => [
+    { ...item('table', u, -1.0, 1.2, 0.6), color: 'red' },
+    ...[-0.3, 0.3].map((d) => ({ ...item('chair', u + d, -0.45, 0.42, 0.42, 'n', false), color: 'navy' })),
   ]),
   ...classKit([37.9, V1.sixth + 0.12], 's', 37.9, -3.0),
   // 6° AC.
@@ -936,10 +953,10 @@ const I1: Item[] = [
     { ...item('chair', 24.1, v, 0.42, 0.42, 'e', false), color: 'blue' },
     { ...item('chair', 25.7, v, 0.42, 0.42, 'w', false), color: 'blue' },
   ]),
-  // Baños: un cubículo y una mesada.
-  item('stall', U1.prBil - 0.8, -30.65, 1.4, 1.2, 'w'),
-  // Mesada contra el fondo: contra el muro oeste quedaba detrás de la puerta.
-  { ...item('sinkCounter', U.epE + 0.58, -29.95 - SCHOOL.wallT / 2 - 0.275, 0.9, 0.55, 'n'), color: 'board' },
+  // Baños (CAD): el cubículo al oeste y la mesada contra el conducto, frente
+  // a la puerta del este.
+  item('stall', 20.3, -30.65, 1.4, 1.2, 'w'),
+  { ...item('sinkCounter', 21.9, -29.95 - SCHOOL.wallT / 2 - 0.275, 0.9, 0.55, 'n'), color: 'board' },
   // Prof. bilingüe.
   { ...item('desk2', 25.6, -30.45, 1.4, 0.6, 's'), color: 'board' },
   // 4° A: tres filas de bancos mirando al tabique del Salón Emociones.

@@ -358,6 +358,7 @@ export type Floor =
   | 'checker'
   | 'ceramic'
   | 'ceramicTan'
+  | 'ceramicBeige'
   | 'rubber'
   | 'terracotta'
   | 'hallStone'
@@ -369,6 +370,11 @@ export interface Room {
   name: string;
   poly: readonly P[];
   floor: Floor;
+  /**
+   * Piso que se dibuja, si difiere de `floor` sólo en el color. El sonido de
+   * los pasos sale de `floor`: así un cerámico de otro tono suena igual.
+   */
+  floorLook?: Floor;
   /** Cubierto o a cielo abierto. */
   roofed: boolean;
   /** Nivel del ambiente; sin indicar, planta baja. */
@@ -413,6 +419,8 @@ export interface Stair {
   y1: number;
   /** Escalera de chapa con luz por debajo aunque arranque del suelo (la exterior del comedor). */
   hollow?: boolean;
+  /** Del lado abierto, paño de metal desplegado con marco (la del hall, 0:19; la blanca del comedor, 9:44) en vez de parantes. */
+  meshGuard?: boolean;
 }
 
 /** Descanso: plataforma horizontal entre tramos, a `y` sobre el piso de planta baja. */
@@ -532,6 +540,8 @@ export interface Item {
   y?: number;
   /** Alto, para lo que tiene tamaño variable (paneles, gradas, columnas). */
   h?: number;
+  /** Reja (`gate`): paño de metal desplegado con marco en vez de barrotes. */
+  mesh?: boolean;
 }
 
 /**

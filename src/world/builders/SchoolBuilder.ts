@@ -126,16 +126,20 @@ interface RoomStyle {
   curtain?: string;
   /** Cenefa (por defecto, la misma tela). */
   valance?: string;
+  /** Cortinas corridas sobre el vidrio (como las de Laprida), no recogidas a los costados. */
+  drawn?: boolean;
 }
 
 const STYLES: Readonly<Record<string, RoomStyle>> = {
   // Aulas de primaria: zócalo de madera hasta la altura del pupitre.
   // Aulas: zócalo de madera de 1,05 m (al ras del antepecho). Las del frente
-  // (las que se ven sin chicos) tienen la pared en un celeste agua muy claro.
+  // (las que se ven sin chicos) tienen la pared en un celeste agua muy claro
+  // (el aula 5; la 4 es blanca).
   aula1: { wainscot: ['woodIn', 1.05], stripe: false, curtain: 'violet' },
   aula2: { wainscot: ['woodIn', 1.05], stripe: false, curtain: 'violet' },
   aula3: { wainscot: ['woodIn', 1.05], stripe: false, curtain: 'violet' },
-  aula4: { wall: 'aqua', wainscot: ['woodIn', 1.05], stripe: false, curtain: 'violet' },
+  // Aula 4: pared blanca y cortinas celestes (0:55).
+  aula4: { wainscot: ['woodIn', 1.05], stripe: false, curtain: 'sky' },
   aula5: { wall: 'aqua', wainscot: ['woodIn', 1.05], stripe: false, curtain: 'sky' },
   aula6: { wainscot: ['woodIn', 1.05], stripe: false },
   dirPrim: { wainscot: ['woodIn', 1.0], stripe: false },
@@ -182,16 +186,17 @@ const STYLES: Readonly<Record<string, RoomStyle>> = {
   aulaS5: { stripe: true, curtain: 'violet', ceiling: 'panels' },
   banosS: { wall: 'ceramic', stripe: false, ceiling: 'panels', lights: 'panel' },
   banosN: { wall: 'cream', stripe: false, ceiling: 'panels', lights: 'panel' },
-  aula6BD: { stripe: true, curtain: 'violet' },
-  aula6AC: { stripe: true, curtain: 'violet' },
+  // Voile lila con cenefa roja (4:48–4:54).
+  aula6BD: { stripe: true, curtain: 'lilac', valance: 'curtainRed' },
+  aula6AC: { stripe: true, curtain: 'lilac', valance: 'curtainRed' },
   aulaC1: { stripe: false, curtain: 'curtainWhite', ceiling: 'panels' },
   aulaC2: { wainscot: ['woodIn', 1.05], stripe: false, curtain: 'violet', ceiling: 'panels' },
   biblioteca: { stripe: true, ceiling: 'panels', lights: 'panel' },
   bilingue: { stripe: false, curtain: 'curtainWhite', ceiling: 'panels' },
   galeria: { stripe: true, lights: 'panel' },
   pasarela: { wall: 'white', wainscot: ['black', 0.9], stripe: false, lights: 'tube' },
-  // Cortinas blancas bajo una cenefa bordó (7:27–7:29).
-  dirSec: { wall: 'cream', stripe: false, curtain: 'curtainWhite', valance: 'curtainRed', ceiling: 'panels' },
+  // Cortinas blancas corridas bajo una cenefa bordó (7:27–7:29).
+  dirSec: { wall: 'cream', stripe: false, curtain: 'curtainWhite', valance: 'curtainRed', ceiling: 'panels', drawn: true },
   precepSec: { wall: 'cream', stripe: true, ceiling: 'panels', lights: 'panel' },
   aulaSec: { stripe: false, ceiling: 'panels' },
   escaleraOeste: { stripe: false, lights: 'none' },
@@ -341,6 +346,8 @@ export class SchoolBuilder {
       checker: i('#ffffff', 'checker', 0.16, undefined, 'floor'),
       ceramic: i('#e6dfd3', 'ceramic', undefined, undefined, 'floor'),
       ceramicTan: i('#bba07c', 'ceramic', undefined, undefined, 'floor'),
+      // Cerámico beige rosado del pasillo de lockers (5:12–6:56).
+      ceramicBeige: i('#cfc4bf', 'ceramic', undefined, undefined, 'floor'),
       tuft: s('#b39a6e', 0.95),
       rubber: i('#3b3e43', 'rubber', 0.12, undefined, 'floor'),
       lattice: i('#b8875a', 'lattice', 0.2),
@@ -355,6 +362,8 @@ export class SchoolBuilder {
       // Tela con pliegues (relieve y sombra propia), mate.
       sky: s('#2fa8d8', 0.95, 0, 'fabric'),
       violet: s('#3d3a6e', 0.95, 0, 'fabric'),
+      // Voile lila de 6° BD y 6° AC (4:48): más claro, la luz pasa a través.
+      lilac: s('#8e6bbf', 0.9, 0, 'fabric'),
       // Tapas de pupitre y sillas verde salvia de las aulas de primaria:
       // laminado plástico, satinado. El mobiliario pintado o plástico lleva la
       // textura del látex (variación de tono de ±3 %): un color perfectamente
@@ -408,6 +417,7 @@ export class SchoolBuilder {
       timber: s('#c99a62', 0.55, 0, 'timber'),
       timberDark: s('#7b5236', 0.55, 0, 'timber'),
       chairGreen: s('#2f7a5c', 0.6, 0, 'plaster'),
+      plasticCream: s('#e3d8bd', 0.45, 0, 'plaster'),
       // Pizarra blanca, hojas y mesadas: melamina o esmalte, con brillo.
       board: i('#f6f7f6', null, 0.35, 0.4),
       // Cortinas blancas (aulas del sector nuevo, salas del jardín): tela, no
@@ -635,6 +645,7 @@ export class SchoolBuilder {
       checker: this.m.checker,
       ceramic: this.m.ceramic,
       ceramicTan: this.m.ceramicTan,
+      ceramicBeige: this.m.ceramicBeige,
       rubber: this.m.rubber,
       terracotta: this.m.terracotta,
       hallStone: this.m.hallStone,
@@ -647,13 +658,13 @@ export class SchoolBuilder {
       // (la cara inferior la tapa el cielorraso del ambiente de abajo), sin
       // los huecos de escalera de ese nivel.
       if (level === 0) {
-        this.prisms.plan(mat[r.floor], r.poly, 0, top, { bottom: false });
+        this.prisms.plan(mat[r.floorLook ?? r.floor], r.poly, 0, top, { bottom: false });
         continue;
       }
       // Con cara inferior: bajo la galería en voladizo y bajo la pasarela se ve
       // la losa desde el patio (oscura, como en el video).
       for (const piece of subtractRects(r.poly, voidsAt(level))) {
-        this.prisms.plan(mat[r.floor], piece, top - 0.14, top);
+        this.prisms.plan(mat[r.floorLook ?? r.floor], piece, top - 0.14, top);
         // Bajo un aula sobre el patio se ve un cielorraso de losa, no la cara
         // inferior del piso (el cerámico del aula parecía un techo de baldosas).
         if (SOFFIT_ROOMS.has(r.id)) this.prisms.plan(this.m.slab, piece, top - 0.15, top - 0.15, { top: false, sides: false });
@@ -922,8 +933,9 @@ export class SchoolBuilder {
           }
           for (let y = hb + step; y < ht - 0.05; y += step) this.piece(m.mesh, a, b, 0.012, y, y + 0.012, off);
         } else {
-          // Parasoles horizontales de chapa clara (galería roja, 2:08).
-          for (let y = hb + 0.12; y < ht - 0.05; y += 0.16) this.piece(m.frame, a, b, 0.12, y, y + 0.03, extSign * (t / 2 + 0.1));
+          // Barrotes horizontales gruesos de hierro oscuro, unos cinco por
+          // paño (galería roja, 2:08): no las lamas blancas finas de antes.
+          for (let y = hb + 0.1; y < ht - 0.05; y += 0.2) this.piece(m.metalDark, a, b, 0.04, y, y + 0.05, extSign * (t / 2 + 0.05));
         }
       }
       // Cortinas en aulas, oficinas y en el jardín: celestes, violetas, blancas
@@ -939,8 +951,14 @@ export class SchoolBuilder {
         const vm = vk ? m[vk] : cm;
         // Sobre Laprida las cortinas están casi cerradas: desde la calle cada
         // ventana se lee como un rectángulo violeta oscuro (0:04–0:08).
-        const onLaprida = Math.abs(w.a[1]) < 0.01 && Math.abs(w.b[1]) < 0.01 && w.level <= 1;
+        // La Dirección de secundaria también las tiene corridas (7:27–7:30).
+        const onLaprida = (Math.abs(w.a[1]) < 0.01 && Math.abs(w.b[1]) < 0.01 && w.level <= 1) || STYLES[inner.id]?.drawn === true;
         if (onLaprida) {
+          // Con cenefa propia (6° BD) se ve igual desde adentro: barral y cenefa.
+          if (vk && this.detailed) {
+            this.piece(m.metalDark, along(-0.3), along(len + 0.3), 0.03, ht + 0.28, ht + 0.31, off);
+            this.piece(vm, along(-0.2), along(len + 0.2), 0.05, ht + 0.02, ht + 0.28, off);
+          }
           this.piece(cm, along(-0.3), along(len * 0.42), 0.06, hb - 0.05, ht + 0.02, off);
           this.piece(cm, along(len * 0.58), along(len + 0.3), 0.06, hb - 0.05, ht + 0.02, off);
           return;
@@ -1634,6 +1652,10 @@ export class SchoolBuilder {
       // se medía desde el borde del tramo y quedaba a 10–15 cm del muro, o
       // metido dentro.
       const across = face !== null ? face + inward * 0.065 : edge + inward * 0.04;
+      if (!walled && s.meshGuard) {
+        this.stairMesh(s, rail, sloped, across, yMid, rise, length, railLong, runAt, treadTop);
+        continue;
+      }
       sloped(rail, across, yMid + 0.9, 0.05, 0.05, railLong);
       const posts = Math.max(2, Math.round(length / 1.1) + 1);
       for (let k = 0; k < posts; k++) {
@@ -1653,6 +1675,45 @@ export class SchoolBuilder {
         }
       }
       if (!walled && this.detailed) sloped(rail, across, yMid + 0.45, 0.03, 0.03, railLong);
+    }
+  }
+
+  /**
+   * Paño de metal desplegado con marco, del color del pasamanos, en el lado
+   * abierto de un tramo: rojo en la escalera del hall (0:19), blanco en la
+   * exterior del comedor (9:44–9:47). ~1 m sobre la línea de los escalones.
+   * La trama es una grilla fina de tiras (más abierta en el visor); la
+   * colisión es la misma barrera del costado de siempre.
+   */
+  private stairMesh(
+    s: Stair,
+    red: Material,
+    sloped: (mat: Material, across: number, y: number, thick: number, width: number, long?: number) => void,
+    across: number,
+    yMid: number,
+    rise: number,
+    length: number,
+    railLong: number,
+    runAt: (t: number) => number,
+    treadTop: (t: number) => number,
+  ): void {
+    const alongU = s.dir === 'u+' || s.dir === 'u-';
+    const H_TOP = 1.0;
+    // Marco: pasamanos, zócalo y los dos parantes de punta.
+    sloped(red, across, yMid + H_TOP, 0.05, 0.05, railLong);
+    sloped(red, across, yMid + 0.12, 0.04, 0.04, railLong);
+    const step = this.detailed ? 0.1 : 0.2;
+    for (let y = 0.12 + step; y < H_TOP - 0.03; y += step) sloped(red, across, yMid + y, 0.008, 0.012, railLong);
+    const cols = Math.max(2, Math.round((length * 0.88) / step));
+    for (let k = 0; k <= cols; k++) {
+      const t = 0.06 + (0.88 * k) / cols;
+      const end = k === 0 || k === cols;
+      const at = runAt(t);
+      const railY = yMid + H_TOP + (t - 0.5) * rise;
+      const y0 = end ? treadTop(t) : yMid + 0.12 + (t - 0.5) * rise;
+      const [pu, pv] = alongU ? [at, across] : [across, at];
+      const thick = end ? 0.05 : 0.008;
+      this.box(red, pu, pv, alongU ? thick : 0.012, railY - y0, alongU ? 0.012 : thick, y0);
     }
   }
 
@@ -2448,6 +2509,22 @@ export class SchoolBuilder {
         // Reja de barrotes verticales.
         const mat = this.mat(it.color, m.red);
         const hgt = it.h ?? 2.1;
+        if (it.mesh) {
+          // Paño de metal desplegado con marco (guardas de las escaleras):
+          // grilla fina de tiras dentro de un marco de caño.
+          const L = Math.max(w, d);
+          const ms = this.detailed ? 0.1 : 0.2;
+          const cols = Math.max(2, Math.round(L / ms));
+          for (let k = 0; k <= cols; k++) {
+            const t = k / cols - 0.5;
+            const end = k === 0 || k === cols;
+            const th = end ? 0.05 : 0.008;
+            this.box(mat, u + (alongV ? 0 : t * (w - 0.05)), v + (alongV ? t * (d - 0.05) : 0), alongV ? 0.012 : th, hgt, alongV ? th : 0.012, FY);
+          }
+          for (let y = 0.1 + ms; y < hgt - 0.08; y += ms) this.box(mat, u, v, alongV ? 0.012 : w, 0.008, alongV ? d : 0.012, FY + y);
+          for (const y of [0.08, hgt - 0.05]) this.box(mat, u, v, alongV ? 0.05 : w, 0.05, alongV ? d : 0.05, FY + y);
+          break;
+        }
         // Barandas bajas: barrotes más espaciados (y aún más en VR).
         const step = (it.h ?? 2.1) < 1.3 ? (this.detailed ? 0.18 : 0.3) : this.detailed ? 0.12 : 0.2;
         const n = Math.max(3, Math.round(Math.max(w, d) / step));
@@ -2495,7 +2572,8 @@ export class SchoolBuilder {
         this.cyl(m.glass, u, v, 0.26, 0.42, FY + 1.0, true);
         break;
       case 'plasticChair':
-        this.chair(m.board, u, v, it.face);
+        // Sillones plásticos crema del pasillo de los trofeos (4:36).
+        this.chair(m.plasticCream, u, v, it.face);
         break;
       case 'filing': {
         this.box(m.red, u, v, w, it.h ?? 1.35, d, FY);

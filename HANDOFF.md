@@ -1022,6 +1022,29 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     `CityIndex` (caminando, volando y con teletransporte): no volver a dejar
     pasto transitable más allá.
 
+88. **Puertas del CAD y detalles del video (segunda revisión).** Primer piso
+    sobre Laprida: puertas dobles de 1,9 m (4° AC a la Gerencia 3,1–5,0; S2
+    8,6–10,5; S3 12,5–14,3; S4 21,5–23,4; S5 24,45–26,35, 25 cm al este del
+    CAD para no cortar el tabique de 24,3) con sus paños vidriados del CAD.
+    Fila norte: doble bilingüe→vértice 17,15–18,95, baños 21,45–22,35 (box al
+    oeste, mesada contra el conducto), 4° A→fondo 28,9–30,05. Planta baja:
+    Preceptoría, Sala de profesores y ADM con vanos de 1,31 m del CAD como
+    puertas **dobles** (`schoolProps` no admite hojas simples de más de
+    1,2 m). Fondo del pasillo de los trofeos: puerta al este y ventanilla al
+    oeste (4:36), escritorio de la PR detrás de la ventanilla, estante de
+    trofeos de 1,3 m, sillones crema. Video: aula 4 blanca con cortinas
+    celestes; 6° BD/6° AC voile lila con cenefa roja y la U de 6° BD contra
+    oeste/sur/este con las sillas del lado del muro (la U abre a la pizarra
+    norte: así se ve en 4:42–4:54); Dirección de secundaria con cortinas
+    corridas (`drawn`); guardas de metal desplegado (`Stair.meshGuard`,
+    `Item.mesh`) en la escalera del hall, la cabecera de la oeste en el P1 y
+    la escalera blanca del comedor (blanca); barrotes horizontales oscuros
+    en la galería roja; piso beige en el pasillo de lockers (`floor: 'ceramic'`
+    con `floorLook: 'ceramicBeige'`: el color cambia y los pasos suenan
+    igual, sin tocar el audio). Salida del gimnasio a Laprida y portón del patio sobre
+    Miguel Cané: el modelo sigue el video y el plano de S&O (2,1 m entre la
+    esquina y la primera pilastra; el CAD de 3,4 m cortaba la pilastra).
+
 ---
 
 ## 6. Estado actual

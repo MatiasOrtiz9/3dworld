@@ -142,8 +142,9 @@ const WALLS_PB: Wall[] = [
   },
   // Lateral sur del polideportivo (Laprida): salida de emergencia y la tira de
   // claraboyas entre las pilastras; adentro van las gradas.
-  // La salida de emergencia del plano queda en el primer paño, entre la
-  // esquina y la primera pilastra.
+  // La salida de emergencia queda en el primer paño, entre la esquina y la
+  // primera pilastra (u 53,15): el CAD la da de 50,75 a 54,15, pero así
+  // cortaba la pilastra; se sigue el video y el plano de S&O (2,1 m).
   hw(V.facade, U.gymW, U.e, 'ext', [[50.75, 52.85, 'exit'], ...GYM_CLERESTORY, [66.3, 67.2, 'door', undefined, undefined, 'red']], SCHOOL.gymWall),
 
   // --- Miguel Cané: ochavo, ala oeste, nicho y Tecnología -------------------
@@ -232,7 +233,7 @@ const WALLS_PB: Wall[] = [
   // Frente de Administración (2:14–2:30): ventanilla de atención y puerta roja.
   hw(V.admN, miguelCaneU(V.admN), U.wcW, 'int', [
     [7.85, 8.75, 'counter'],
-    [9.05, 10.2, 'door', undefined, undefined, 'red'],
+    [8.95, 10.26, 'double', undefined, undefined, 'red'],
   ]),
   hw(V.wcN, U.wcW, U.wingE),
   // Lado norte del Espacio recreativo: ventanas sobre el cantero largo y la
@@ -265,14 +266,14 @@ const WALLS_PB: Wall[] = [
   // Preceptoría al pie de la escalera.
   hw(V.dirTop, miguelCaneU(V.dirTop), U.dirDiv),
   hw(V.dirTop, U.dirDiv, WEST_LANDING_E, 'int', [], 2.08),
-  hw(V.dirTop, WEST_LANDING_E, U.wingE, 'int', [[11.05, 12.05, 'door', undefined, undefined, 'red']]),
+  hw(V.dirTop, WEST_LANDING_E, U.wingE, 'int', [[10.91, 12.22, 'double', undefined, undefined, 'red']]),
   // Testero oeste de la caja de la escalera, en el plano del muro de la
   // Gerencia del primer piso (el muro que se ve al subir, 7:46–7:58). Sin él
   // el descanso de 2,2 m terminaba en el aire sobre un rincón sin salida
   // contra la diagonal: el que se caía quedaba encerrado.
   vw(U.dirDiv, V.dirTop, V.profB),
   // La caja de la escalera se abre al pasillo oeste; al norte, PROF.
-  hw(V.profB, miguelCaneU(V.profB), U.wingE, 'int', [[10.95, 12.1, 'door', undefined, undefined, 'frame']]),
+  hw(V.profB, miguelCaneU(V.profB), U.wingE, 'int', [[10.87, 12.18, 'double', undefined, undefined, 'frame']]),
   // Sala de profesores: ventana interior al pasillo oeste (D2).
   vw(U.wingE, V.profB, V.wcS, 'int', [[-13.4, -15.2, 'window', 1.0, 2.1]]),
   hw(V.admB, miguelCaneU(V.admB), U.wcW),
@@ -387,8 +388,9 @@ const WALLS_PB: Wall[] = [
     [-13.45, -14.35, 'window', 1.2, 2.3],
     [-11.28, -12.42, 'double'],
     // "Acceso al Polideportivo": puerta doble de aluminio blanco.
-    // Corrida al norte lo justo para que la columna acolchada del hall no
-    // tape su hoja sur (el jugador sólo pasaba por la mitad norte).
+    // Corrida al sur (hacia Laprida) respecto del CAD, lo justo para que la
+    // columna acolchada del hall no tape una de sus hojas (el jugador sólo
+    // pasaba por una mitad).
     [-9.2, -10.7, 'double', undefined, undefined, 'frame'],
     [-6.8, -8.34, 'double', undefined, undefined, 'red'],
   ]), { patioEste: 'olive' }),
@@ -668,9 +670,9 @@ export const ROOFS: ReadonlyArray<{ poly: readonly P[]; y: number }> = [
 export const STAIRS: readonly Stair[] = [
   // "Acceso al Nivel Secundario" (CAD): primer tramo al norte, contra el muro
   // oeste del hall, hasta el descanso de la torre (2,45 m, del recorrido).
-  { u0: 32.63, v0: V.hallTop, u1: HALL_STAIR_E, v1: -8.94, dir: 'v-', y0: 0, y1: 2.45 },
+  { u0: 32.63, v0: V.hallTop, u1: HALL_STAIR_E, v1: -8.94, dir: 'v-', y0: 0, y1: 2.45, meshGuard: true },
   // Escalera exterior blanca contra el comedor: del patio este al descanso de la torre.
-  { u0: 32.58, v0: -19.56, u1: 33.68, v1: V.kiosk, dir: 'v+', y0: 0, y1: 2.45, hollow: true },
+  { u0: 32.58, v0: -19.56, u1: 33.68, v1: V.kiosk, dir: 'v+', y0: 0, y1: 2.45, hollow: true, meshGuard: true },
   // "Acceso a primer piso" (ala oeste, CAD): primer tramo al oeste hasta el
   // descanso (2,2 m, del recorrido). Llega a u 10,15 y no a 9,95 como el CAD:
   // con 12 contrahuellas la huella daba 23 cm.
