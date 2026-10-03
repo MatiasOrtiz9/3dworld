@@ -94,13 +94,27 @@ function build(): DoorDef[] {
       const len2 = o.t1 - o.t0;
       if (len2 - 0.16 < 0.5) continue;
       const face = (d: number): P => [au + du * (o.t0 + d) + nu * s * (t / 2), av + dv * (o.t0 + d) + nv * s * (t / 2)];
-      // Mismas bisagras y anchos que las hojas fijas del constructor.
+      // La hoja entra 5 mm en cada jamba (el marco cubre 0–7 cm del vano):
+      // arrancando en 8 cm, con la hoja cerrada quedaba una ranura de 1 cm a
+      // cada lado por la que se veía el aula o el pasillo. Entre las dos hojas
+      // de una doble NO se solapan: son coplanares y titilarían.
+      // Una hoja simple abierta contra un muro en diagonal (la dirección de
+      // primaria, junto a Miguel Cané) lo atravesaba: ahí la bisagra va del
+      // otro lado del vano.
+      const fits = (hinge: P, hd: [number, number], width: number) =>
+        [0.5, 1].every((k) => roomAt(hinge[0] + hd[0] * 0.05 + nu * s * width * k, hinge[1] + hd[1] * 0.05 + nv * s * width * k, w.level) === room);
+      const single = (): LeafDef => {
+        const width = len2 - 0.13;
+        const near: LeafDef = { hinge: face(0.065), dir: [du, dv], width };
+        const far: LeafDef = { hinge: face(len2 - 0.065), dir: [-du, -dv], width };
+        return fits(near.hinge, near.dir, width) || !fits(far.hinge, far.dir, width) ? near : far;
+      };
       const leaves: LeafDef[] =
         o.type === 'door'
-          ? [{ hinge: face(0.08), dir: [du, dv], width: len2 - 0.16 }]
+          ? [single()]
           : [
-              { hinge: face(0.08), dir: [du, dv], width: (len2 - 0.16) / 2 },
-              { hinge: face(len2 - 0.08), dir: [-du, -dv], width: (len2 - 0.16) / 2 },
+              { hinge: face(0.065), dir: [du, dv], width: (len2 - 0.13) / 2 },
+              { hinge: face(len2 - 0.065), dir: [-du, -dv], width: (len2 - 0.13) / 2 },
             ];
       out.push({
         id: `${room.id}-${out.filter((d) => d.room.id === room.id).length + 1}`,
@@ -113,8 +127,9 @@ function build(): DoorDef[] {
         wallT: t,
         // El vano de una puerta doble es 10 cm más alto (2,25 m, como lo corta
         // el constructor): con la altura de la simple quedaba una ranura
-        // abierta entre las hojas y el cabezal del marco.
-        height: Math.min(o.ht ?? (o.type === 'double' ? 2.25 : 2.15), w.h - 0.15) - 0.04 - (SCHOOL.floorY - 0.03),
+        // abierta entre las hojas y el cabezal del marco. La hoja entra 5 mm
+        // en el cabezal (con 1 cm por debajo se veía luz por arriba).
+        height: Math.min(o.ht ?? (o.type === 'double' ? 2.25 : 2.15), w.h - 0.15) - 0.025 - (SCHOOL.floorY - 0.03),
         color: o.color,
         glass: Boolean(o.color && o.color !== 'red' && o.color !== 'timberDark'),
         room,

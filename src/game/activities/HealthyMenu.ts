@@ -1,3 +1,4 @@
+import { FRASES } from '../story/phrases';
 import { ActivityBase, type ActivityView } from './types';
 
 /**
@@ -63,12 +64,26 @@ export class HealthyMenu extends ActivityBase {
   /** Mostrando el comentario de la última elección. */
   private commenting = false;
 
+  /**
+   * `phrases` (ver `story/phrases.ts`): con frases, los comentarios los dice
+   * Graciela. Sin ellas el comentario queda como explicación del juego, sin
+   * nadie que lo diga: es lo que enseña la actividad.
+   */
+  constructor(private readonly phrases = FRASES) {
+    super();
+  }
+
   view(): ActivityView {
     const tray = this.picks.map((p, k) => MENU_ROUNDS[k].options[p].label).join(' · ');
     if (this.finished) {
       const s = this.score;
-      const text =
-        s >= this.maxScore - 1
+      const text = !this.phrases
+        ? s >= this.maxScore - 1
+          ? `Bandeja equilibrada: ${tray}.`
+          : s >= this.maxScore / 2
+            ? `Buena bandeja: ${tray}. Le faltó un poco de color.`
+            : `Tu bandeja: ${tray}. Se puede equilibrar mejor.`
+        : s >= this.maxScore - 1
           ? `Bandeja equilibrada: ${tray}. «¡Así da gusto servir!», dice Graciela.`
           : s >= this.maxScore / 2
             ? `Buena bandeja: ${tray}. «Le sumaría un poco más de color», dice Graciela.`
@@ -92,7 +107,7 @@ export class HealthyMenu extends ActivityBase {
         title: R.title,
         text: tray,
         progress: `${this.round + 1}/${MENU_ROUNDS.length}`,
-        feedback: { text: `Graciela: «${o.comment}»`, tone: o.points === 2 ? 'good' : o.points === 1 ? 'info' : 'bad' },
+        feedback: { text: this.phrases ? `Graciela: «${o.comment}»` : o.comment, tone: o.points === 2 ? 'good' : o.points === 1 ? 'info' : 'bad' },
         choices: [{ label: this.round === MENU_ROUNDS.length - 1 ? 'Ver la bandeja' : 'Siguiente', icon: 'next', tone: 'accent' }],
       };
     }

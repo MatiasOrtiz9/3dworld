@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { DialogueRunner, StoryEngine } from '../src/game/story/StoryEngine';
 import { emptySave, memorySaveStore, parseSave } from '../src/game/story/save';
 import { dialogue } from '../src/game/story/dialogues';
+import { objective } from '../src/game/story/objectives';
+import { FRASES, phrasesFromQuery } from '../src/game/story/phrases';
 import { LOCKS } from '../src/game/story/world';
 import { focusByGaze, focusByRay, type Candidate } from '../src/game/Interaction';
 import { zoneForRoom } from '../src/game/audioZones';
@@ -102,8 +104,8 @@ describe('motor de la historia', () => {
     expect(e.interact('estrellaAmarilla')).toEqual([]);
   });
 
-  it('las entrevistas se guardan una vez por persona y cuentan para "Voces del recorrido"', () => {
-    const e = new StoryEngine();
+  it('las entrevistas se guardan una vez por persona y cuentan para "Voces del recorrido" (con frases)', () => {
+    const e = new StoryEngine(null, { phrases: true });
     talk(e, 'ruben');
     e.enterPlace('hall');
     e.interact('mural');
@@ -120,6 +122,52 @@ describe('motor de la historia', () => {
     // Ya entrevistado: la opción desaparece y la despedida sola no se muestra.
     const again = new DialogueRunner(d, e);
     expect(again.choices()).toEqual([]);
+  });
+
+  it('sin frases: saludar a Rubén abre la entrada sin una línea y sin entrevistas', () => {
+    // Explícito (no `FRASES`): el test vale igual si algún día se vuelve a encender la constante.
+    const e = new StoryEngine(null, { phrases: false });
+    expect(e.phrases).toBe(false);
+    // El objetivo no pide hablar: nadie contesta.
+    expect(e.objectiveTitle(e.mainObjectives()[0])).toMatch(/^Saludá a Rubén/);
+    expect(new StoryEngine(null, { phrases: true }).objectiveTitle(objective('p.portero')!)).toMatch(/^Hablá con Rubén/);
+    const r = e.silentTalk('ruben');
+    expect(r.effects.some((f) => f.do === 'unlock' && f.zone === 'entrada')).toBe(true);
+    expect(r.effects.some((f) => f.do === 'bark' || f.do === 'interview')).toBe(false);
+    expect(r.anim).toBe('point'); // abre y señala la puerta
+    expect(e.done('p.portero')).toBe(true);
+    // Lo que queda con Rubén es una entrevista: el saludo no la hace ni cambia nada.
+    const again = e.silentTalk('ruben');
+    expect(again.effects).toEqual([]);
+    expect(e.interviews).toBe(0);
+    e.enterPlace('hall');
+    e.interact('mural');
+    e.silentTalk('ines');
+    expect(e.done('p.directora')).toBe(true);
+    // "Voces del recorrido" son frases: sin ellas no se ofrece.
+    expect(e.available('s.voces')).toBe(false);
+    expect(e.sideObjectives().map((o) => o.id)).not.toContain('s.voces');
+  });
+
+  it('el saludo sin frases elige lo que sigue la historia, no la entrevista', () => {
+    const e = new StoryEngine(null, { phrases: true });
+    talk(e, 'ruben');
+    const r = new DialogueRunner(dialogue('ruben.after')!, e);
+    // Primera opción: la entrevista; el saludo callado va a la despedida.
+    expect(r.choices()[0].next).toBe('iv');
+    expect(r.silentPick()).toBe(1);
+    // En el acto, el discurso es la primera opción.
+    const acto = new DialogueRunner(dialogue('ines.acto')!, e);
+    acto.step(0);
+    acto.step(0);
+    expect(acto.choices().length).toBe(3);
+    expect(acto.silentPick()).toBe(0);
+  });
+
+  it('?frases=1 trae las frases de vuelta; sin parámetro manda la constante', () => {
+    expect(phrasesFromQuery(new URLSearchParams(''))).toBe(FRASES);
+    expect(phrasesFromQuery(new URLSearchParams('frases=1'))).toBe(true);
+    expect(phrasesFromQuery(new URLSearchParams('seed=42&frases=0'))).toBe(false);
   });
 
   it('modo libre: abre todas las zonas sin tocar el progreso', () => {

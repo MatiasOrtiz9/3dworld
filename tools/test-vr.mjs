@@ -10,7 +10,8 @@
  * Verifica lo que se nota en los primeros diez segundos con el casco puesto:
  * aparecer parado sobre el piso frente a la escuela, colores iguales a los del
  * escritorio, el stick izquierdo camina sin derrapar ni hundirse, el derecho
- * gira y teletransporta, las paredes no se atraviesan, se ven los mandos y no
+ * gira y teletransporta, las paredes no se atraviesan, se ven los mandos,
+ * la A sobre Rubén abre el portal en silencio (el juego no tiene frases) y no
  * hay errores en consola.
  *
  *   node tools/test-vr.mjs [url] [carpeta-capturas] [--sw]
@@ -181,35 +182,62 @@ const started = await page
 check('al entrar al visor el juego arranca solo, sin menú que apuntar', started);
 check('apenas empieza se puede caminar', (await page.evaluate(() => window.__xr()?.canWalk)) === true);
 
-// Hablar con Rubén sólo con botones del control (el camino nuevo, que no
-// depende del puntero de Babylon): la A avanza cada línea y elige la primera
-// opción; durante el diálogo se puede seguir caminando.
+// Saludar a Rubén sólo con botones del control (el camino que no depende del
+// puntero de Babylon). El juego no tiene frases (lo pidió el usuario, ver
+// src/game/story/phrases.ts): la A sobre Rubén abre el portal en silencio,
+// sin panel con líneas, sin comentarios y sin voz, y se sigue caminando.
 const press = async (hand, button) => {
   await page.evaluate((h, b) => window.__xrDevice.controllers[h].updateButtonValue(b, 1), hand, button);
   await sleep(150);
   await page.evaluate((h, b) => window.__xrDevice.controllers[h].updateButtonValue(b, 0), hand, button);
   await sleep(450);
 };
-await page.evaluate(() => void window.__director().talk('ruben'));
-await sleep(700);
-const opened = await page.evaluate(() => ({
-  modal: window.__director().modal,
-  panel: Boolean(window.__scene.getMeshByName('gamePanel')?.isEnabled()),
-  canWalk: window.__xr()?.canWalk,
-}));
-check('el diálogo con Rubén se abre en un panel del visor', opened.modal === 'dialogue' && opened.panel, JSON.stringify(opened));
-check('con un diálogo abierto se puede seguir caminando', opened.canWalk === true);
-let presses = 0;
-for (; presses < 20; presses++) {
-  if ((await page.evaluate(() => window.__director().modal)) !== 'dialogue') break;
-  await press(presses % 2 ? 'left' : 'right', presses % 2 ? 'x-button' : 'a-button');
-}
-const after = await page.evaluate(() => ({ modal: window.__director().modal, done: window.__director().engine.data.done.length }));
+// En el emulador la cabeza no se puede llevar hasta Rubén (ver HANDOFF 62):
+// se lo pone a él a 1,4 m delante de la mirada, como si el jugador se hubiera
+// acercado. Para señalarlo alcanza con mirarlo (la mirada es el respaldo).
+await page.evaluate(() => {
+  window.__voices = 0;
+  const snd = window.__sound;
+  const voice = snd.voice.bind(snd);
+  snd.voice = (...a) => {
+    window.__voices++;
+    return voice(...a);
+  };
+  const cam = window.__scene.activeCamera;
+  const f = cam.getDirection(new window.__BABYLON_Vector3(0, 0, 1));
+  const l = Math.hypot(f.x, f.z) || 1;
+  const p = cam.globalPosition;
+  const fr = window.__schoolFrame();
+  const x = p.x + (f.x / l) * 1.4;
+  const z = p.z + (f.z / l) * 1.4;
+  // De frente al jugador: rumbo del plano hacia la cabeza (u = ox − x, v = z − oz).
+  const yaw = Math.atan2(p.x - x, p.z - z);
+  window.__people().character('ruben').teleport({ u: fr.ox - x, v: z - fr.oz, level: 0 }, yaw);
+});
+await sleep(900);
+const aimed = await page.evaluate(() => ({ focus: window.__director().focus?.key ?? null, label: window.__director().panel?.labelText ?? '' }));
+check('mirando a Rubén, el cartel dice «Saludar» (nadie habla)', aimed.focus === 'npc:ruben' && /Saludar/.test(aimed.label) && !/Hablar/.test(aimed.label), JSON.stringify(aimed));
+await press('right', 'a-button');
+await sleep(500);
+const greeted = await page.evaluate(() => {
+  const g = window.__director();
+  return {
+    portero: g.engine.done('p.portero'),
+    entrada: g.engine.zone('entrada'),
+    greet: g.lastGreeting,
+    modal: g.modal,
+    panel: Boolean(window.__scene.getMeshByName('gamePanel')?.isEnabled()),
+    voices: window.__voices,
+    bark: !document.getElementById('bark').classList.contains('hidden'),
+    canWalk: window.__xr()?.canWalk,
+  };
+});
 check(
-  'con A/X (sin apuntar) se avanza el diálogo hasta el final',
-  after.modal !== 'dialogue' && after.done > 0,
-  `${presses} botones · ${JSON.stringify(after)}`,
+  'la A sobre Rubén abre el portal sin panel con líneas ni voz',
+  greeted.portero && greeted.entrada && greeted.greet?.npc === 'ruben' && greeted.modal === null && !greeted.panel && greeted.voices === 0 && !greeted.bark,
+  JSON.stringify(greeted),
 );
+check('después de saludar se sigue caminando', greeted.canWalk === true);
 
 const controllers = await page.evaluate(() => {
   const s = window.__scene;

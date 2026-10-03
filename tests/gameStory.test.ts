@@ -157,23 +157,33 @@ function playActivity(id: Parameters<typeof createActivity>[0], fumble = false):
   return { success: act.success, perfect: act.score === act.maxScore };
 }
 
-/** Lo que hace el jugador para cumplir un objetivo. */
-function attempt(engine: StoryEngine, o: ObjectiveDef, log: string[]): void {
-  const runEffects = (effects: Effect[]) => {
-    const pending: Effect[] = [];
-    for (const e of engine.apply(effects)) if (e.do === 'activity') pending.push(e);
-    for (const e of pending) {
+/**
+ * Lo que hace el jugador para cumplir un objetivo. Con frases recorre el
+ * diálogo eligiendo la primera opción; sin frases, saluda (`silentTalk`).
+ * Devuelve todo lo que pasó, para ver que sin frases nadie dijo nada.
+ */
+function attempt(engine: StoryEngine, o: ObjectiveDef, log: string[]): Effect[] {
+  const seen: Effect[] = [];
+  const settle = (happened: Effect[]) => {
+    seen.push(...happened);
+    for (const e of happened) {
       if (e.do !== 'activity') continue;
       const r = playActivity(e.id);
-      engine.activityResult(e.id, r.success, r.perfect);
+      seen.push(...engine.activityResult(e.id, r.success, r.perfect));
       log.push(`  actividad ${e.id}: ${r.success ? 'ok' : 'falló'}`);
     }
   };
+  const runEffects = (effects: Effect[]) => settle(engine.apply(effects));
   const t = o.target;
   switch (t.kind) {
     case 'talk': {
       const d = engine.dialogueFor(t.npc);
       expect(d, `${o.id}: ${t.npc} no tiene qué decir`).not.toBeNull();
+      if (!engine.phrases) {
+        settle(engine.silentTalk(t.npc).effects);
+        log.push(`saludar ${t.npc} (${d!.id})`);
+        break;
+      }
       const runner = new DialogueRunner(d!, engine);
       runEffects(runner.start());
       let guard = 0;
@@ -184,37 +194,38 @@ function attempt(engine: StoryEngine, o: ObjectiveDef, log: string[]): void {
     case 'interact': {
       const def = interactable(t.id)!;
       const effects = engine.interact(t.id);
-      runEffects(effects);
+      settle(effects);
       if (def.activity) {
         const r = playActivity(def.activity);
-        engine.activityResult(def.activity, r.success, r.perfect);
+        seen.push(...engine.activityResult(def.activity, r.success, r.perfect));
       }
       log.push(`usar ${t.id}`);
       break;
     }
     case 'reach':
-      engine.enterPlace(t.place);
+      seen.push(...engine.enterPlace(t.place));
       log.push(`llegar ${t.place}`);
       break;
     case 'spot': {
       const r = resolveAnchor(t.anchor);
-      engine.atSpot(r.u, r.v, r.level);
+      seen.push(...engine.atSpot(r.u, r.v, r.level));
       log.push(`pararse en ${o.id}`);
       break;
     }
     case 'collect':
       for (const id of t.ids) {
         if (id.startsWith('voz:')) continue;
-        runEffects(engine.interact(id));
+        settle(engine.interact(id));
       }
       log.push(`juntar ${t.ids.join(', ')}`);
       break;
   }
+  return seen;
 }
 
 describe('jugar la historia', () => {
-  it('se puede terminar sin callejones sin salida', () => {
-    const engine = new StoryEngine();
+  it('se puede terminar sin callejones sin salida (con frases)', () => {
+    const engine = new StoryEngine(null, { phrases: true });
     const log: string[] = [];
     const chapters: string[] = [];
     for (let guard = 0; guard < 80 && !engine.finished; guard++) {
@@ -233,8 +244,8 @@ describe('jugar la historia', () => {
     for (const z of ZONE_IDS) expect(engine.zone(z as never)).toBe(true);
   });
 
-  it('los secundarios también se pueden completar', () => {
-    const engine = new StoryEngine();
+  it('los secundarios también se pueden completar (con frases)', () => {
+    const engine = new StoryEngine(null, { phrases: true });
     const log: string[] = [];
     for (let guard = 0; guard < 120 && !engine.finished; guard++) {
       // Primero los secundarios disponibles (salvo las entrevistas, que se hacen hablando).
@@ -256,5 +267,49 @@ describe('jugar la historia', () => {
     expect(engine.item('llavero')).toBe(true);
     expect(engine.item('camara')).toBe(true);
     expect(engine.interviews).toBeGreaterThanOrEqual(4);
+  });
+
+  it('sin frases se juega entera saludando: prólogo → créditos, 8 sellos, nadie dice nada', () => {
+    const engine = new StoryEngine(null, { phrases: false });
+    const log: string[] = [];
+    const chapters: string[] = [];
+    const seen: Effect[] = [];
+    for (let guard = 0; guard < 80 && !engine.finished; guard++) {
+      const ch = engine.currentChapter();
+      if (chapters[chapters.length - 1] !== ch) chapters.push(ch);
+      const main = engine.mainObjectives();
+      expect(main.length, `sin objetivos en ${ch}: ${log.slice(-4).join(' | ')}`).toBeGreaterThan(0);
+      // Lo que sólo existe con frases no aparece nunca.
+      expect(engine.sideObjectives().map((o) => o.id)).not.toContain('s.voces');
+      const before = engine.data.done.length;
+      seen.push(...attempt(engine, main[0], log));
+      expect(engine.data.done.length, `atascado en ${main[0].id}: ${log.slice(-3).join(' | ')}`).toBeGreaterThan(before);
+    }
+    expect(engine.finished, log.join('\n')).toBe(true);
+    expect(chapters).toEqual(['prologo', 'c1', 'c2', 'c3', 'c4', 'c5']);
+    expect(engine.stamps).toBe(8);
+    expect(engine.currentChapter()).toBe('fin');
+    for (const z of ZONE_IDS) expect(engine.zone(z as never)).toBe(true);
+    // El discurso del acto: la primera opción, aplicada sin mostrarla.
+    expect(engine.choice('discurso')).toBe('personas');
+    // Ni comentarios ni entrevistas: nada que alguien diga.
+    expect(seen.filter((e) => e.do === 'bark' || e.do === 'interview')).toEqual([]);
+    expect(engine.interviews).toBe(0);
+    // Los guiones siguen: simulacro, acto y créditos.
+    for (const id of ['simulacro', 'simulacroFin', 'acto', 'creditos']) {
+      expect(seen.some((e) => e.do === 'script' && e.id === id), id).toBe(true);
+    }
+  });
+
+  it('sin frases los secundarios (salvo las entrevistas) también se completan', () => {
+    const engine = new StoryEngine(null, { phrases: false });
+    const log: string[] = [];
+    for (let guard = 0; guard < 120 && !engine.finished; guard++) {
+      const o = engine.sideObjectives()[0] ?? engine.mainObjectives()[0];
+      attempt(engine, o, log);
+    }
+    expect(engine.finished).toBe(true);
+    for (const id of ['s.llavero', 's.camara', 's.musica']) expect(engine.done(id), id).toBe(true);
+    expect(engine.done('s.voces')).toBe(false);
   });
 });

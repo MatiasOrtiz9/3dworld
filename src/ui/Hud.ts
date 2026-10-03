@@ -275,6 +275,16 @@ export class Hud {
     document.body.classList.toggle('hud-hidden', !on);
   }
 
+  /**
+   * Con o sin frases (ver `game/story/phrases.ts`): sin ellas se ocultan los
+   * textos que hablan de diálogos y entrevistas (`.phrases-only`) y se
+   * muestran sus reemplazos (`.silent-only`). Va en `<html>` para alcanzar
+   * también al título y al menú.
+   */
+  setPhrases(on: boolean): void {
+    document.documentElement.classList.toggle('phrases', on);
+  }
+
   // ===================================================================== título
 
   showTitle(opts: { progress: string | null; onStart(): void; onContinue(): void }): void {
@@ -739,6 +749,8 @@ export class Hud {
     this.creditsClose = onClose;
     document.body.classList.add('in-credits');
     $('credits-speech').textContent = c.speech;
+    // Sin frases no hubo discurso: el renglón vacío no ocupa lugar.
+    $('credits-speech').hidden = !c.speech;
     $('credits-summary').replaceChildren(
       ...c.stats.map((s) => {
         const d = document.createElement('div');

@@ -25,7 +25,7 @@ import type { IdleStyle } from './Looks';
  * (mismo sentido que el rumbo), cabeceo positivo hacia abajo.
  */
 
-export type AnimId = NpcAnim | 'mop' | 'serve' | 'sitDesk' | 'sitTalk' | 'sitFloor' | 'nod';
+export type AnimId = NpcAnim | 'mop' | 'serve' | 'sitDesk' | 'sitTalk' | 'sitFloor' | 'nod' | 'phone';
 
 // Canales de la pose.
 export const LEAN = 0;
@@ -78,6 +78,9 @@ export interface AnimCtx {
   shY: number;
   l1: number;
   l2: number;
+  /** Largo del muslo y su radio (sentado, las manos se apoyan encima). */
+  thigh: number;
+  thighR: number;
 }
 
 const pos = (x: number) => (x > 0 ? x : 0);
@@ -274,7 +277,8 @@ function sitLegs(o: Float32Array, c: AnimCtx): void {
  * con ángulos fijos, un chico de 1,30 m levantaba las manos a la cara y un
  * adulto las metía en la tapa. `lift` levanta el antebrazo desde el codo
  * (gesticular sin atravesar la mesa), `rot` junta las manos adelante y `abd`
- * abre los codos. Devuelve false si no hay mesa a mano.
+ * abre los codos. Devuelve false si no hay mesa o si la mano no llega a su
+ * borde (`deskZ`): ahí se usa la pose sin mesa.
  *
  * A un chico la mesa le queda a la altura del pecho y el brazo va casi
  * horizontal: ahí la rotación interna gira el antebrazo sobre su propio eje
@@ -294,16 +298,56 @@ function deskArm(o: Float32Array, c: AnimCtx, a: number, lean: number, rot: numb
   // Con el brazo abierto (o cerrado) baja menos por cada grado de flexión.
   const t1 = Math.acos(clamp1((sy - ey) / (c.l1 * Math.cos(ab))));
   const eyAct = sy - c.l1 * Math.cos(ab) * Math.cos(t1);
-  // La rotación interna baja la mano sobre el cono del brazo: se compensa.
-  const wy = c.deskH + 0.04 + c.l2 * Math.sin(t1) * Math.cos(t1) * (1 - Math.cos(r));
-  const t2 = Math.acos(clamp1((eyAct - wy) / c.l2)) + lift;
+  // Se apunta la PUNTA DE LOS DEDOS (≈ 1,66 antebrazos desde el codo) a 1,5 cm
+  // sobre la tapa: apuntando la muñeca, la mano entera quedaba metida en la
+  // mesa. La rotación interna r gira el plano del codo hacia el cuerpo y la
+  // abducción inclina ese giro hacia abajo; con el orden del `Rig` (rotación,
+  // abducción, flexión) la componente vertical del antebrazo con el codo
+  // doblado e es −(A·cos e + B·sen e), y se despeja e de forma exacta (la
+  // compensación aproximada dejaba los dedos de los grandes 2-4 cm adentro).
+  const drop = eyAct - (c.deskH + 0.015);
+  const ct = Math.cos(t1);
+  const st = Math.sin(t1);
+  const A = ct * Math.cos(ab);
+  const B = Math.sin(r) * Math.sin(ab) * ct - Math.cos(r) * st;
+  const e = Math.atan2(B, A) + Math.acos(clamp1(drop / (1.66 * c.l2 * Math.hypot(A, B))));
+  // ¿Llega la palma (≈ 1,24 antebrazos) al borde de la mesa? Si no (mesa
+  // lejos, o el brazo casi horizontal de un chico), no se finge: quedaban
+  // brazos rígidos "de zombi" en el aire, 30 cm antes de la tapa. Quien llama
+  // usa entonces la pose sin mesa.
+  const fwd = Math.cos(e) * Math.cos(ab) * st + Math.sin(e) * (Math.sin(r) * Math.sin(ab) * st + Math.cos(r) * ct);
+  const reach = c.shY * Math.sin(lean) + c.l1 * Math.cos(ab) * Math.sin(t1) + 1.24 * c.l2 * fwd;
+  if (reach < c.deskZ + 0.03) return false;
   // El tronco inclinado λ lleva "abajo" del pecho hacia atrás: el brazo
   // necesita λ más de flexión para quedar a t1 de la vertical.
   o[a] = t1 + lean;
   o[a + 1] = ab;
   o[a + 2] = r;
-  o[a + 3] = Math.max(0.05, t2 - t1);
+  o[a + 3] = Math.max(0.05, e + lift);
   return true;
+}
+
+/**
+ * Mano apoyada en el muslo: el brazo baja junto al tronco (`t1` desde la
+ * vertical) y el antebrazo cae hasta la palma sobre el muslo, a `along` de
+ * su largo (0,85 cerca de la rodilla, 1 sobre ella). Con ángulos fijos,
+ * a un adulto el antebrazo le quedaba horizontal a la altura de la mesa,
+ * "flotando" delante de ella; a un chico, metido en las piernas.
+ */
+function lapArm(o: Float32Array, c: AnimCtx, a: number, lean: number, t1: number, along: number, ab: number, r: number): void {
+  const sy = c.waist + c.shY * Math.cos(lean);
+  const ey = sy - c.l1 * Math.cos(ab) * Math.cos(t1);
+  // Tapa del muslo bajo la palma, más el grosor de la mano.
+  const drop = ey - (c.thighR - along * c.thigh * Math.cos(c.hipFlex) + 0.02);
+  const ct = Math.cos(t1);
+  const st = Math.sin(t1);
+  const A = ct * Math.cos(ab);
+  const B = Math.sin(r) * Math.sin(ab) * ct - Math.cos(r) * st;
+  const e = Math.atan2(B, A) + Math.acos(Math.max(-1, Math.min(1, drop / (1.24 * c.l2 * Math.hypot(A, B)))));
+  o[a] = t1 + lean;
+  o[a + 1] = ab;
+  o[a + 2] = r;
+  o[a + 3] = Math.max(0.05, e);
 }
 
 function sit(o: Float32Array, c: AnimCtx): void {
@@ -312,21 +356,18 @@ function sit(o: Float32Array, c: AnimCtx): void {
   o[PROLL] = 0;
   o[PTWIST] = 0;
   o[LEAN] = -0.04 + 0.01 * Math.sin(c.t * 1.7 + c.seed * 50);
-  // Con mesa, más de la mitad descansa los antebrazos encima, cruzados
-  // adelante y apenas inclinado; el resto (y sin mesa), manos en los muslos.
-  if (c.seed > 0.4) {
+  // Con mesa, los antebrazos descansan encima, cruzados adelante y apenas
+  // inclinado (con las manos en el regazo bajo una tapa de 0,74 m, quedaban
+  // metidas debajo de la mesa); sin mesa o si no llega, en los muslos.
+  if (c.seed > 0.4 || !Number.isNaN(c.deskH)) {
     const lean = 0.08 + 0.01 * Math.sin(c.t * 1.7 + c.seed * 50);
     if (deskArm(o, c, ARM_L, lean, 0.78, 0.2, 0) && deskArm(o, c, ARM_R, lean, 0.72, 0.2, 0.04)) {
       o[LEAN] = lean;
       return;
     }
   }
-  for (const a of [ARM_L, ARM_R]) {
-    o[a] = 0.58;
-    o[a + 1] = 0.12;
-    o[a + 2] = 0.3;
-    o[a + 3] = 0.85;
-  }
+  lapArm(o, c, ARM_L, o[LEAN], 0.32, 0.85, 0.12, 0.3);
+  lapArm(o, c, ARM_R, o[LEAN], 0.3, 0.85, 0.12, 0.3);
 }
 
 function sitDesk(o: Float32Array, c: AnimCtx): void {
@@ -343,18 +384,13 @@ function sitDesk(o: Float32Array, c: AnimCtx): void {
   o[HPITCH] = 0.42 - 0.38 * up;
   // Mano derecha escribiendo (el lápiz va y viene), la izquierda sujeta la hoja.
   if (deskArm(o, c, ARM_R, lean, 0.42 + 0.06 * Math.sin(t * 6.3 + s), 0.2 + 0.03 * Math.sin(t * 8 + s), 0.03 + 0.03 * Math.sin(t * 8 + s))) {
-    deskArm(o, c, ARM_L, lean, 0.66, 0.16, 0);
+    if (!deskArm(o, c, ARM_L, lean, 0.66, 0.16, 0)) lapArm(o, c, ARM_L, lean, 0.4, 1.0, 0.1, 0.65);
     return;
   }
-  // Sin mesa: el cuaderno sobre las rodillas.
-  o[ARM_R] = 0.75;
-  o[ARM_R + 1] = 0.16 + 0.03 * Math.sin(t * 8 + s);
-  o[ARM_R + 2] = 0.45;
-  o[ARM_R + 3] = 0.95 + 0.04 * Math.sin(t * 6.3 + s);
-  o[ARM_L] = 0.7;
-  o[ARM_L + 1] = 0.1;
-  o[ARM_L + 2] = 0.65;
-  o[ARM_L + 3] = 1.0;
+  // Sin mesa (o fuera de alcance): el cuaderno sobre las rodillas, la
+  // derecha escribiendo y la izquierda sosteniéndolo.
+  lapArm(o, c, ARM_R, lean, 0.42 + 0.03 * Math.sin(t * 6.3 + s), 1.0, 0.16 + 0.03 * Math.sin(t * 8 + s), 0.45);
+  lapArm(o, c, ARM_L, lean, 0.4, 1.0, 0.1, 0.65);
 }
 
 function sitTalk(o: Float32Array, c: AnimCtx): void {
@@ -421,12 +457,16 @@ function point(o: Float32Array, c: AnimCtx): void {
 
 function clap(o: Float32Array, c: AnimCtx): void {
   idle(o, c, 0);
-  const k = Math.sin(c.t * 16 + c.seed * 6);
+  // Las manos se abren y se juntan cerrando el brazo (abducción), sin girar
+  // el antebrazo: con la rotación interna se cruzaban una dentro de la otra
+  // en cada golpe y en los grandes nunca llegaban a separarse. Medido con el
+  // esqueleto: se abren 17-24 cm y al juntarse se tocan (≤ 4 cm de cruce).
+  const k = Math.sin(c.t * (14 + 4 * c.seed) + c.seed * 6);
   for (const a of [ARM_L, ARM_R]) {
-    o[a] = 0.95;
-    o[a + 1] = 0.06;
-    o[a + 2] = 0.9 + 0.22 * k;
-    o[a + 3] = 1.2;
+    o[a] = 0.9;
+    o[a + 1] = -0.03 + 0.17 * k;
+    o[a + 2] = 0.3;
+    o[a + 3] = 1.0;
   }
   o[HPITCH] = -0.03;
 }
@@ -501,6 +541,24 @@ function nod(o: Float32Array, c: AnimCtx): void {
   listen(o, c);
 }
 
+/**
+ * Mirar el teléfono: la mano derecha a la altura del pecho, el antebrazo
+ * apenas sobre la horizontal y la cabeza gacha. No hay pieza de teléfono (una
+ * malla más sería otro draw call): la postura sola se lee igual, sobre todo
+ * desde unos metros, que es como se ve en la vereda.
+ */
+function phone(o: Float32Array, c: AnimCtx): void {
+  idle(o, c, 0);
+  const t = c.t;
+  const s = c.seed * 40;
+  o[ARM_R] = 0.38 + 0.03 * Math.sin(t * 0.7 + s);
+  o[ARM_R + 1] = 0.06;
+  o[ARM_R + 2] = 0.32;
+  o[ARM_R + 3] = 1.55 + 0.04 * Math.sin(t * 1.3 + s);
+  o[HPITCH] = 0.52;
+  o[HYAW] = 0.06 * Math.sin(t * 0.5 + s);
+}
+
 const CLIPS: Record<AnimId, (o: Float32Array, c: AnimCtx) => void> = {
   idle,
   walk,
@@ -519,12 +577,13 @@ const CLIPS: Record<AnimId, (o: Float32Array, c: AnimCtx) => void> = {
   sitTalk,
   sitFloor,
   nod,
+  phone,
 };
 
 /** Animaciones que son de estar sentado. */
 export const SEATED: ReadonlySet<AnimId> = new Set<AnimId>(['sit', 'sitDesk', 'sitTalk', 'sitFloor']);
 /** Gestos que se superponen al torso (saludar caminando, aplaudir sentado…). */
-export const GESTURES: ReadonlySet<AnimId> = new Set<AnimId>(['wave', 'point', 'clap', 'nod']);
+export const GESTURES: ReadonlySet<AnimId> = new Set<AnimId>(['wave', 'point', 'clap', 'nod', 'phone']);
 /** Duración de un gesto de una vez (s). */
 export const GESTURE_TIME: Partial<Record<AnimId, number>> = { wave: 1.9, point: 1.6, clap: 2.6, nod: 0.8 };
 
@@ -543,6 +602,8 @@ export interface AnimState {
   gesture: AnimId | null;
   gT: number;
   gW: number;
+  /** Duración del gesto en curso si no es la de siempre (0 = `GESTURE_TIME`). */
+  gDur: number;
   /** Mirada aditiva (rad) y su peso. */
   lookYaw: number;
   lookPitch: number;
@@ -559,6 +620,8 @@ export interface AnimState {
   shY: number;
   l1: number;
   l2: number;
+  thigh: number;
+  thighR: number;
 }
 
 export function newAnimState(seed: number, style: IdleStyle, kid: boolean): AnimState {
@@ -574,6 +637,7 @@ export function newAnimState(seed: number, style: IdleStyle, kid: boolean): Anim
     gesture: null,
     gT: 0,
     gW: 0,
+    gDur: 0,
     lookYaw: 0,
     lookPitch: 0,
     lookW: 0,
@@ -590,6 +654,8 @@ export function newAnimState(seed: number, style: IdleStyle, kid: boolean): Anim
     shY: 0.358,
     l1: 0.29,
     l2: 0.245,
+    thigh: 0.44,
+    thighR: 0.08,
   };
 }
 
@@ -606,9 +672,10 @@ export function setBase(a: AnimState, id: AnimId): void {
 }
 
 /** Lanza un gesto de una vez sobre lo que se esté haciendo. */
-export function startGesture(a: AnimState, id: AnimId): void {
+export function startGesture(a: AnimState, id: AnimId, dur = 0): void {
   a.gesture = id;
   a.gT = 0;
+  a.gDur = dur;
 }
 
 /** Avanza relojes, fundidos y envolventes. */
@@ -618,12 +685,13 @@ export function tickAnim(a: AnimState, dt: number): void {
   if (a.w < 1) a.w = Math.min(1, a.w + dt / (SEATED.has(a.base) !== SEATED.has(a.prev) ? 0.8 : 0.35));
   if (a.gesture) {
     a.gT += dt;
-    const dur = GESTURE_TIME[a.gesture] ?? 1.5;
+    const dur = a.gDur > 0 ? a.gDur : (GESTURE_TIME[a.gesture] ?? 1.5);
     // Envolvente: entra en 0,25 s, se sostiene y sale en 0,35 s.
     a.gW = Math.min(1, a.gT / 0.25) * Math.min(1, Math.max(0, (dur - a.gT) / 0.35));
     if (a.gT >= dur) {
       a.gesture = null;
       a.gW = 0;
+      a.gDur = 0;
     }
   }
 }
@@ -651,6 +719,8 @@ const sharedCtx: AnimCtx = {
   shY: 0.358,
   l1: 0.29,
   l2: 0.245,
+  thigh: 0.44,
+  thighR: 0.08,
 };
 
 function ctxOf(a: AnimState, t: number): AnimCtx {
@@ -671,6 +741,8 @@ function ctxOf(a: AnimState, t: number): AnimCtx {
   c.shY = a.shY;
   c.l1 = a.l1;
   c.l2 = a.l2;
+  c.thigh = a.thigh;
+  c.thighR = a.thighR;
   return c;
 }
 

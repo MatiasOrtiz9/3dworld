@@ -34,8 +34,8 @@ import { Penalty } from './activities/Penalty';
 import { DanceSequence } from './activities/DanceSequence';
 import { resolveAnchor, roomIdAt, standNear, standable, yawCardinal, yawLocal, type Resolved } from './story/anchors';
 import { CHARACTERS } from './story/characters';
-import { BARKS } from './story/dialogues';
 import { ITEMS_INFO, STAMPS, STAMP_ORDER, ZONES, chapter, objective } from './story/objectives';
+import { phrasesFromQuery } from './story/phrases';
 import { localSaveStore, type SaveStore } from './story/save';
 import { DialogueRunner, StoryEngine } from './story/StoryEngine';
 import type { ActivityId, CharacterDef, ChapterId, Effect, InteractableDef, ObjectiveDef, Spot, StationDef, ZoneId } from './story/types';
@@ -60,6 +60,11 @@ import type { GamePanel3D, PanelModel } from './xr/GamePanel3D';
  *
  * Lo que necesita de las otras piezas está en `contracts.ts` (gente, audio,
  * jugador): no depende de cómo están hechas.
+ *
+ * Por defecto el juego no tiene frases (lo pidió el usuario, ver
+ * `story/phrases.ts`): nadie habla, no hay voces ni comentarios, y saludar a
+ * un personaje hace avanzar la historia en silencio (`greet`). Con
+ * `?frases=1` vuelven los diálogos tal como eran.
  */
 
 export interface GameDirectorDeps {
@@ -75,6 +80,8 @@ export interface GameDirectorDeps {
   canInteract?: () => boolean;
   /** Luminarias de las aulas con interruptor (`City.lightFixtures`). Sin ellas no hay interruptores. */
   fixtures?: ReadonlyMap<string, Fixture[]>;
+  /** Un aula prendió o apagó sus luces: `main.ts` baja la luz de su mapa (Environment). */
+  onRoomLights?: (roomId: string, on: boolean) => void;
 }
 
 export interface XRGameControls {
@@ -101,6 +108,8 @@ const SESSION = {
   // Con herramientas automáticas, sin HUD salvo que se pida (`?hud=1`): las
   // capturas de la escuela no deberían tapar nada.
   hud: params.get('hud') === '1' || (!automated && params.get('hud') !== '0'),
+  /** Diálogos, voces y comentarios: apagados salvo `?frases=1` (ver `story/phrases.ts`). */
+  phrases: phrasesFromQuery(params),
 };
 
 const TALK_RANGE = 2.6;
@@ -119,9 +128,9 @@ const PHASE_BY_CHAPTER: Record<ChapterId, SchoolPhase> = {
   fin: 'salida',
 };
 
-/** Insignias: lo que se hizo de más (no hacen falta para terminar). */
-const BADGES: ReadonlyArray<{ title: string; got: (e: StoryEngine) => boolean }> = [
-  { title: 'Cronista', got: (e) => e.interviews >= 4 },
+/** Insignias: lo que se hizo de más (no hacen falta para terminar). `phrases`: sólo existe con frases. */
+const BADGES: ReadonlyArray<{ title: string; got: (e: StoryEngine) => boolean; phrases?: boolean }> = [
+  { title: 'Cronista', got: (e) => e.interviews >= 4, phrases: true },
   { title: 'Explorador', got: (e) => e.places >= 24 },
   { title: 'Programación de manual', got: (e) => e.flag('perfecto:robot') },
   { title: 'Bandeja perfecta', got: (e) => e.flag('perfecto:menu') },
@@ -164,6 +173,12 @@ interface ActiveActivity {
 interface Timer {
   at: number;
   fn: () => void;
+}
+
+/** Lo que hace un personaje en su lugar. Sin frases nadie gesticula como si hablara. */
+function stationAnim(st: StationDef): NpcAnim {
+  const a = st.anim ?? 'idle';
+  return a === 'talk' && !SESSION.phrases ? 'idle' : a;
 }
 
 /** Nivel de un punto: el de los pies dentro del predio, planta baja afuera. */
@@ -234,6 +249,8 @@ export class GameDirector {
   private titleT = 0;
   private lastPick = 0;
   private distanceText = '';
+  /** Último saludo sin frases: a quién, cuándo y si hizo avanzar la historia (lo leen las herramientas). */
+  private greeted: { npc: string; at: number; due: boolean } | null = null;
 
   // VR
   private xr: WebXRDefaultExperience | null = null;
@@ -258,7 +275,7 @@ export class GameDirector {
     this.population = deps.population;
     this.frame = deps.school;
     this.store = localSaveStore();
-    this.engine = new StoryEngine(this.store.load());
+    this.engine = new StoryEngine(this.store.load(), { phrases: SESSION.phrases });
 
     // --- objetos interactivos: ancla → punto del mundo -------------------
     for (const def of INTERACTABLES) {
@@ -285,7 +302,7 @@ export class GameDirector {
       bins: item('puntoLimpio'),
     });
     this.doors = new Doors(this.scene, this.frame, (open, at) => this.audio.door(open, at));
-    this.lights = deps.fixtures && deps.fixtures.size > 0 ? new Lights(this.scene, this.frame, deps.fixtures) : null;
+    this.lights = deps.fixtures && deps.fixtures.size > 0 ? new Lights(this.scene, this.frame, deps.fixtures, deps.onRoomLights) : null;
     this.markers = new Markers(this.scene);
     this.screens = new Screens(this.scene, this.frame, this.screenSpecs());
 
@@ -315,6 +332,7 @@ export class GameDirector {
     });
     this.hud.setFreeRoam(SESSION.freeRoam);
     this.hud.setVisible(SESSION.hud);
+    this.hud.setPhrases(SESSION.phrases);
 
     this.beforeRender = this.scene.onBeforeRenderObservable.add(this.update);
     this.pointerObs = this.scene.onPointerObservable.add(this.onPointer);
@@ -334,7 +352,7 @@ export class GameDirector {
   get progressText(): string {
     const o = this.engine.mainObjectives()[0];
     const head = `${this.engine.stamps}/${TOTAL_STAMPS} sellos`;
-    return o ? `${head} · ${o.title}` : `${head} · Recorrido completo`;
+    return o ? `${head} · ${this.engine.objectiveTitle(o)}` : `${head} · Recorrido completo`;
   }
 
   /** Si está la pantalla de título (todavía no se juega). */
@@ -345,6 +363,16 @@ export class GameDirector {
   /** Nombre del ambiente donde está el jugador (el HUD ya lo muestra). */
   get placeLabel(): string {
     return this.roomName;
+  }
+
+  /** Si el juego tiene frases (`?frases=1`) o es callado (por defecto). */
+  get phrases(): boolean {
+    return SESSION.phrases;
+  }
+
+  /** Último saludo sin frases, para las herramientas: a quién, cuándo (reloj del juego) y si avanzó la historia. */
+  get lastGreeting(): { npc: string; at: number; due: boolean } | null {
+    return this.greeted;
   }
 
   /** Conecta el panel 3D, el láser y la muñeca del visor. */
@@ -407,7 +435,7 @@ export class GameDirector {
     this.modal = null;
     this.markers.setArrows([]);
     this.store.clear();
-    this.engine = new StoryEngine();
+    this.engine = new StoryEngine(null, { phrases: SESSION.phrases });
     this.stationSpots.clear();
     this.currentChapter = null;
     this.currentMain = '';
@@ -461,8 +489,9 @@ export class GameDirector {
     this.vrToast('Prólogo', 'Llegada a Laprida');
     this.endCutscene();
     await this.wait(1.6);
+    // Lola saluda sin hablar: no comenta por su cuenta (lo pidió el usuario);
+    // la misión sale en el panel de objetivos.
     this.npc('lola')?.handle?.play('wave');
-    this.bark('lola', '¡Llegaste! Hoy arrancamos el Recorrido 40. Rubén, el portero, nos abre: está en el portal.');
   }
 
   // ===================================================================== cuadro
@@ -673,7 +702,7 @@ export class GameDirector {
           const W = toWorld(this.frame, spot.u + Math.sin(-yaw), spot.v + Math.cos(yaw));
           h.face({ x: W.x, z: W.z });
           const st = n.station;
-          if (st && !st.follow && !n.busy) h.play(st.anim ?? 'idle', true);
+          if (st && !st.follow && !n.busy) h.play(stationAnim(st), true);
         }
       })
       .catch(() => {
@@ -699,7 +728,7 @@ export class GameDirector {
       const here = this.npcSpot(n);
       if (instant || !this.seen(here) || here.level !== spot.level || Math.hypot(here.u - spot.u, here.v - spot.v) > 30) {
         this.teleportNpc(n, spot, yaw);
-        n.handle?.play(st.anim ?? 'idle', true);
+        n.handle?.play(stationAnim(st), true);
       } else {
         this.walkNpc(n, spot, yaw);
       }
@@ -788,8 +817,8 @@ export class GameDirector {
         case 'complete': {
           objectivesChanged = true;
           const o = objective(e.id);
-          if (o && !o.optional) this.notify('objective', 'Objetivo cumplido', o.title);
-          else if (o) this.notify('objective', 'Secundario cumplido', o.title);
+          if (o && !o.optional) this.notify('objective', 'Objetivo cumplido', this.engine.objectiveTitle(o));
+          else if (o) this.notify('objective', 'Secundario cumplido', this.engine.objectiveTitle(o));
           this.sfx('objective');
           break;
         }
@@ -830,14 +859,6 @@ export class GameDirector {
         case 'discover': {
           const p = PLACES.find((pl) => pl.id === e.place);
           if (p) this.notify('place', 'Lugar descubierto', p.title);
-          // Lola comenta el lugar si está con el jugador (no desde otro piso).
-          const line = BARKS[e.place];
-          const lola = this.npc('lola');
-          if (line && lola?.following && this.engine.data.done.length > 0) {
-            const at = this.npcSpot(lola);
-            const near = at.level === this.level && Math.hypot(at.u - this.feetLocal.u, at.v - this.feetLocal.v) < 9;
-            if (near && this.engine.bark(e.place)) this.bark('lola', line);
-          }
           break;
         }
         default:
@@ -863,6 +884,8 @@ export class GameDirector {
   }
 
   private bark(who: string, text: string): void {
+    // Sin frases nadie comenta nada: ni en el HUD, ni en el visor, ni con voz.
+    if (!SESSION.phrases) return;
     const c = CHARACTERS.find((ch) => ch.id === who);
     if (!c) return;
     this.hud.bark(c.name, c.color, text, Math.min(9, 2.5 + text.length / 18));
@@ -929,9 +952,10 @@ export class GameDirector {
     const main = this.engine.mainObjectives();
     const side = this.engine.sideObjectives();
     const def = chapter(ch);
+    const title = (o: ObjectiveDef) => this.engine.objectiveTitle(o);
     const items = [
-      ...main.slice(0, 3).map((o, k) => ({ text: o.title, hint: k === 0 ? o.hint : undefined, distance: k === 0 ? this.distanceText : undefined })),
-      ...side.slice(0, 2).map((o) => ({ text: o.title, side: true })),
+      ...main.slice(0, 3).map((o, k) => ({ text: title(o), hint: k === 0 ? o.hint : undefined, distance: k === 0 ? this.distanceText : undefined })),
+      ...side.slice(0, 2).map((o) => ({ text: title(o), side: true })),
     ];
     if (ch === 'fin') items.push({ text: 'Seguí explorando: la escuela queda abierta.', hint: 'Reiniciá desde el menú para jugar otra vez.', distance: undefined });
     this.hud.setObjective({ chapter: def.kicker, title: def.title, items, stamps: this.engine.stamps, totalStamps: TOTAL_STAMPS });
@@ -1145,7 +1169,8 @@ export class GameDirector {
     const [kind, id] = key.split(':') as [string, string];
     if (kind === 'npc') {
       const n = this.npc(id)!;
-      return { verb: 'Hablar', target: `${n.def.name} · ${n.def.role}` };
+      // Sin frases nadie contesta: a la gente se la saluda.
+      return { verb: SESSION.phrases ? 'Hablar' : 'Saludar', target: `${n.def.name} · ${n.def.role}` };
     }
     if (kind === 'lock') return { verb: 'Cerrado', target: 'Puerta', locked: true };
     if (kind === 'door') return { verb: this.doors.isOpen(id) ? 'Cerrar' : 'Abrir', target: `Puerta · ${this.doors.label(id)}` };
@@ -1176,7 +1201,7 @@ export class GameDirector {
       const l = LOCKS.find((x) => x.id === id);
       if (l) {
         this.sfx('error');
-        this.notify('info', 'Está cerrado', l.reason);
+        this.notify('info', 'Está cerrado', (!SESSION.phrases && l.silentReason) || l.reason);
       }
     }
   }
@@ -1244,13 +1269,18 @@ export class GameDirector {
 
   private fill(text: string): string {
     const o = this.engine.mainObjectives()[0];
-    const goal = o ? o.title.charAt(0).toLowerCase() + o.title.slice(1) : 'seguir explorando';
+    const t = o ? this.engine.objectiveTitle(o) : '';
+    const goal = o ? t.charAt(0).toLowerCase() + t.slice(1) : 'seguir explorando';
     return text.replace('{objetivo}', goal).replace('{sellos}', `${this.engine.stamps} de ${TOTAL_STAMPS}`);
   }
 
   private async talk(npcId: string): Promise<void> {
     const n = this.npc(npcId);
     if (!n) return;
+    if (!SESSION.phrases) {
+      this.greet(n);
+      return;
+    }
     const def = this.engine.dialogueFor(npcId);
     if (!def) {
       this.bark(npcId, n.def.idle[Math.floor(Math.random() * n.def.idle.length)] ?? '¡Hola!');
@@ -1295,10 +1325,44 @@ export class GameDirector {
     this.setModal(null);
     this.sfx('close');
     const st = n.station;
-    if (st && !st.follow) n.handle?.play(st.anim ?? 'idle', true);
+    if (st && !st.follow) n.handle?.play(stationAnim(st), true);
     const act = this.pendingActivity;
     this.pendingActivity = null;
     if (act) this.startActivity(act, npcId);
+  }
+
+  /**
+   * Saludar sin frases: lo que la charla pendiente hacía avanzar pasa igual,
+   * en silencio (`StoryEngine.silentTalk`: puertas, actividades, objetivos,
+   * sellos), y el personaje contesta sólo con el cuerpo: se da vuelta y
+   * saluda, señala o aplaude. Si la charla abría una actividad, empieza. Sin
+   * nada pendiente, un saludo con la mano y un clic.
+   */
+  private greet(n: NpcSlot): void {
+    const P = this.worldOf({ ...this.feetLocal, level: this.level });
+    const { effects, anim } = this.engine.silentTalk(n.def.id);
+    const due = effects.length > 0;
+    this.greeted = { npc: n.def.id, at: this.clock, due };
+    try {
+      n.handle?.face({ x: P.x, z: P.z });
+      n.handle?.setLookAtPlayer(true);
+      n.handle?.play(anim ?? (due ? 'listen' : 'wave'));
+    } catch {
+      // Personaje no disponible.
+    }
+    this.click(due ? 880 : 660);
+    this.react(effects);
+    // El gesto es de una vez: después vuelve a lo que hacía en su lugar, si
+    // sigue ahí y ningún guion (simulacro, créditos) tomó el control.
+    const st = n.station;
+    if (!effects.some((e) => e.do === 'script')) {
+      this.after(2.2, () => {
+        if (st && n.station === st && !st.follow && !n.busy && !n.walking && this.modal === null) n.handle?.play(stationAnim(st), true);
+      });
+    }
+    const act = this.pendingActivity;
+    this.pendingActivity = null;
+    if (act) this.startActivity(act, n.def.id);
   }
 
   /** Muestra algo que espera una elección (HUD o panel del visor) y la devuelve. */
@@ -1349,7 +1413,8 @@ export class GameDirector {
     const def = it.def;
     if (!this.engine.interactableReady(def)) {
       this.sfx('error');
-      this.showCard({ kicker: def.label, title: def.label, text: def.notReady ?? 'Todavía no.' });
+      const text = (!SESSION.phrases && def.silentNotReady) || def.notReady || 'Todavía no.';
+      this.showCard({ kicker: def.label, title: def.label, text });
       return;
     }
     switch (def.kind) {
@@ -1363,7 +1428,6 @@ export class GameDirector {
         this.sfx('select');
         this.click(880);
         this.paintScreen(id === 'tele' ? 'tele' : 'pizarra', true);
-        if (id === 'pizarra') this.bark('lola', '¡Mirá! La presentación del aniversario, con los sellos que llevamos.');
         break;
       case 'bell': {
         const P = this.props.bellPosition();
@@ -1458,7 +1522,7 @@ export class GameDirector {
   // ================================================================= actividades
 
   private startActivity(id: ActivityId, host: string | null): void {
-    const act = createActivity(id);
+    const act = createActivity(id, Math.random, SESSION.phrases);
     this.activity = { id, act, version: -1, host };
     this.setModal('activity');
     this.sfx('open');
@@ -1629,7 +1693,6 @@ export class GameDirector {
     } catch {
       // Audio opcional.
     }
-    this.bark('lola', '¡Recreo! Mirá, bajó Martín, el preceptor de secundaria: está en la escalera del hall.');
     // Un recreo dura lo que dura: después la escuela vuelve a clase.
     this.after(80, () => {
       if (this.phase === 'recreo') this.setPhase('clase');
@@ -1698,7 +1761,8 @@ export class GameDirector {
     this.player.teleport(this.worldOf(ACT.player), stage);
     this.syncStations(true);
     for (const n of this.npcs) {
-      if (n.def.id === 'ines') n.handle?.play('talk', true);
+      // Sin frases Inés no da un discurso: saluda al público desde el escenario.
+      if (n.def.id === 'ines') n.handle?.play(SESSION.phrases ? 'talk' : 'wave', SESSION.phrases);
       else if (n.station?.anim) n.handle?.play('listen', true);
     }
     await this.wait(0.5);
@@ -1713,20 +1777,23 @@ export class GameDirector {
   private async scriptCredits(): Promise<void> {
     for (const n of this.npcs) n.handle?.play('clap', true);
     this.sfx('reward');
-    this.bark('lola', '¡Bravo! ¡Cuarenta años!');
     await this.wait(3.2);
     // Si la última línea del acto sigue abierta, se espera a que termine.
     for (let g = 0; g < 600 && this.modal !== null; g++) await this.wait(0.2);
     this.music('credits');
     const d = this.engine.data;
-    const speech = { personas: '«Las personas: cada una me enseñó algo.»', espacios: '«Los espacios para crear, jugar y aprender.»', cuidado: '«Que acá nos cuidamos entre todos.»' }[
-      this.engine.choice('discurso') ?? 'personas'
-    ] ?? '';
+    // Sin frases no hubo discurso ni entrevistas: los créditos no citan a nadie.
+    const phrases = SESSION.phrases;
+    const speech = !phrases
+      ? ''
+      : ({ personas: '«Las personas: cada una me enseñó algo.»', espacios: '«Los espacios para crear, jugar y aprender.»', cuidado: '«Que acá nos cuidamos entre todos.»' }[
+          this.engine.choice('discurso') ?? 'personas'
+        ] ?? '');
     const mins = Math.max(1, Math.round(d.seconds / 60));
     const stats = [
       { value: `${this.engine.stamps}/${TOTAL_STAMPS}`, label: 'SELLOS' },
       { value: `${this.engine.places}/${PLACES.length}`, label: 'LUGARES' },
-      { value: `${this.engine.interviews}`, label: 'VOCES' },
+      ...(phrases ? [{ value: `${this.engine.interviews}`, label: 'VOCES' }] : []),
     ];
     const lines = [
       '#Recorrido 40',
@@ -1736,7 +1803,7 @@ export class GameDirector {
       '#Personajes (ficticios)',
       ...CHARACTERS.map((c) => `${c.name} · ${c.role}`),
       '',
-      ...(Object.keys(d.interviews).length
+      ...(phrases && Object.keys(d.interviews).length
         ? ['#Voces del recorrido', ...Object.entries(d.interviews).map(([who, q]) => `«${q}» — ${CHARACTERS.find((c) => c.id === who)?.name ?? who}`), '']
         : []),
       '#La escuela',
@@ -1753,7 +1820,10 @@ export class GameDirector {
     ];
     if (this.inXR && this.panel) {
       this.setModal('card');
-      await this.ask({ kind: 'menu', kicker: 'Recorrido 40 completo', title: '¡Felicitaciones!', text: `Tu mensaje en el acto: ${speech} Sellos ${stats[0].value} · lugares ${stats[1].value} · voces ${stats[2].value}.`, buttons: ['Seguir explorando'] });
+      const text = phrases
+        ? `Tu mensaje en el acto: ${speech} Sellos ${stats[0].value} · lugares ${stats[1].value} · voces ${stats[2].value}.`
+        : `Sellos ${stats[0].value} · lugares ${stats[1].value}.`;
+      await this.ask({ kind: 'menu', kicker: 'Recorrido 40 completo', title: '¡Felicitaciones!', text, buttons: ['Seguir explorando'] });
       this.closeModalUI();
       this.setModal(null);
       this.setPhase('recreo');
@@ -1761,7 +1831,7 @@ export class GameDirector {
       return;
     }
     this.setModal('cutscene');
-    this.hud.showCredits({ speech: `Tu mensaje en el acto: ${speech}`, stats, lines }, () => {
+    this.hud.showCredits({ speech: speech ? `Tu mensaje en el acto: ${speech}` : '', stats, lines }, () => {
       this.setModal(null);
       this.setPhase('recreo');
       this.music('none');
@@ -2043,17 +2113,22 @@ export class GameDirector {
   private passport(): PassportView {
     const d = this.engine.data;
     const ch = chapter(this.engine.currentChapter());
+    // Sin frases no hay entrevistas: ni voces en el resumen, ni citas, ni la insignia de Cronista.
+    const phrases = SESSION.phrases;
+    const voices = phrases ? ` · voces ${this.engine.interviews}` : '';
     return {
-      summary: `${ch.kicker} · ${ch.title}. Sellos ${this.engine.stamps}/${TOTAL_STAMPS} · lugares ${this.engine.places}/${PLACES.length} · voces ${this.engine.interviews}. Tiempo de juego: ${Math.round(d.seconds / 60)} min.`,
+      summary: `${ch.kicker} · ${ch.title}. Sellos ${this.engine.stamps}/${TOTAL_STAMPS} · lugares ${this.engine.places}/${PLACES.length}${voices}. Tiempo de juego: ${Math.round(d.seconds / 60)} min.`,
       stamps: STAMP_ORDER.map((s) => ({ title: STAMPS[s].title, got: this.engine.stamp(s) })),
       places: PLACES.map((p) => ({ title: p.title, got: this.engine.discovered(p.id) })),
-      quotes: Object.entries(d.interviews).map(([who, text]) => {
-        const c = CHARACTERS.find((ch2) => ch2.id === who);
-        return { who: c ? `${c.name}, ${c.role}` : who, text };
-      }),
+      quotes: !phrases
+        ? []
+        : Object.entries(d.interviews).map(([who, text]) => {
+            const c = CHARACTERS.find((ch2) => ch2.id === who);
+            return { who: c ? `${c.name}, ${c.role}` : who, text };
+          }),
       items: [
         ...Object.entries(ITEMS_INFO).map(([id, info]) => ({ title: info.title, got: this.engine.item(id) })),
-        ...BADGES.map((b) => ({ title: `Insignia: ${b.title}`, got: b.got(this.engine) })),
+        ...BADGES.filter((b) => phrases || !b.phrases).map((b) => ({ title: `Insignia: ${b.title}`, got: b.got(this.engine) })),
       ],
     };
   }
@@ -2122,7 +2197,8 @@ export class GameDirector {
     this.hud.hideTitle();
     this.xrMenu = false;
     this.resume(true);
-    this.after(5, () => this.vrToast('Controles', 'Stick izq.: caminar · A o gatillo: hablar, seguir y elegir'));
+    const hint = SESSION.phrases ? 'Stick izq.: caminar · A o gatillo: hablar, seguir y elegir' : 'Stick izq.: caminar · A o gatillo: saludar, usar y elegir';
+    this.after(5, () => this.vrToast('Controles', hint));
   }
 
   /** Botones del visor del cuadro anterior, por control (gatillo, A/X, B/Y). */

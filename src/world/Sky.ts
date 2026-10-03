@@ -159,9 +159,16 @@ class SkyPlugin extends MaterialPluginBase {
     this.cloudLit = p.cloudLit;
     this.cloudShade = p.cloudShade;
     // shape: x exponente del degradado, y bruma, z halo, w brillo del disco.
-    this.shape = [0.42, p.haze, p.sunGlow, 26 * Math.max(0.25, p.sunIntensity / 2.5)];
+    // El disco tiene casi el tamaño real (ver el shader): con un octavo del
+    // área lleva ocho veces la energía, para que el bloom lo haga brillar
+    // igual.
+    this.shape = [0.42, p.haze, p.sunGlow, 208 * Math.max(0.25, p.sunIntensity / 2.5)];
     // cloud: x umbral de cobertura, y suavidad, z opacidad, w (libre).
-    this.cloud = [1 - p.cloudCover * 0.95, 0.2, 0.92, 0];
+    // ×1,12 y no ×0,95: con la cobertura de mediodía (0,34) el umbral quedaba
+    // por encima de casi todas las crestas del ruido y el cielo era un azul
+    // vacío con dos hilachas; un cielo con cúmulos sueltos da escala y
+    // profundidad (y, al moverse, vida) en el visor. Borde algo más blando.
+    this.cloud = [1 - p.cloudCover * 1.12, 0.24, 0.92, 0];
   }
 
   override getUniforms() {
@@ -261,10 +268,18 @@ class SkyPlugin extends MaterialPluginBase {
           // Nubes: plano alto, curvado hacia el horizonte (dir.y + 0,16).
           float cover = 0.0;
           if (h > 0.0) {
-            vec2 drift = vec2(clock * 0.0016, clock * 0.0007);
+            // Deriva de ~0,6°/s en el cénit (un cúmulo a 1,5 km con viento de
+            // 10-15 m/s): en el visor se nota que el cielo se mueve si uno lo
+            // mira unos segundos, sin que parezca acelerado.
+            vec2 drift = vec2(clock * 0.0021, clock * 0.0009);
             vec2 uv = dir.xz / (h + 0.16) * 0.22 + drift;
+            // La octava de detalle corre a otra velocidad y en otra dirección
+            // que la masa: los bordes se deshacen y rehacen mientras la nube
+            // avanza, en vez de una calcomanía que se desliza entera. Mismas
+            // tres lecturas de textura.
+            vec2 boil = vec2(clock * -0.0013, clock * 0.0024);
             float n = texture2D(skyCloudSampler, uv).r * 0.68
-                    + texture2D(skyCloudSampler, uv * 2.6 + vec2(0.37, 0.11)).r * 0.32;
+                    + texture2D(skyCloudSampler, uv * 2.6 + vec2(0.37, 0.11) + boil).r * 0.32;
             cover = smoothstep(skyCloud.x, skyCloud.x + skyCloud.y, n);
             // Autosombreado barato: densidad un paso hacia el sol. Si hay más
             // nube hacia el sol, esta parte está en sombra.
@@ -279,8 +294,12 @@ class SkyPlugin extends MaterialPluginBase {
             sky = mix(sky, mix(skyHorizon, lit, fade), cover);
           }
 
-          // Bajo el horizonte: de la niebla al rebote del suelo.
-          sky = mix(sky, skyGround, smoothstep(0.0, -0.2, h));
+          // Bajo el horizonte: de la niebla al rebote del suelo. La franja que
+          // queda justo debajo sigue del color de la niebla: volando alto, el
+          // suelo cortado por el plano lejano deja ver ese cielo, y con la
+          // mezcla desde h = 0 era una banda marrón detrás de los edificios
+          // lejanos. Más abajo sigue marrón para el rebote de la luz ambiente.
+          sky = mix(sky, skyGround, smoothstep(-0.1, -0.35, h));
           return vec4(sky, cover);
         }
       `,
@@ -293,7 +312,9 @@ class SkyPlugin extends MaterialPluginBase {
           // Disco solar en HDR: el bloom lo hace brillar en escritorio y el
           // mapeo tonal lo deja blanco cálido en el visor.
           float mu = dot(skyDir, skySun.xyz);
-          float disk = smoothstep(0.99955, 0.99978, mu) * (1.0 - skyRad.a * 0.85);
+          // Casi del tamaño real (0,53°): con 0,99955 medía más de 3° y en
+          // el visor era una luna blanca enorme.
+          float disk = smoothstep(0.999965, 0.99999, mu) * (1.0 - skyRad.a * 0.85);
           skyLinear += skySunColor * disk * skyShape.w;
         }
         // El material estándar trabaja en espacio gamma y pasa a lineal

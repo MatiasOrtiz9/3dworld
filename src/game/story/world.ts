@@ -201,6 +201,7 @@ export const INTERACTABLES: readonly InteractableDef[] = [
     size: [1.0, 0.4, 1.0],
     ready: (q) => q.flag('robotExplicado'),
     notReady: 'Primero hablá con el Profe Tomás: él explica cómo se programa.',
+    silentNotReady: 'Primero saludá al Profe Tomás: él prepara la pista.',
   },
   // --- Cantina ---------------------------------------------------------------
   {
@@ -315,7 +316,6 @@ export const INTERACTABLES: readonly InteractableDef[] = [
     when: (q) => q.available('s.camara'),
     effects: [
       { do: 'item', id: 'camara' },
-      { do: 'bark', who: 'lola', text: '¡Mi cámara! Estaba abajo de la campera. ¡Gracias! Ahora sí: fotos para todo el recorrido.' },
     ],
   },
   {
@@ -625,6 +625,8 @@ const SECOND = 'El aula de danzas está cerrada hasta que Martín, el preceptor,
 const JARDIN = 'El jardín abre después del simulacro. ¡Paciencia!';
 
 const ENTRADA = 'Rubén, el portero, abre la escuela: hablá con él en el portal.';
+/** Sin frases nadie habla: al portero se lo saluda (ver `phrases.ts`). */
+const ENTRADA_SILENT = 'Rubén, el portero, abre la escuela: saludalo en el portal.';
 
 export const LOCKS: readonly LockDef[] = [
   // Antes de hablar con Rubén la escuela está cerrada: las puertas del portal
@@ -660,7 +662,9 @@ export const LOCKS: readonly LockDef[] = [
       reason: JARDIN,
     }),
   ),
-].filter((l): l is LockDef => l !== null);
+]
+  .filter((l): l is LockDef => l !== null)
+  .map((l) => (l.reason === ENTRADA ? { ...l, silentReason: ENTRADA_SILENT } : l));
 
 // ============================================================ escaleras guía
 

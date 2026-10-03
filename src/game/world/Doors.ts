@@ -33,7 +33,9 @@ const LEAF: Record<string, Color3> = {
   chairGreen: hex('#2f7a5c'),
 };
 const BOARD = hex('#f1f2f1');
-const GLASS = hex('#86a6b6');
+// Vidrio oscuro, como el del constructor (decisión 9) y las puertas del
+// recorrido de 2020: el gris celeste claro se leía como un panel pintado.
+const GLASS = hex('#4f6470');
 const HANDLE = hex('#2b2f36');
 
 /** Ángulo de la hoja abierta: contra el muro del ambiente, como las dibujaba la escuela. */
@@ -100,13 +102,21 @@ export class Doors {
     // techo, como los interiores) las dos caras se leen igual que la pared.
     this.material = new PBRMetallicRoughnessMaterial('game-doors', scene);
     calibratePbr(this.material);
-    (this.material as unknown as { _environmentIntensity: number })._environmentIntensity = INTERIOR_ENV * 1.4;
+    // Sin emisivo gris: no es proporcional al color y lavaba las hojas rojas,
+    // azules y verdes en los rincones oscuros (la roja salía salmón o malva).
+    // La luz del cielo, más alta, hace ese relleno en proporción al color.
+    (this.material as unknown as { _environmentIntensity: number })._environmentIntensity = INTERIOR_ENV * 2.2;
     this.material.baseColor = new Color3(1, 1, 1);
     this.material.metallic = 0;
     this.material.roughness = 0.55;
-    this.material.emissiveColor = new Color3(0.05, 0.05, 0.05);
+    this.material.emissiveColor = new Color3(0, 0, 0);
     const mesh = CreateBox('game-doors', { size: 1 }, scene);
     mesh.material = this.material;
+    // Recibe sombra: sólo los proyectores de la ciudad la reciben al activar
+    // las sombras, y estas hojas se crean después; sin esto el sol de la
+    // mañana las iluminaba a través de techos y muros. El material se compila
+    // en el primer cuadro, después de las sombras: los defines entran.
+    mesh.receiveShadows = true;
     this.set = new ThinSet(mesh, 256);
 
     for (const def of DOORS) {
@@ -116,18 +126,29 @@ export class Doors {
         const parts: Part[] = [];
         const add = (c: Color3, f0: number, f1: number, y0: number, y1: number, thick: number) =>
           parts.push({ i: this.set.add(c), f0, f1, y0, y1, thick });
+        // Fracción del ancho a `m` metros del canto libre.
+        const fr = (m: number) => 1 - m / L.width;
         if (def.glass) {
           // Hoja de aluminio: tablero abajo, paño vidriado arriba en su marco.
+          // El montante del lado del picaporte es más ancho (8 cm): ahí va
+          // la cerradura, y el picaporte no queda montado sobre el vidrio.
           add(leafColor, 0, 1, -0.02, 0.95, 0.045);
-          add(GLASS, 0.06, 0.94, 0.95, top - 0.12, 0.02);
+          add(GLASS, 0.06, fr(0.08), 0.95, top - 0.12, 0.02);
           add(leafColor, 0, 1, top - 0.12, top, 0.05);
           add(leafColor, 0, 0.06, 0.95, top - 0.12, 0.05);
-          add(leafColor, 0.94, 1, 0.95, top - 0.12, 0.05);
+          add(leafColor, fr(0.08), 1, 0.95, top - 0.12, 0.05);
         } else {
           add(leafColor, 0, 1, -0.02, top, 0.045);
         }
-        // Picaporte, de los dos lados.
-        add(HANDLE, 0.86, 0.95, 0.96, 1.0, 0.13);
+        // Picaporte, de los dos lados: roseta pasante de 4,5 × 7 cm y una
+        // palanca de 12,5 cm hacia la bisagra que asoma 6 cm de cada cara
+        // (antes, un taco de 9 × 4 cm que atravesaba la hoja). Las dos
+        // palancas son UNA caja pasante (una instancia por hoja, no dos: las
+        // hojas se dibujan siempre). Medidas en metros desde el canto libre:
+        // con fracciones del ancho cada puerta tenía otro picaporte.
+        add(HANDLE, fr(0.075), fr(0.03), 0.97, 1.04, 0.09);
+        // Más gruesa, más baja y más larga que la roseta: ninguna cara coplanar.
+        add(HANDLE, fr(0.175), fr(0.05), 0.99, 1.012, 0.122);
         return { def: L, parts };
       });
       const cu = (def.a[0] + def.b[0]) / 2;

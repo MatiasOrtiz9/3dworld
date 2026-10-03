@@ -93,6 +93,109 @@ export interface CityPlan {
   /** Sin canal: se conserva el campo con ancho 0 para el código heredado. */
   canal: { slope: number; offset: number; halfWidth: number };
   schoolSite?: { x0: number; x1: number; z0: number; z1: number };
+  /** La ciudad que sigue más allá del barrio (ver `Backdrop`). */
+  backdrop: Backdrop;
+  /** Refugios de colectivo y kiosco (ver `StreetProp`). */
+  props: StreetProp[];
+  /** Todos los bancos de vereda y de parada que dibuja `InfraBuilder` (ver `Bench`). */
+  benches: Bench[];
+  /**
+   * Centros de las mesitas de café que los locales sacan a la vereda (las
+   * sillas, a ±0,6 m a lo largo de la cuadra). Las llena `StreetLevel` al
+   * levantar los locales —el visor saca una por café y el escritorio dos—,
+   * así que el plano recién las tiene después de construir la ciudad: la
+   * gente de la vereda (que se arma después) las esquiva en vez de
+   * atravesarlas por el carril de la fachada.
+   */
+  cafeTables: { x: number; z: number }[];
+}
+
+/**
+ * Un volumen de la ciudad de fondo: una caja con fajas de ventanas en la
+ * cara que mira al barrio.
+ */
+export interface BackdropMass {
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+  h: number;
+  floors: number;
+  /** Índice de tono de fachada (lo resuelve el constructor). */
+  tone: number;
+  /** Normal en planta de la cara con frente (ventanas, local en planta baja). */
+  nx: number;
+  nz: number;
+  /** Lote de esquina: también lleva ventanas en el costado (`sx`, `sz`). */
+  sx: number;
+  sz: number;
+  /** 1: la manzana de enfrente, cruzando la calle perimetral; 2: el horizonte. */
+  layer: 1 | 2;
+}
+
+/**
+ * La ciudad que sigue.
+ *
+ * Antes, más allá de la hilera de manzanas sólo había pasto y niebla: desde
+ * la vereda, cada calle terminaba en el vacío y el barrio se leía como una
+ * maqueta sobre una mesa. Ahora una calle perimetral cierra la hilera y, del
+ * otro lado, siguen manzanas de entre medianeras (capa 1, a 30–80 m) y más
+ * atrás torres y tiras que se funden con la niebla (capa 2, 150–330 m).
+ * Son cajas baratas (ver `DistantCity`); la colisión las conoce.
+ */
+export interface Backdrop {
+  masses: BackdropMass[];
+  /** Manzanas de la capa 1 (macizas enteras, con su vereda alrededor). */
+  blocks: Array<{ cx: number; cz: number; half: number }>;
+  /** Calles visibles entre las manzanas de la capa 1 (sin tránsito). */
+  streets: Array<{ axis: 'x' | 'z'; at: number; from: number; to: number }>;
+}
+
+/**
+ * Equipamiento grande de vereda que se choca: refugios de colectivo y el
+ * kiosco de diarios. Es dato del plano para que la colisión y el dibujo
+ * coincidan (como las medidas de los edificios, HANDOFF 42).
+ */
+export interface StreetProp {
+  kind: 'busStop' | 'kiosk';
+  x: number;
+  z: number;
+  /** Hacia dónde mira (la calle): normal en planta. */
+  nx: number;
+  nz: number;
+}
+
+/** Altura de la vereda sobre el cero (la calzada está a 0,08): cordón de 12 cm. */
+export const SIDEWALK_H = 0.2;
+
+// Medidas de la sección de calle. Viven acá (y no en `InfraBuilder`) porque
+// las usan también la gente (`people/Sidewalks`) y el tránsito: si cada uno
+// tuviera su copia, un retoque en el dibujo dejaba a los peatones cruzando
+// fuera de la cebra o a los autos frenando sobre ella.
+/** Calzada: 42 % del ancho de la calle. */
+export const LANE_FRAC = 0.42;
+/** Ancho de la franja exterior de la vereda, donde están las rampas. */
+export const RAMP_LEN = 1.3;
+/** Distancia del eje de la calle transversal al centro de la senda peatonal. */
+export const CROSS_AT = 6.2;
+/** Ancho del cordón (canto de piedra entre la calzada y la vereda). */
+export const KERB_W = 0.32;
+
+/**
+ * Banco de vereda (o de parada de colectivo). `rotY` es el giro del banco:
+ * quien se sienta mira hacia (sin rotY, cos rotY), con la espalda al respaldo.
+ * Está en el plano para que la gente se siente justo donde se dibuja.
+ */
+export interface Bench {
+  x: number;
+  z: number;
+  rotY: number;
+  /**
+   * 'sidewalk': banco de vereda sobre la línea del arbolado; 'plaza': en la
+   * explanada de un edificio cívico; 'stop': un asiento del banco largo de
+   * una parada de colectivo (ese lo dibuja el refugio, no `InfraBuilder`).
+   */
+  kind: 'sidewalk' | 'plaza' | 'stop';
 }
 
 export interface LayoutOptions {
@@ -180,6 +283,21 @@ export function generateCityPlan(seed: number, options: LayoutOptions = {}): Cit
     // Entre las dos manzanas de la escuela la calle no existe: el predio es uno.
     { axis: 'z', at: -pitch / 2, width: streetWidth, tram: false, span: zs, gaps: [[schoolSite.z0, schoolSite.z1]] },
     { axis: 'z', at: pitch / 2, width: streetWidth, tram: false, span: zs },
+    // Calles perimetrales: cierran la hilera por afuera. Sin ellas, la cara
+    // exterior de cada manzana (con sus locales) daba a un pasto vacío.
+    { axis: 'x', at: zs[0], width: streetWidth, tram: false, span: xs },
+    { axis: 'x', at: zs[1], width: streetWidth, tram: false, span: xs },
+    { axis: 'z', at: xs[0], width: streetWidth, tram: false, span: zs },
+    { axis: 'z', at: xs[1], width: streetWidth, tram: false, span: zs },
+  ];
+
+  // En la vereda de enfrente de la escuela (Laprida), del lado de las
+  // manzanas: la parada frente a la vivienda, el kiosco junto a la llegada;
+  // y otra parada sobre Lafinur, frente al edificio cívico.
+  const props: StreetProp[] = [
+    { kind: 'busStop', x: 8, z: pitch - blockSize / 2 - 2.3, nx: 0, nz: -1 },
+    { kind: 'kiosk', x: -pitch + 6, z: pitch - blockSize / 2 - 2.2, nx: 0, nz: -1 },
+    { kind: 'busStop', x: 10, z: -pitch + blockSize / 2 + 2.3, nx: 0, nz: 1 },
   ];
 
   return {
@@ -192,7 +310,197 @@ export function generateCityPlan(seed: number, options: LayoutOptions = {}): Cit
     streetWidth,
     canal: { slope: 0, offset: -1e6, halfWidth: 0 },
     schoolSite,
+    // Azar propio: la ciudad de fondo no corre las alturas del barrio.
+    backdrop: generateBackdrop(new Rng((seed ^ 0x5ca1ab1e) >>> 0), pitch, blockSize),
+    props,
+    // Azar propio también: los bancos no mueven nada de lo que ya se sorteaba.
+    benches: generateBenches(new Rng((seed ^ 0x0be4c5) >>> 0), blocks, props, blockSize, streetWidth),
+    cafeTables: [],
   };
+}
+
+/**
+ * Bancos de vereda, de explanada y de parada (ver `Bench`).
+ *
+ * Antes los sorteaba `InfraBuilder` con el azar compartido de la ciudad, a
+ * 3,4 m de cada árbol: la gente no sabía dónde estaban y alguno quedaba
+ * pegado a una farola. Ahora van en lugares que nunca pisa otra cosa con
+ * cualquier densidad de arbolado (los árboles caen a ±10,5 m del medio de la
+ * cuadra con 2 por lado, o a ±5,25 y ±15,75 con 4; las farolas a ±9):
+ *  - en las veredas con árboles (−z y −x de cada manzana), al medio de la cuadra;
+ *  - en las otras dos, a 11 m del medio, junto al cantero de −15;
+ *  - en la explanada de los edificios cívicos, dos frente al vidrio.
+ */
+function generateBenches(rng: Rng, blocks: Block[], props: StreetProp[], blockSize: number, streetWidth: number): Bench[] {
+  const out: Bench[] = [];
+  const half = blockSize / 2;
+  // Misma línea que el arbolado de `InfraBuilder.streetscape`: 1 m detrás del cordón.
+  const line = half + streetWidth / 2 - ((streetWidth * LANE_FRAC) / 2 + KERB_W + 1.0);
+  const nearProp = (x: number, z: number) => props.some((p) => Math.abs(p.x - x) < 5 && Math.abs(p.z - z) < 5);
+  for (const b of blocks) {
+    if (b.landmark || b.kind === 'water' || b.kind === 'houses') continue;
+    const sides = [
+      { nx: 0, nz: -1, along: 0, p: 0.65 },
+      { nx: -1, nz: 0, along: 0, p: 0.65 },
+      { nx: 0, nz: 1, along: -11, p: 0.5 },
+      { nx: 1, nz: 0, along: -11, p: 0.5 },
+    ];
+    for (const s of sides) {
+      // Se tira siempre (aunque haya una parada): el resto no se corre.
+      const put = rng.chance(s.p);
+      const x = b.cx + (s.nx !== 0 ? s.nx * line : s.along);
+      const z = b.cz + (s.nz !== 0 ? s.nz * line : s.along);
+      if (!put || nearProp(x, z)) continue;
+      // De espaldas a la fachada, mirando a la calle.
+      out.push({ x, z, rotY: Math.atan2(s.nx, s.nz), kind: 'sidewalk' });
+    }
+    if (b.kind === 'civic') {
+      // Explanada entre el vidrio (82 % del lado) y la vereda.
+      const plaza = (b.width * 0.41 + half) / 2;
+      for (const s of [-1, 1]) {
+        out.push({ x: b.cx + s * rng.range(8, 12), z: b.cz + s * plaza, rotY: s > 0 ? Math.PI : 0, kind: 'plaza' });
+      }
+    }
+  }
+  // El banco largo del refugio (3,6 m, ver `StreetLevel.tramStop`): dos asientos.
+  for (const p of props) {
+    if (p.kind !== 'busStop') continue;
+    const bx = p.x - p.nx * 0.35;
+    const bz = p.z - p.nz * 0.35;
+    for (const s of [-0.9, 0.9]) {
+      out.push({ x: bx + p.nz * s, z: bz + p.nx * s, rotY: Math.atan2(p.nx, p.nz), kind: 'stop' });
+    }
+  }
+  return out;
+}
+
+/**
+ * La ciudad de fondo (ver `Backdrop`).
+ *
+ * Capa 1: las manzanas de la grilla que rodean la hilera (gx −1…4, gz 0…4
+ * fuera del barrio), cada una con lotes entre medianeras de 3 a 8 pisos: la
+ * variedad de alturas de una cuadra porteña, con sus medianeras ciegas.
+ * Capa 2: dos anillos más de grilla con torres y tiras, más altas hacia el
+ * este (el centro) y el sur; al norte, detrás de la escuela, bajas.
+ */
+function generateBackdrop(rng: Rng, pitch: number, blockSize: number): Backdrop {
+  const masses: BackdropMass[] = [];
+  const blocks: Backdrop['blocks'] = [];
+  const half = blockSize / 2;
+  const at = (g: number) => (g - 2) * pitch;
+  const inDistrict = (gx: number, gz: number) => gx >= 0 && gx <= 3 && gz >= 1 && gz <= 3;
+
+  for (let gx = -1; gx <= 4; gx++) {
+    for (let gz = 0; gz <= 4; gz++) {
+      if (inDistrict(gx, gz)) continue;
+      const cx = at(gx);
+      const cz = at(gz);
+      blocks.push({ cx, cz, half });
+      // Al norte (detrás de la escuela) la cuadra es más baja.
+      const maxFloors = gz === 0 ? 6 : 8;
+      const bar = rng.range(10, 13);
+      // Cuatro tiras alrededor del pulmón de manzana, cada una partida en lotes.
+      const sides = [
+        { nx: 0, nz: -1, along: 'x' as const, len: blockSize, off: -half + bar / 2 },
+        { nx: 0, nz: 1, along: 'x' as const, len: blockSize, off: half - bar / 2 },
+        { nx: -1, nz: 0, along: 'z' as const, len: blockSize - bar * 2, off: -half + bar / 2 },
+        { nx: 1, nz: 0, along: 'z' as const, len: blockSize - bar * 2, off: half - bar / 2 },
+      ];
+      for (const s of sides) {
+        const lots = s.along === 'x' ? rng.int(2, 4) : rng.int(1, 2);
+        // Anchos de lote desparejos que suman el frente.
+        const weights = Array.from({ length: lots }, () => rng.range(0.7, 1.4));
+        const total = weights.reduce((a, b) => a + b, 0);
+        let start = -s.len / 2;
+        for (let i = 0; i < lots; i++) {
+          const lw = (weights[i] / total) * s.len;
+          const mid = start + lw / 2;
+          start += lw;
+          const floors = rng.int(3, maxFloors);
+          // Lotes de esquina (los extremos de las tiras largas): ventanas
+          // también hacia la calle lateral.
+          const corner = s.along === 'x' && (i === 0 || i === lots - 1) ? (i === 0 ? -1 : 1) : 0;
+          masses.push({
+            x: s.along === 'x' ? cx + mid : cx + s.off,
+            z: s.along === 'x' ? cz + s.off : cz + mid,
+            w: s.along === 'x' ? lw - 0.05 : bar,
+            d: s.along === 'x' ? bar : lw - 0.05,
+            h: 4 + (floors - 1) * 3,
+            floors,
+            tone: rng.int(0, 7),
+            nx: s.nx,
+            nz: s.nz,
+            sx: corner,
+            sz: 0,
+            layer: 1,
+          });
+        }
+      }
+    }
+  }
+
+  // Capa 2: anillos de grilla 2 y 3 alrededor de la capa 1.
+  for (let gx = -3; gx <= 6; gx++) {
+    for (let gz = -2; gz <= 6; gz++) {
+      if (gx >= -1 && gx <= 4 && gz >= 0 && gz <= 4) continue;
+      const cx = at(gx);
+      const cz = at(gz);
+      // Algunas manzanas son parque: el horizonte respira.
+      if (rng.chance(0.2)) continue;
+      const dist = Math.hypot(cx + 28, cz);
+      // Dirección de la cara con ventanas: hacia el barrio.
+      const nx = -cx / Math.hypot(cx, cz);
+      const nz = -cz / Math.hypot(cx, cz);
+      const east = cx < -150;
+      // Todo lo que queda al norte de la hilera (detrás de la escuela vista
+      // desde Laprida) es bajo: nada asoma por encima del portal.
+      const north = cz < -100;
+      const count = rng.int(1, 3);
+      for (let k = 0; k < count; k++) {
+        const tower = rng.chance(east || cz > 150 ? 0.55 : 0.3);
+        // Hasta 20 pisos (61 m): la torre del barrio (62–76 m) sigue siendo
+        // la más alta del paisaje; las del fondo son el perfil, no el hito.
+        const floors = tower ? rng.int(north ? 8 : 12, north ? 12 : dist > 260 ? 20 : 17) : rng.int(4, north ? 7 : 10);
+        const w = tower ? rng.range(14, 22) : rng.range(18, 34);
+        const d = tower ? rng.range(14, 22) : rng.range(10, 14);
+        const turn = rng.chance(0.5);
+        masses.push({
+          x: cx + rng.range(-half + w / 2, half - w / 2) * 0.8,
+          z: cz + rng.range(-half + d / 2, half - d / 2) * 0.8,
+          w: turn ? d : w,
+          d: turn ? w : d,
+          h: 4 + (floors - 1) * 3,
+          floors,
+          tone: rng.int(0, 7),
+          // Se redondea a la cara de la caja más cercana a esa dirección.
+          nx: Math.abs(nx) > Math.abs(nz) ? Math.sign(nx) : 0,
+          nz: Math.abs(nx) > Math.abs(nz) ? 0 : Math.sign(nz),
+          sx: Math.abs(nx) > Math.abs(nz) ? 0 : Math.sign(nx),
+          sz: Math.abs(nx) > Math.abs(nz) ? Math.sign(nz) : 0,
+          layer: 2,
+        });
+      }
+    }
+  }
+
+  // Calles entre las manzanas de la capa 1 (prolongación de la grilla).
+  const streets: Backdrop['streets'] = [];
+  const edge = (g: number) => (g - 2) * pitch;
+  const x0 = edge(-1) - pitch / 2;
+  const x1 = edge(4) + pitch / 2;
+  const z0 = edge(0) - pitch / 2;
+  const z1 = edge(4) + pitch / 2;
+  // Borde exterior de la capa 1.
+  streets.push({ axis: 'x', at: z0, from: x0, to: x1 }, { axis: 'x', at: z1, from: x0, to: x1 });
+  streets.push({ axis: 'z', at: x0, from: z0, to: z1 }, { axis: 'z', at: x1, from: z0, to: z1 });
+  // Las calles del barrio siguen hasta el borde exterior.
+  for (const x of [edge(0) + pitch / 2, edge(1) + pitch / 2, edge(2) + pitch / 2]) {
+    streets.push({ axis: 'z', at: x, from: z0, to: edge(1) - pitch / 2 }, { axis: 'z', at: x, from: edge(3) + pitch / 2, to: z1 });
+  }
+  for (const z of [edge(1) + pitch / 2, edge(2) + pitch / 2]) {
+    streets.push({ axis: 'x', at: z, from: x0, to: edge(0) - pitch / 2 }, { axis: 'x', at: z, from: edge(3) + pitch / 2, to: x1 });
+  }
+  return { masses, blocks, streets };
 }
 
 /** Puestos del mercado sobre su plataforma, con pasillos de 1,6 m entre ellos. */

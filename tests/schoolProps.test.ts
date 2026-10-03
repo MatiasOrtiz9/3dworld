@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  FENCES,
   ITEMS,
   LANDINGS,
+  VOIDS,
+  inRect,
   SCHOOL,
   STAIRS,
   WALLS,
@@ -11,7 +14,10 @@ import {
   roomAt,
   voidsAt,
   FURNITURE,
-  KINDER_ROOMS,
+  PRIMARY_ROOMS,
+  chairScaleOf,
+  deskTopOf,
+  furnitureSize,
   type Item,
   type Level,
   type Opening,
@@ -66,8 +72,8 @@ function ringChairs(it: Item): Box[] {
   const small = it.kind === 'roundTable';
   for (let k = 0; k < 4; k++) {
     const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
-    const cu = it.u + Math.cos(a) * (it.w / 2 + 0.3);
-    const cv = it.v + Math.sin(a) * (it.w / 2 + 0.3);
+    const cu = it.u + Math.cos(a) * (it.w / 2 + FURNITURE.roundChair);
+    const cv = it.v + Math.sin(a) * (it.w / 2 + FURNITURE.roundChair);
     const face: Item['face'] = Math.abs(Math.cos(a)) > 0.5 ? (Math.cos(a) > 0 ? 'w' : 'e') : Math.sin(a) > 0 ? 'n' : 's';
     out.push(...chairBoxes(cu, cv, face, small ? FURNITURE.smallScale : 1));
   }
@@ -87,9 +93,9 @@ function boxes(it: Item): Box[] {
   const all = (y0: number, y1: number, tag = 'body') => box(u, v, w, d, y0, y1, tag);
   switch (it.kind) {
     case 'desk':
-      return [all(FURNITURE.deskTop - 0.04, FURNITURE.deskTop, 'top')];
+      return [all(deskTopOf(it) - 0.04, deskTopOf(it), 'top')];
     case 'table': {
-      const top = KINDER_ROOMS.has(roomAt(u, v, level(it))?.id ?? '') ? FURNITURE.smallTable : FURNITURE.tableTop;
+      const top = deskTopOf(it);
       return [all(top - 0.05, top, 'top')];
     }
     case 'teacherDesk': {
@@ -124,7 +130,7 @@ function boxes(it: Item): Box[] {
       return out;
     }
     case 'chair':
-      return chairBoxes(u, v, it.face, KINDER_ROOMS.has(roomAt(u, v, level(it))?.id ?? '') ? FURNITURE.smallScale : 1);
+      return chairBoxes(u, v, it.face, chairScaleOf(it));
     case 'plasticChair':
       return chairBoxes(u, v, it.face);
     case 'seats': {
@@ -687,11 +693,35 @@ describe('QA de medidas humanas', () => {
     expect(FURNITURE.smallTable).toBeLessThanOrEqual(0.6);
     expect(FURNITURE.seat * FURNITURE.smallScale).toBeGreaterThanOrEqual(0.26);
     expect(FURNITURE.seat * FURNITURE.smallScale).toBeLessThanOrEqual(0.36);
+    // Primaria (2º a 6º grado): talle 4–5, pupitre 0,64–0,71 y asiento
+    // 0,38–0,43, con la misma diferencia cómoda.
+    expect(FURNITURE.primaryDeskTop).toBeGreaterThanOrEqual(0.64);
+    expect(FURNITURE.primaryDeskTop).toBeLessThanOrEqual(0.71);
+    expect(FURNITURE.primarySeat).toBeGreaterThanOrEqual(0.38);
+    expect(FURNITURE.primarySeat).toBeLessThanOrEqual(0.43);
+    expect(FURNITURE.primaryDeskTop - FURNITURE.primarySeat).toBeGreaterThanOrEqual(0.24);
+    expect(FURNITURE.primaryDeskTop - FURNITURE.primarySeat).toBeLessThanOrEqual(0.3);
     // Pizarrón: borde inferior 0,8–1,0 m y superior 2,0–2,2 m.
     expect(FURNITURE.boardBottom).toBeGreaterThanOrEqual(0.8);
     expect(FURNITURE.boardBottom).toBeLessThanOrEqual(1.0);
     expect(FURNITURE.boardTop).toBeGreaterThanOrEqual(2.0);
     expect(FURNITURE.boardTop).toBeLessThanOrEqual(2.2);
+  });
+
+  it('en las aulas de primaria pupitres, mesas y sillas son de un mismo talle', () => {
+    for (const id of PRIMARY_ROOMS) {
+      const furn = ITEMS.filter((it) => (it.kind === 'desk' || it.kind === 'table' || it.kind === 'chair') && roomAt(it.u, it.v, level(it))?.id === id);
+      expect(furn.length, id).toBeGreaterThan(0);
+      for (const it of furn) {
+        if (it.kind === 'chair') {
+          // Sólo la silla del docente (junto a su escritorio) es de adulto.
+          const near = ITEMS.some((t) => t.kind === 'teacherDesk' && Math.hypot(t.u - it.u, t.v - it.v) < 1.0);
+          expect(furnitureSize(it), `${id} silla ${it.u},${it.v}`).toBe(near ? 'adult' : 'primary');
+        } else {
+          expect(deskTopOf(it), `${id} ${it.kind} ${it.u},${it.v}`).toBe(FURNITURE.primaryDeskTop);
+        }
+      }
+    }
   });
 
   it('pizarrones negros, matafuegos y equipos colgados a una altura posible', () => {
@@ -712,6 +742,91 @@ describe('QA de medidas humanas', () => {
       expect(it.h ?? 2.1, name(it)).toBeGreaterThanOrEqual(0.9);
       expect(it.h ?? 2.1, name(it)).toBeLessThanOrEqual(1.1);
     }
+  });
+
+  it('ningún canto de un hueco de escalera queda sin baranda, muro o tramo', () => {
+    // Se recorre cada borde de cada hueco: donde del otro lado hay piso de
+    // ese nivel, tiene que haber un muro, una baranda, o un tramo que llegue
+    // (o salga) justo ahí. Si no, el piso termina en el aire sobre el hueco.
+    const H = SCHOOL.storey;
+    // Una cornisa de piso más angosta que esto entre el hueco y un muro o una
+    // baranda no se puede pisar (el cuerpo mide 0,45 m de radio).
+    const LEDGE = 0.35;
+    const bad: string[] = [];
+    for (const h of VOIDS) {
+      const L = h.level;
+      const edges: Array<[number, number, number, number, number, number]> = [
+        [h.u0, h.v0, h.u1, h.v0, 0, -1],
+        [h.u0, h.v1, h.u1, h.v1, 0, 1],
+        [h.u0, h.v0, h.u0, h.v1, -1, 0],
+        [h.u1, h.v0, h.u1, h.v1, 1, 0],
+      ];
+      for (const [a0, b0, a1, b1, nu, nv] of edges) {
+        const len = Math.hypot(a1 - a0, b1 - b0);
+        const n = Math.round(len / 0.1);
+        let open = 0;
+        for (let k = 0; k < n; k++) {
+          const t = (k + 0.5) / n;
+          const u = a0 + (a1 - a0) * t;
+          const v = b0 + (b1 - b0) * t;
+          const ou = u + nu * 0.15;
+          const ov = v + nv * 0.15;
+          const floorOut = !!roomAt(ou, ov, L) && !VOIDS.some((o) => o.level === L && inRect(o, ou, ov));
+          const walled = WALLS.some((w) => {
+            if (w.level !== L) return false;
+            const g = wallGeo(w);
+            const tt = (u - w.a[0]) * g.du + (v - w.a[1]) * g.dv;
+            const d = Math.abs(-(u - w.a[0]) * g.dv + (v - w.a[1]) * g.du);
+            return tt >= -0.05 && tt <= g.len + 0.05 && d < g.t / 2 + LEDGE && !w.openings.some((o) => o.t0 <= tt && o.t1 >= tt && (o.hb ?? 0) < 0.9);
+          });
+          const railed = ITEMS.some((it) => it.kind === 'gate' && level(it) === L && Math.abs(u - it.u) <= it.w / 2 + LEDGE && Math.abs(v - it.v) <= it.d / 2 + LEDGE);
+          // Un tramo que llega a ese nivel o sale de él por ese borde.
+          const stair = STAIRS.some((s) => {
+            if (!inRect(s, u - nu * 0.05, v - nv * 0.05, 0.02)) return false;
+            const top = s.dir === 'u+' ? Math.abs(u - s.u1) < 0.06 : s.dir === 'u-' ? Math.abs(u - s.u0) < 0.06 : s.dir === 'v+' ? Math.abs(v - s.v1) < 0.06 : Math.abs(v - s.v0) < 0.06;
+            const foot = s.dir === 'u+' ? Math.abs(u - s.u0) < 0.06 : s.dir === 'u-' ? Math.abs(u - s.u1) < 0.06 : s.dir === 'v+' ? Math.abs(v - s.v0) < 0.06 : Math.abs(v - s.v1) < 0.06;
+            return (top && Math.abs(s.y1 - L * H) < 0.2) || (foot && Math.abs(s.y0 - L * H) < 0.2);
+          });
+          if (floorOut && !walled && !railed && !stair) open++;
+          else open = 0;
+          // Más de 20 cm seguidos sin protección.
+          if (open === 3) bad.push(`L${L} hueco ${h.u0},${h.v0}..${h.u1},${h.v1}: canto abierto en ${u.toFixed(2)},${v.toFixed(2)}`);
+        }
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it('las salidas de emergencia abren sin chocar con la reja de la línea municipal', () => {
+    const bad: string[] = [];
+    const cross = (p: [number, number], q: [number, number], a: readonly [number, number], b: readonly [number, number]) => {
+      const d = (x: readonly [number, number], y: readonly [number, number], z: readonly [number, number]) => (y[0] - x[0]) * (z[1] - x[1]) - (y[1] - x[1]) * (z[0] - x[0]);
+      return d(p, q, a) * d(p, q, b) < 0 && d(a, b, p) * d(a, b, q) < 0;
+    };
+    for (const g of GEOS) {
+      if (g.w.level !== 0) continue;
+      const nu = -g.dv;
+      const nv = g.du;
+      for (const o of g.w.openings) {
+        if (o.type !== 'exit') continue;
+        const at = (d: number): [number, number] => [g.w.a[0] + g.du * d, g.w.a[1] + g.dv * d];
+        const [mu, mv] = at((o.t0 + o.t1) / 2);
+        const rp = roomAt(mu + nu * 0.45, mv + nv * 0.45, 0);
+        const rn = roomAt(mu - nu * 0.45, mv - nv * 0.45, 0);
+        const ext = !rp && rn ? 1 : !rn && rp ? -1 : 0;
+        if (ext === 0) continue;
+        const len = o.t1 - o.t0;
+        for (const hng of [0.08, len - 0.08]) {
+          const p = at(o.t0 + hng);
+          const q0: [number, number] = [p[0] + nu * ext * (g.t / 2 + 0.02), p[1] + nv * ext * (g.t / 2 + 0.02)];
+          const q1: [number, number] = [q0[0] + nu * ext * ((len - 0.16) / 2 + 0.1), q0[1] + nv * ext * ((len - 0.16) / 2 + 0.1)];
+          for (const [a, b] of FENCES) {
+            if (cross(q0, q1, a, b)) bad.push(`salida ${o.t0.toFixed(2)}-${o.t1.toFixed(2)} de ${g.w.a}→${g.w.b}: la hoja cruza la reja ${a}→${b}`);
+          }
+        }
+      }
+    }
+    expect(bad).toEqual([]);
   });
 
   it('escalones con contrahuella de 14–19 cm y huella de 25 cm o más', () => {
@@ -908,7 +1023,7 @@ describe('QA de las hojas fijas', () => {
   it('las hojas abiertas contra el muro no atraviesan muebles', () => {
     // Mismo criterio que `SchoolBuilder.opening`: abren hacia el ambiente
     // (no hacia el pasillo) y las de emergencia hacia la calle.
-    const isHall = (r: ReturnType<typeof roomAt>) => !r || r.name === 'Pasillo' || !r.roofed;
+    const isHall = (r: ReturnType<typeof roomAt>) => !r || !r.roofed || r.name === 'Pasillo' || r.name === 'Galería' || r.name === 'Hall';
     const bad: string[] = [];
     for (const g of GEOS) {
       const nu = -g.dv;

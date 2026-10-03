@@ -1,4 +1,4 @@
-import type { Block, CityPlan } from './CityLayout';
+import { SIDEWALK_H, type Block, type CityPlan } from './CityLayout';
 import {
   inLot,
   miguelCaneOffset,
@@ -76,6 +76,8 @@ export class CityIndex {
   /** Marco local del campus, si el plano tiene escuela. */
   readonly school: SchoolFrame | null;
   private readonly schoolBlock: Block | null;
+  /** Medio lado del barrio (hasta las veredas exteriores), para descartar rápido el fondo. */
+  private readonly inner: number;
 
   constructor(private readonly plan: CityPlan) {
     this.pitch = plan.blockSize + plan.streetWidth;
@@ -86,6 +88,7 @@ export class CityIndex {
     const school = plan.blocks.find((b) => b.landmark === 'school');
     this.schoolBlock = school ?? null;
     this.school = school ? schoolFrame(school, plan) : null;
+    this.inner = 2 * this.pitch + plan.streetWidth / 2;
   }
 
   /** Manzana que contiene ese punto, o null si cae en la calle. */
@@ -122,7 +125,7 @@ export class CityIndex {
    */
   isSolid(x: number, z: number, feetY?: number): boolean {
     const b = this.blockAt(x, z);
-    if (!b) return false;
+    if (!b) return this.backdropSolid(x, z);
     if (b.landmark && this.school) {
       const { u, v } = toLocal(this.school, x, z);
       return schoolSolidLocal(u, v, feetY ?? SCHOOL.floorY);
@@ -150,6 +153,53 @@ export class CityIndex {
       default:
         return false;
     }
+  }
+
+  /**
+   * La ciudad de fondo: las manzanas de la capa 1 son macizas enteras (como
+   * la vivienda del barrio) y cada volumen de la capa 2 bloquea su planta.
+   * Sólo se recorre fuera del barrio, donde `blockAt` no encuentra nada.
+   */
+  private backdropSolid(x: number, z: number): boolean {
+    for (const p of this.plan.props ?? []) {
+      // Kiosco: la caja entera. Refugio: el respaldo y el banco (bajo el
+      // techo, del lado de la calle, se puede parar).
+      const kiosk = p.kind === 'kiosk';
+      const along = kiosk ? 1.3 : 2.5;
+      const depth = kiosk ? 0.85 : 0.45;
+      const back = kiosk ? 0 : -0.55;
+      const cx = p.x + p.nx * back;
+      const cz = p.z + p.nz * back;
+      const hx = p.nx !== 0 ? depth : along;
+      const hz = p.nx !== 0 ? along : depth;
+      if (Math.abs(x - cx) < hx && Math.abs(z - cz) < hz) return true;
+    }
+    const bd = this.plan.backdrop;
+    if (!bd || (Math.abs(x + this.pitch / 2) < this.inner && Math.abs(z) < this.inner - this.pitch / 2)) return false;
+    for (const k of bd.blocks) if (Math.abs(x - k.cx) <= k.half && Math.abs(z - k.cz) <= k.half) return true;
+    for (const m of bd.masses) {
+      if (m.layer === 2 && Math.abs(x - m.x) <= m.w / 2 && Math.abs(z - m.z) <= m.d / 2) return true;
+    }
+    return false;
+  }
+
+  /**
+   * ¿Ese punto está sobre una vereda elevada? Las manzanas del barrio (no la
+   * escuela, cuyo frente sigue a cota cero) y las de la ciudad de fondo
+   * llevan vereda con cordón de 12 cm hasta el borde de la calzada.
+   */
+  private onRaisedSidewalk(x: number, z: number): boolean {
+    const gx = Math.round(x / this.pitch + this.half);
+    const gz = Math.round(z / this.pitch + this.half);
+    const cx = (gx - this.half) * this.pitch;
+    const cz = (gz - this.half) * this.pitch;
+    // Hasta la cara interior del cordón: medio paso menos media calzada y el cordón.
+    const reach = this.pitch / 2 - this.plan.streetWidth * 0.21 - 0.32;
+    if (Math.abs(x - cx) > reach || Math.abs(z - cz) > reach) return false;
+    const inGrid = gx >= 0 && gz >= 0 && gx < this.size && gz < this.size;
+    const b = inGrid ? this.grid[gx * this.size + gz] : undefined;
+    if (b) return !b.landmark;
+    return (this.plan.backdrop?.blocks ?? []).some((k) => Math.abs(k.cx - cx) < 1 && Math.abs(k.cz - cz) < 1);
   }
 
   /**
@@ -197,8 +247,9 @@ export class CityIndex {
     if (b?.landmark && this.school) {
       const { u, v } = toLocal(this.school, x, z);
       if (inLot(u, v) && v <= 0) return schoolFloorLocal(u, v, feetY ?? SCHOOL.floorY);
+      return 0;
     }
-    return 0;
+    return this.onRaisedSidewalk(x, z) ? SIDEWALK_H : 0;
   }
 
   /**
@@ -212,7 +263,9 @@ export class CityIndex {
   surfaceHeight(x: number, z: number): number {
     const b = this.blockAt(x, z);
     if (!b) {
-      // Calle: la calzada central sobresale 8 cm de la vereda.
+      // Calle: calzada a 8 cm; la vereda de enfrente de la escuela, a cota
+      // cero, y la de las manzanas del barrio y del fondo, elevada.
+      if (this.onRaisedSidewalk(x, z)) return SIDEWALK_H;
       const lane = this.plan.streetWidth * 0.21;
       const ox = Math.abs(x - this.nearestStreet(x));
       const oz = Math.abs(z - this.nearestStreet(z));
@@ -235,9 +288,9 @@ export class CityIndex {
       case 'energy':
         return 0.12;
       case 'market':
-        return this.onMarketFloor(b, x, z) ? 0.25 : 0;
+        return this.onMarketFloor(b, x, z) ? 0.25 : SIDEWALK_H;
       default:
-        return 0;
+        return SIDEWALK_H;
     }
   }
 

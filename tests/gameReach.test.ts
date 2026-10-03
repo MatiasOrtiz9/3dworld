@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { LEVEL_Y, setDynamicSolid, type Level } from '../src/world/SchoolLayout';
 import { resolveAnchor, roomById, roomCenter, standNear } from '../src/game/story/anchors';
-import { DialogueRunner, StoryEngine } from '../src/game/story/StoryEngine';
+import { StoryEngine } from '../src/game/story/StoryEngine';
 import { EVAC_ROUTE, INTERACTABLES, LOCKS, PLACES, STAIR_GUIDES, interactable } from '../src/game/story/world';
 import type { Effect, ObjectiveDef, Spot, ZoneId } from '../src/game/story/types';
 import { createActivity } from '../src/game/activities';
@@ -122,9 +122,11 @@ describe('alcance caminando', () => {
   });
 
   it('cada paso de la historia se alcanza con las zonas abiertas en ese momento', () => {
-    const engine = new StoryEngine();
-    const runAll = (effects: Effect[]) => {
-      for (const e of engine.apply(effects)) {
+    // Sin frases, como se juega por defecto: a la gente se la saluda (`silentTalk`).
+    const engine = new StoryEngine(null, { phrases: false });
+    /** Juega las actividades que abrió lo que ya pasó. */
+    const play = (happened: Effect[]) => {
+      for (const e of happened) {
         if (e.do !== 'activity') continue;
         const act = createActivity(e.id, seeded(3));
         for (let g = 0; g < 300 && !act.closed; g++) {
@@ -134,6 +136,7 @@ describe('alcance caminando', () => {
         engine.activityResult(e.id, act.success);
       }
     };
+    const runAll = (effects: Effect[]) => play(engine.apply(effects));
     const checked: string[] = [];
     for (let guard = 0; guard < 80 && !engine.finished; guard++) {
       const o = engine.mainObjectives()[0];
@@ -155,9 +158,8 @@ describe('alcance caminando', () => {
       // Cumplirlo, como en el test de la historia.
       const t = o.target;
       if (t.kind === 'talk') {
-        const runner = new DialogueRunner(engine.dialogueFor(t.npc)!, engine);
-        runAll(runner.start());
-        while (!runner.done) runAll(runner.step(0));
+        expect(engine.dialogueFor(t.npc), `${o.id}: ${t.npc} sin charla`).not.toBeNull();
+        play(engine.silentTalk(t.npc).effects);
       } else if (t.kind === 'interact') {
         runAll(engine.interact(t.id));
         const act = interactable(t.id)!.activity;

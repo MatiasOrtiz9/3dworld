@@ -539,7 +539,76 @@ export class NavGrid {
   private open(nl: NavLevel, k: number): boolean {
     if (!nl.walk[k]) return false;
     const t = nl.dyn[k];
-    return t === 0 || this.now - t > DYN_TTL;
+    if (t === 0) return true;
+    if (this.now - t <= DYN_TTL) return false;
+    // Venció la marca: se vuelve a tantear. Mientras el cierre exista (los
+    // cestos del patio) sigue cerrada; antes se "olvidaba" a los 6 s y el
+    // esquive y los destinos al azar volvían a meter gente adentro.
+    if (this.dynSolid(nl, k)) {
+      nl.dyn[k] = Math.max(1e-3, this.now);
+      return false;
+    }
+    nl.dyn[k] = 0;
+    return true;
+  }
+
+  /** ¿El punto de prueba de la celda (transitable en la grilla estática) choca AHORA? */
+  private probeSolid(nl: NavLevel, k: number): boolean {
+    const [pu, pv] = this.pointOf(nl, k);
+    return schoolSolidLocal(pu, pv, LEVEL_Y[nl.level], true);
+  }
+
+  /**
+   * Cerrada por un cierre dinámico: choca su punto de prueba o el de una
+   * vecina transitable. Es el margen de ~25 cm que los muros ya tienen en la
+   * grilla estática; sin él la gente rozaba (o pisaba) el borde de los cestos.
+   * Las vecinas transitables están libres en la grilla estática, así que si
+   * su punto choca es por un cierre dinámico, no por un muro.
+   */
+  private dynSolid(nl: NavLevel, k: number): boolean {
+    if (this.probeSolid(nl, k)) return true;
+    const i = k % NU;
+    const j = (k - i) / NU;
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        if ((!di && !dj) || i + di < 0 || j + dj < 0 || i + di >= NU || j + dj >= NV) continue;
+        const n = k + di + dj * NU;
+        if (nl.walk[n] && this.probeSolid(nl, n)) return true;
+      }
+    }
+    return false;
+  }
+
+  /** Avance del barrido de cierres dinámicos (nivel y celda). */
+  private sweepL = 0;
+  private sweepK = 0;
+
+  /**
+   * Barrido lento de las celdas transitables con la colisión viva, unas
+   * cientas por cuadro: un cierre que aparece en medio de un patio (los
+   * cestos del juego) se descubre en un par de segundos aunque ningún camino
+   * lo cruce, y desde ahí ni los destinos al azar ni el esquive lo pisan.
+   * Sólo recorre los niveles ya armados.
+   */
+  sweepDynamic(budget: number): void {
+    let checked = 0;
+    for (let steps = 0; checked < budget && steps < budget * 10; steps++) {
+      const nl = this.levels[this.sweepL];
+      if (!nl || this.sweepK >= NU * NV) {
+        this.sweepL = (this.sweepL + 1) % this.levels.length;
+        this.sweepK = 0;
+        continue;
+      }
+      const k = this.sweepK++;
+      if (!nl.walk[k]) continue;
+      const t = nl.dyn[k];
+      if (t !== 0 && this.now - t <= DYN_TTL) continue;
+      checked++;
+      if (this.probeSolid(nl, k)) {
+        const [pu, pv] = this.pointOf(nl, k);
+        this.markClosed(nl, pu, pv);
+      }
+    }
   }
 
   /** Altura del piso de ese nivel en (u, v). */
@@ -714,20 +783,39 @@ export class NavGrid {
     return true;
   }
 
-  /** Marca como cerradas las celdas cercanas cuya prueba ahora choca. */
+  /**
+   * Marca como cerradas las celdas cercanas cuya prueba ahora choca, más
+   * las vecinas de esas (el margen de `dynSolid`). La colisión viva se
+   * consulta una vez por celda de la ventana.
+   */
   private markClosed(nl: NavLevel, u: number, v: number): void {
-    const feet = LEVEL_Y[nl.level];
     const r = 1.4;
-    const i0 = Math.max(0, Math.floor((u - r - U0) / C));
-    const i1 = Math.min(NU - 1, Math.floor((u + r - U0) / C));
-    const j0 = Math.max(0, Math.floor((v - r - V0) / C));
-    const j1 = Math.min(NV - 1, Math.floor((v + r - V0) / C));
+    const i0 = Math.max(0, Math.floor((u - r - U0) / C) - 1);
+    const i1 = Math.min(NU - 1, Math.floor((u + r - U0) / C) + 1);
+    const j0 = Math.max(0, Math.floor((v - r - V0) / C) - 1);
+    const j1 = Math.min(NV - 1, Math.floor((v + r - V0) / C) + 1);
+    const w = i1 - i0 + 1;
+    const hit = new Uint8Array(w * (j1 - j0 + 1));
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const k = j * NU + i;
+        if (nl.walk[k] && this.probeSolid(nl, k)) hit[(j - j0) * w + (i - i0)] = 1;
+      }
+    }
+    const stamp = Math.max(1e-3, this.now);
     for (let j = j0; j <= j1; j++) {
       for (let i = i0; i <= i1; i++) {
         const k = j * NU + i;
         if (!nl.walk[k]) continue;
-        const [pu, pv] = this.pointOf(nl, k);
-        if (schoolSolidLocal(pu, pv, feet, true)) nl.dyn[k] = Math.max(1e-3, this.now);
+        let near = false;
+        for (let dj = -1; dj <= 1 && !near; dj++) {
+          for (let di = -1; di <= 1 && !near; di++) {
+            const ii = i + di - i0;
+            const jj = j + dj - j0;
+            if (ii >= 0 && jj >= 0 && ii < w && jj <= j1 - j0) near = hit[jj * w + ii] === 1;
+          }
+        }
+        if (near) nl.dyn[k] = stamp;
       }
     }
   }

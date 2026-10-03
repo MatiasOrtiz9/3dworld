@@ -113,6 +113,38 @@ describe('gente — grilla de navegación', () => {
     expect(again).not.toBeNull();
   });
 
+  it('un cierre en medio del patio (los cestos) se descubre solo, con margen, y no se olvida mientras exista', () => {
+    // Antes sólo se marcaba al cruzarlo un camino y la marca vencía a los
+    // 6 s: el esquive y los destinos al azar metían chicos adentro.
+    const g = new NavGrid();
+    const bins = { u0: 21.65, u1: 23.55, v0: -19.85, v1: -19.35, level: 0 as Level };
+    expect(g.isWalkable(0, 22.6, -19.6)).toBe(true);
+    setDynamicSolid('test-bins', bins);
+    try {
+      for (let k = 0; k < 400; k++) {
+        g.now += 0.1;
+        g.sweepDynamic(300);
+      }
+      for (const [u, v] of [
+        [22.6, -19.6],
+        [21.7, -19.4],
+        [23.5, -19.8],
+        [22.6, -19.2], // 15 cm fuera del borde: margen de cuerpo
+        [21.5, -19.6],
+      ]) {
+        expect(g.isWalkable(0, u, v), `cesto en ${u}, ${v}`).toBe(false);
+      }
+      expect(g.isWalkable(0, 22.6, -18.6), 'a 75 cm se pasa').toBe(true);
+      // Vence la marca: se vuelve a tantear y sigue cerrado.
+      g.now += 100;
+      expect(g.isWalkable(0, 22.6, -19.6)).toBe(false);
+    } finally {
+      setDynamicSolid('test-bins', null);
+    }
+    g.now += 100;
+    expect(g.isWalkable(0, 22.6, -19.6), 'sin los cestos se vuelve a pisar').toBe(true);
+  });
+
   it('las escaleras se derivan del plano y llevan a cada piso', () => {
     expect(stairLinks().length).toBeGreaterThanOrEqual(nav.usableLinks().length);
     const links = nav.usableLinks();

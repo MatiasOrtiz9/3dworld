@@ -150,14 +150,22 @@ export const PRESETS: Record<TimeOfDay, AtmospherePreset> = {
     hemiGround: [0.34, 0.28, 0.22],
     hemiIntensity: 0.07,
     envIntensity: 0.38,
-    zenith: [0.11, 0.24, 0.62],
-    horizon: [0.8, 0.78, 0.76],
+    // Cénit algo más profundo y horizonte celeste pálido en vez de gris: el
+    // horizonte ES la niebla, y con gris la ciudad de fondo se leía como
+    // una pared lavada. Celeste, cada capa de edificios se aclara y azula con
+    // la distancia (perspectiva aérea) y el lado del sol sigue cálido por
+    // la bruma del cielo.
+    zenith: [0.09, 0.22, 0.63],
+    horizon: [0.72, 0.78, 0.86],
     haze: 0.65,
     sunGlow: 1,
     cloudCover: 0.42,
     cloudLit: [1.35, 1.12, 0.92],
     cloudShade: [0.56, 0.6, 0.74],
-    fogThickness: 1.15,
+    // La mínima que todavía funde el borde del suelo (ver fogDensityFor):
+    // con 1,15 la primera hilera de la ciudad de fondo (~150 m) ya estaba
+    // a mitad de niebla y la segunda casi borrada.
+    fogThickness: 1,
     exposure: 1.04,
     contrast: 1.06,
   },
@@ -272,14 +280,25 @@ export function sunDirection(elevation: number, azimuth: number): { x: number; y
 }
 
 /**
- * Distancia a la que el suelo tiene que haberse fundido con el cielo.
+ * Cuánto sigue el suelo base más allá del barrio (InfraBuilder.ground): la
+ * losa mide `(extent + GROUND_MARGIN)·2` de lado, centrada en el barrio. Es
+ * una sola caja: agrandarla no cuesta nada, y es lo que deja afinar la niebla.
+ */
+export const GROUND_MARGIN = 640;
+
+/**
+ * Distancia a la que el suelo tiene que haberse fundido con el cielo (95 %).
  *
- * El suelo base de la ciudad es una losa de `extent·2 + 400` m de lado
- * (InfraBuilder.ground): su borde queda a `extent + 200` del centro. Un poco
- * más allá, para que tampoco se vea desde las esquinas del barrio.
+ * Antes la losa terminaba a `extent + 200` y la niebla tenía que cerrar en
+ * `extent + 220`: a 160 m (la segunda capa de la ciudad de fondo) ya iba por
+ * la mitad y desde el aire todo se veía lavado. Con el suelo hasta
+ * `extent + GROUND_MARGIN`, la niebla cierra en `extent + 360`: la manzana de
+ * enfrente queda limpia, la ciudad de fondo se aclara y azula por capas
+ * (perspectiva aérea) y el borde del suelo, a más de 600 m de cualquier punto
+ * del barrio, queda por encima del 98 %.
  */
 export function fogReach(worldExtent: number): number {
-  return worldExtent + 220;
+  return worldExtent + 360;
 }
 
 /**

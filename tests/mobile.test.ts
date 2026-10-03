@@ -220,11 +220,13 @@ describe('calidad en el celular', () => {
     expect(quality.adaptiveLevel).toBe(0);
   });
 
-  it('sin tope (escritorio) se comporta como siempre: no recupera sin margen', () => {
+  it('sin tope (escritorio) recupera sosteniendo 60 en una pantalla de 60 Hz', () => {
+    // vsync no deja pasar de 60: con la regla vieja (objetivo + 10) un
+    // escalón perdido en el arranque no volvía nunca.
     const { quality } = setup();
     for (let i = 0; i < 70; i++) quality.observeFrame(40, false);
     expect(quality.adaptiveLevel).toBe(1);
     for (let i = 0; i < 60 * 30; i++) quality.observeFrame(1000 / 60, false);
-    expect(quality.adaptiveLevel).toBe(1);
+    expect(quality.adaptiveLevel).toBe(0);
   });
 });

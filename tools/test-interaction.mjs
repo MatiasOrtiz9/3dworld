@@ -8,11 +8,14 @@
  *
  *   node tools/test-interaction.mjs [url-base] [carpeta-capturas] [sw]
  *
- * Dos pasadas:
+ * Tres pasadas:
  *  1. Modo herramienta (como lo ven las capturas): sin título, todo abierto.
  *     Caminar, volar, gente, pájaros.
  *  2. Modo jugador (`?titulo=1&libre=0&hud=1`): título, partida nueva,
- *     objetivo, menú de pausa.
+ *     objetivo, saludar a Rubén con E (el juego no tiene frases: abre la
+ *     escuela sin diálogo, sin comentarios y sin voz), menú de pausa.
+ *  3. Con frases (`&frases=1`, ver src/game/story/phrases.ts): la misma E
+ *     sobre Rubén abre el diálogo de antes, con voz.
  */
 import puppeteer from 'puppeteer-core';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -55,6 +58,28 @@ const visible = (page, sel) =>
     const s = window.getComputedStyle(el);
     return !el.hidden && !el.classList.contains('hidden') && s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity) > 0.05;
   });
+
+/** Cuenta las voces que pide el juego (el audio en sí no se toca). */
+const countVoices = (page) =>
+  page.evaluate(() => {
+    window.__voices = 0;
+    const snd = window.__sound;
+    const voice = snd.voice.bind(snd);
+    snd.voice = (...a) => {
+      window.__voices++;
+      return voice(...a);
+    };
+  });
+
+/** Pone al jugador a 1,5 m de Rubén (del lado de Laprida), mirándolo. */
+const faceRuben = async (page) => {
+  await page.evaluate(() => {
+    const r = window.__people().character('ruben').position();
+    window.__player.teleport({ x: r.x, y: r.y, z: r.z + 1.5 }, { x: r.x, y: r.y + 1.4, z: r.z });
+  });
+  await frames(page, 20);
+  return page.$eval('#prompt-verb', (el) => el.textContent ?? '');
+};
 
 async function open(query, tag) {
   const page = await browser.newPage();
@@ -125,7 +150,8 @@ async function open(query, tag) {
   // --- los pájaros se mueven ---
   const bird = () =>
     page.evaluate(() => {
-      const m = window.__scene.meshes.find((x) => x.name === 'birdBodySrc');
+      // `life-birdBody` desde que los pájaros pasaron a src/world/life (antes, `birdBodySrc`).
+      const m = window.__scene.meshes.find((x) => x.name === 'life-birdBody' || x.name === 'birdBodySrc');
       return m?._thinInstanceDataStorage?.matrixData?.[12] ?? null;
     });
   const m1 = await bird();
@@ -162,12 +188,31 @@ async function open(query, tag) {
   check('el jugador empieza a nivel de vereda', Math.abs(feet.y) < 0.6, `y = ${feet.y.toFixed(2)}`);
   await page.screenshot({ path: `${shotDir}/i3-objetivo.png` });
 
+  // --- sin frases (por defecto): nadie habla ---
+  // Lo pidió el usuario ("no quiero que nadie me hable"). El objetivo no pide
+  // hablar, a la gente se la saluda y saludar a Rubén abre la escuela igual,
+  // sin diálogo, sin comentarios y sin voz.
+  const firstItem = await page.$eval('#obj-list li', (el) => el.textContent ?? '');
+  check('el objetivo no pide hablar', /^Saludá a Rubén/.test(firstItem) && !/habl/i.test(firstItem), firstItem);
+  check('nadie habla al empezar', !(await visible(page, '#dialogue')) && !(await visible(page, '#bark')));
+  await countVoices(page);
+  const verb = await faceRuben(page);
+  check('a la gente se la saluda (no se le habla)', verb === 'Saludar', verb);
+  await page.keyboard.press('KeyE');
+  await sleep(700);
+  const greet = await page.evaluate(() => {
+    const g = window.__director();
+    return { portero: g.engine.done('p.portero'), entrada: g.engine.zone('entrada'), greet: g.lastGreeting, modal: g.modal, voices: window.__voices };
+  });
+  const quiet = !(await visible(page, '#dialogue')) && !(await visible(page, '#bark'));
+  check(
+    'saludar a Rubén abre la escuela sin una sola frase',
+    greet.portero && greet.entrada && greet.greet?.npc === 'ruben' && greet.greet.due && greet.modal === null && greet.voices === 0 && quiet,
+    JSON.stringify(greet),
+  );
+  await page.screenshot({ path: `${shotDir}/i3b-saludo.png` });
+
   // --- menú de pausa ---
-  // Primero se cierra cualquier diálogo del prólogo (E avanza).
-  for (let i = 0; i < 6 && (await visible(page, '#dialogue')); i++) {
-    await page.keyboard.press('KeyE');
-    await sleep(500);
-  }
   await page.keyboard.press('Escape');
   await sleep(500);
   check('Esc abre el menú', await visible(page, '#pause'));
@@ -176,6 +221,29 @@ async function open(query, tag) {
   await sleep(500);
   check('Esc cierra el menú', !(await visible(page, '#pause')));
 
+  await page.close();
+}
+
+// ============================================================ 3. con frases
+{
+  // El interruptor trae todo de vuelta: la misma E sobre Rubén abre el diálogo de antes.
+  const page = await open('seed=42&titulo=1&libre=0&hud=1&frases=1', 'frases');
+  await page.click('#title-start');
+  await sleep(2500);
+  await countVoices(page);
+  const verb = await faceRuben(page);
+  check('con ?frases=1 a la gente se le habla', verb === 'Hablar', verb);
+  await page.keyboard.press('KeyE');
+  await sleep(900);
+  const name = await page.$eval('#dlg-name', (el) => el.textContent ?? '');
+  const voices = await page.evaluate(() => window.__voices);
+  check('con ?frases=1 Rubén contesta con su diálogo y su voz', (await visible(page, '#dialogue')) && name === 'Rubén' && voices > 0, `${name} · ${voices} voces`);
+  await page.screenshot({ path: `${shotDir}/i5-frases.png` });
+  for (let i = 0; i < 12 && (await visible(page, '#dialogue')); i++) {
+    await page.keyboard.press('KeyE');
+    await sleep(450);
+  }
+  check('con ?frases=1 el diálogo abre la escuela', await page.evaluate(() => window.__director().engine.zone('entrada')));
   await page.close();
 }
 

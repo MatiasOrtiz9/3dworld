@@ -230,6 +230,7 @@ export type HumanPart =
   | 'hips'
   | 'torso'
   | 'smock'
+  | 'smockSit'
   | 'coat'
   | 'trim'
   | 'skirt'
@@ -253,7 +254,7 @@ export type HumanPart =
   | 'mop';
 
 export const HUMAN_PARTS: readonly HumanPart[] = [
-  'hips', 'torso', 'smock', 'coat', 'trim', 'skirt', 'apron', 'backpack', 'head', 'hairShort', 'hairLong', 'hairBun',
+  'hips', 'torso', 'smock', 'smockSit', 'coat', 'trim', 'skirt', 'apron', 'backpack', 'head', 'hairShort', 'hairLong', 'hairBun',
   'hairPony', 'hairCurly', 'cap', 'glasses', 'upperArm', 'sleeve', 'forearm', 'hand', 'thigh', 'shin', 'shoe', 'mop',
 ];
 
@@ -324,11 +325,13 @@ export function buildHumanParts(scene: Scene, detail: 0 | 1): { meshes: Record<H
   // Guardapolvo de jardín a cuadritos: más suelto, hasta medio muslo. El
   // cuadrillé alterna el sombreado cara por cara (sin subdividir: costaba el
   // cuádruple de triángulos y de lejos no se distinguía).
-  make('smock', (b) => {
+  const smock = (b: Builder, seated: boolean) => {
     const n = N(12, 10);
     const rings: Ring[] = [];
     // Bandas angostas parejas: cuadros de ~5 cm en un chico de jardín.
-    const ys = hi ? [-0.36, -0.27, -0.18, -0.09, 0, 0.09, 0.18, 0.26, 0.34, 0.392] : [-0.36, -0.24, -0.12, 0, 0.12, 0.24, 0.34, 0.392];
+    let ys = hi ? [-0.36, -0.27, -0.18, -0.09, 0, 0.09, 0.18, 0.26, 0.34, 0.392] : [-0.36, -0.24, -0.12, 0, 0.12, 0.24, 0.34, 0.392];
+    // Sentado, el faldón rígido atravesaba la sillita: termina en la cintura.
+    if (seated) ys = [-0.04, ...ys.filter((y) => y > 0)];
     for (const y of ys) {
       const t = (y + 0.36) / 0.75;
       const rx = y < -0.04 ? 0.205 - (0.205 - 0.16) * ((y + 0.36) / 0.32) : y > 0.3 ? (y > 0.37 ? 0.17 : 0.198) : 0.156 + 0.04 * Math.max(0, (y - 0.1) / 0.24);
@@ -336,10 +339,12 @@ export function buildHumanParts(scene: Scene, detail: 0 | 1): { meshes: Record<H
       rings.push(ring(y, rx * 1.03, rz * 1.03, n, 0.86 + 0.14 * Math.min(1, t * 1.6)));
     }
     rings.push({ ...ring(0.43, 0.07, 0.06, n, 0.95, { cz: -0.006 }), capShade: 0.95 });
-    b.loft(rings, false, true, { checker: true });
+    b.loft(rings, seated, true, { checker: true });
     // Cuello redondo claro.
     b.loft([ring(0.395, 0.085, 0.072, N(10, 8), 1.15, { cz: -0.004 }), ring(0.44, 0.075, 0.064, N(10, 8), 1.2, { cz: -0.008 })], false, false);
-  });
+  };
+  make('smock', (b) => smock(b, false));
+  make('smockSit', (b) => smock(b, true));
 
   // Guardapolvo blanco: tronco con solapas y faldón abierto adelante, hasta la rodilla.
   make('coat', (b) => {
@@ -402,10 +407,11 @@ export function buildHumanParts(scene: Scene, detail: 0 | 1): { meshes: Record<H
     b.loft([ring(0.05, 0.124, 0.07, n, 0.72, { cz: -0.19 }), ring(0.24, 0.134, 0.074, n, 0.92, { cz: -0.196 }), top]);
     // Bolsillo: una caja baja más oscura.
     b.box([0, 0.14, -0.262], [0.085, 0.065, 0.022], 0.64);
-    // Tiras: dos franjas por lado sobre el hombro y el pecho.
+    // Tiras: una franja por lado sobre el hombro. La que bajaba por el pecho
+    // era un plano recto que quedaba adentro del tronco y asomaba sólo su
+    // punta: de frente se veían dos astillas oscuras en las axilas.
     for (const s of [-1, 1]) {
       b.quad([s * 0.08, 0.36, -0.13], [s * 0.115, 0.36, -0.13], [s * 0.125, 0.415, -0.01], [s * 0.09, 0.415, -0.01], 0.62, [s * 0.1, 0.3, -0.06]);
-      b.quad([s * 0.09, 0.415, -0.01], [s * 0.125, 0.415, -0.01], [s * 0.128, 0.2, 0.116], [s * 0.093, 0.2, 0.116], 0.62, [s * 0.11, 0.3, 0]);
     }
   });
 

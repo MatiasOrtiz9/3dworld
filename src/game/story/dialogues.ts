@@ -395,24 +395,3 @@ export const TALK: Readonly<Record<string, readonly TalkRule[]>> = {
     { dialogue: 'juli.antes' },
   ],
 };
-
-/** Comentarios de Lola la primera vez que se entra a cada lugar. */
-export const BARKS: Readonly<Record<string, string>> = {
-  hall: '¡Mirá el mural de San Martín! Ese lema lo sabemos todos de memoria.',
-  maker: 'El Aula Maker… ¡la cortadora láser, la impresora 3D, los Educabot! Quiero todo.',
-  cantina: 'Huele rico. ¿Será la hora del almuerzo?',
-  patioOeste: 'La palmera del Espacio recreativo. Acá nos juntamos en el recreo.',
-  patioEste: 'Los juegos, los aviarios, las hamacas… ¡acá jugaba cuando estaba en primaria!',
-  gimnasio: 'El Polideportivo. ¡Mirá la bandera con el escudo en el fondo!',
-  salon: 'El Salón de los espejos. Siempre me miro de reojo cuando paso.',
-  trofeos: '¡La vitrina de los trofeos! Armé una trivia para los visitantes, ¿la probás?',
-  lockers: 'Los lockers de colores… el mío es el del medio.',
-  pasarela: 'La pasarela vidriada: desde acá se ve todo el patio de juegos.',
-  biblioteca: 'Shh… la biblioteca. El fichero rojo es un clásico.',
-  danzas: '¡El aula de danzas! Está justo debajo de la bóveda del polideportivo.',
-  jardin: '¡El jardín! Todo es chiquito y de colores.',
-  sum: 'El escenario del SUM, con telón rojo. ¡Qué lindo!',
-  encuentro: 'El punto de encuentro: esquina de Laprida y Miguel Cané.',
-  bloque: 'El edificio de bloque: columnas rojas y la escalera de chapa.',
-  sectorNuevo: 'El sector nuevo: cerámico clarito y la mesada de venecitas.',
-};

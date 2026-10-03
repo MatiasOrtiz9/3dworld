@@ -268,4 +268,33 @@ describe('luz natural horneada de la escuela', async () => {
     expect(under).toBeGreaterThan(100);
     expect(free).toBeGreaterThan(under);
   });
+
+  it('un tramo que apoya en una losa alta no oscurece el piso de abajo', () => {
+    // Salón de los espejos, debajo del tramo de chapa del edificio de bloque
+    // (arranca en el primer piso): antes salía una mancha de 1,2 × 1,7 m.
+    expect(cover(44.6, -15.3, 0)).toBe(0);
+    // Arranque del tramo del jardín que sube del primer al segundo piso.
+    expect(cover(58.4, -35.2, 0)).toBe(0);
+    // Ese mismo tramo sí tapa su propio piso (el primero) donde gana altura.
+    expect(cover(46.5, -15.3, 1)).toBeGreaterThan(0.5);
+    // El tramo del ala oeste sobre la preceptoría sigue tapando la planta baja.
+    expect(cover(10.5, -10.2, 0)).toBeGreaterThan(2);
+  });
+
+  it('apagar las luces de un aula baja su luz, más en el fondo que junto a las ventanas', async () => {
+    const { SWITCHES } = await import('../src/world/SchoolLights');
+    for (const s of SWITCHES) expect(bake.rooms.get(s.roomId)?.idx.length, s.roomId).toBeGreaterThan(100);
+    const room = bake.rooms.get('aula4')!;
+    const offAt = (u: number, v: number) => {
+      const i = room.idx.indexOf(cell(u, v) * 4);
+      expect(i).toBeGreaterThanOrEqual(0);
+      return room.off[i] / 128;
+    };
+    const back = light(22.5, -6.5);
+    const front = light(22.5, -1.2);
+    // Fondo: de ~0,66 a ~0,41; junto a las ventanas la caída pesa menos.
+    expect(offAt(22.5, -6.5)).toBeLessThan(back - 0.18);
+    expect(offAt(22.5, -6.5)).toBeGreaterThan(0.3);
+    expect(offAt(22.5, -1.2) / front).toBeGreaterThan(offAt(22.5, -6.5) / back);
+  });
 });

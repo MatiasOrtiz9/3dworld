@@ -53,6 +53,12 @@ export class Lights {
     scene: Scene,
     frame: SchoolFrame,
     fixtures: ReadonlyMap<string, Fixture[]>,
+    /**
+     * Avisa cada aula que cambia de estado: el entorno baja la luz de su
+     * mapa (sin esto, apagar sólo escondía los tubos y el aula seguía igual
+     * de clara).
+     */
+    private readonly onChange?: (roomId: string, on: boolean) => void,
   ) {
     // Mismo emisivo que las luminarias de la escuela (`m.light`): supera el
     // umbral del bloom en escritorio y queda blanco cálido en el visor.
@@ -71,9 +77,17 @@ export class Lights {
     this.switchMat.baseColor = new Color3(1, 1, 1);
     this.switchMat.metallic = 0;
     this.switchMat.roughness = 0.4;
-    this.switchMat.emissiveColor = new Color3(0.06, 0.06, 0.06);
+    // Placas blancas: un gris parejo de emisivo no les cambia el tono (en las
+    // hojas de color sí lo lavaba). Algo más alto que antes porque ahora
+    // reciben sombra y no el sol a través de muros y techos.
+    this.switchMat.emissiveColor = new Color3(0.16, 0.16, 0.16);
     const switchMesh = CreateBox('game-switches', { size: 1 }, scene);
     switchMesh.material = this.switchMat;
+    // Sólo las mallas de la ciudad reciben sombra desde enableShadows, y
+    // éstas se crean después: sin esto la placa junto a la puerta salía
+    // iluminada por el sol de la mañana a través del muro, beige como el
+    // muro. El material compila después de enableShadows: entran los defines.
+    switchMesh.receiveShadows = true;
     this.switchSet = new ThinSet(switchMesh, 64);
 
     for (const sw of SWITCHES) {
@@ -127,6 +141,7 @@ export class Lights {
     r.on = !r.on;
     this.pose(r);
     this.flush();
+    this.onChange?.(roomId, r.on);
     return r.on;
   }
 
@@ -136,6 +151,7 @@ export class Lights {
       if (r.on === on) continue;
       r.on = on;
       this.pose(r);
+      this.onChange?.(r.sw.roomId, on);
     }
     this.flush();
   }

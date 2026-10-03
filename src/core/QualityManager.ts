@@ -34,9 +34,11 @@ export interface QualityProfile {
   gridSize: number;
   /**
    * Distancia de recorte. Con el barrio compacto, la niebla funde el suelo a
-   * unos `extent + 220` m (ver TimeOfDay.fogReach): más allá no hay nada que
+   * unos `extent + 360` m (ver TimeOfDay.fogReach): más allá no hay nada que
    * ver, y un plano lejano corto mejora la precisión de profundidad. El cielo
-   * no depende de él (se dibuja en el fondo del búfer, ver Sky).
+   * no depende de él (se dibuja en el fondo del búfer, ver Sky). La calidad
+   * adaptativa lo acorta, pero nunca por debajo del cierre de la niebla (ver
+   * `setFogReach`).
    */
   maxZ: number;
   /** Copas de follaje de alto detalle. */
@@ -98,7 +100,11 @@ export const QUALITY: Record<QualityTier, QualityProfile> = {
     maxZ: 700,
     highDetailFoliage: false,
     highDetailStreet: false,
-    crowdSize: 90,
+    // 110 y no 90: la vereda de la escuela a la hora de entrada es la primera
+    // vista dentro del visor y con 90 se veían una docena de personas en la
+    // puerta (contra ~120 en Alta). Cada persona dibujada cuesta ~735
+    // triángulos y ningún draw call (van en lotes por parte del cuerpo).
+    crowdSize: 110,
     // SIN post-proceso, y no por costo: por color.
     //
     // El pipeline de post-proceso se engancha a la cámara de escritorio y,
@@ -173,9 +179,22 @@ export const QUALITY: Record<QualityTier, QualityProfile> = {
   },
 };
 
-/** Con tope de cuadros: tiempo sano para recuperar un escalón, y su techo tras recuperaciones fallidas. */
+/**
+ * Tiempo sano para recuperar un escalón (sin tope / con tope de cuadros) y
+ * techo del factor que lo multiplica tras recuperaciones fallidas.
+ */
+const RECOVER_MS = 8000;
 const CAPPED_RECOVER_MS = 15000;
-const CAPPED_RECOVER_MAX_MS = 120000;
+const MAX_RECOVER_FACTOR = 8;
+
+/**
+ * Piso del plano lejano, en múltiplos de la distancia a la que cierra la
+ * niebla (95 %, ver TimeOfDay.fogReach). A 1,09 la niebla ya va por el 97 %:
+ * el suelo y el perfil de la ciudad se funden ANTES del corte. Más cerca, el
+ * corte dejaba ver el cielo bajo el horizonte (marrón, el rebote del suelo)
+ * debajo de los edificios del fondo, que quedaban flotando sobre nada.
+ */
+export const FAR_FLOOR_FACTOR = 1.09;
 
 /** Perfiles de escritorio. VR se activa desde el visor, no desde el ciclo. */
 export const TIER_ORDER: QualityTier[] = ['low', 'balanced', 'high'];
@@ -210,8 +229,8 @@ export class QualityManager {
   /** Perfiles del botón de calidad (en un celular, otros). */
   private order: QualityTier[] = TIER_ORDER;
   /**
-   * Con tope de cuadros (celular): no se puede medir margen por encima del
-   * tope, así que la recuperación se decide de otra manera (ver observeFrame).
+   * Con tope de cuadros (celular): sostener el tope es estar sano, pero
+   * para recuperar un escalón se exige más tiempo (ver observeFrame).
    */
   private capped = false;
   /** Tiempo de tirones aislados dentro de la ventana (compilar un shader, GC). */
@@ -219,8 +238,12 @@ export class QualityManager {
   /** Reloj de la medición (suma de ventanas) y última recuperación. */
   private clockMs = 0;
   private recoveredAt = -Infinity;
-  /** Tiempo sano exigido para recuperar un escalón con tope; se duplica si la recuperación falla. */
-  private recoverMs = CAPPED_RECOVER_MS;
+  /** Multiplica el tiempo sano exigido para recuperar; se duplica si una recuperación falla. */
+  private recoverFactor = 1;
+  /** Cuadros que no se miden (arranque, reconstrucción, entrada al visor). */
+  private skipMs = 0;
+  /** Plano lejano mínimo (ver `setFogReach`); 0 hasta que haya ciudad. */
+  private farFloor = 0;
 
   constructor(
     private readonly engine: Engine,
@@ -251,17 +274,24 @@ export class QualityManager {
     // Un cuadro aislado muy largo no debe contar como todo el intervalo, pero
     // permitir hasta 1 s hace que la adaptación responda también a 1–2 fps.
     const dt = Math.min(1000, Math.max(0, deltaMs));
+    // Los primeros segundos tras arrancar, reconstruir o entrar al visor son
+    // compilación de shaders y subida de texturas (se midieron ventanas de 3
+    // y 14 fps al arrancar): no dicen nada del equipo. Ver `settle`.
+    if (this.skipMs > 0) {
+      this.skipMs -= dt;
+      return null;
+    }
     this.sampleElapsedMs += dt;
     this.sampleFrames++;
-    // Celular: un cuadro de un cuarto de segundo es un tirón (un shader que se
-    // compila al entrar a un ambiente, el recolector de basura), no un equipo
-    // lento. Sin descontarlo, un solo tirón bajaba un escalón para siempre.
+    // Un cuadro de un cuarto de segundo es un tirón (un shader que se compila
+    // al entrar a un ambiente, el recolector de basura), no un equipo lento.
+    // Sin descontarlo, un solo tirón bajaba un escalón.
     const capped = this.capped && !inVr;
-    if (capped && dt > 250) this.hitchMs += dt;
+    if (dt > 250) this.hitchMs += dt;
     if (this.sampleElapsedMs < 2500) return null;
 
     // Si los tirones son casi toda la ventana, el equipo ES lento: cuentan.
-    const hitches = capped && this.hitchMs < this.sampleElapsedMs * 0.4 ? this.hitchMs : 0;
+    const hitches = this.hitchMs < this.sampleElapsedMs * 0.4 ? this.hitchMs : 0;
     const fps = (this.sampleFrames * 1000) / Math.max(1, this.sampleElapsedMs - hitches);
     const target = inVr ? 72 : this.desktopTarget;
     const previous = this.adaptive;
@@ -283,13 +313,15 @@ export class QualityManager {
       }
     } else {
       this.slowWindows = 0;
-      // Con tope no hay margen que medir (nunca se pasa del tope): sano es
-      // sostenerlo, y se exige más tiempo. Si una recuperación hace caer los
+      // Sano es sostener el objetivo, no superarlo: una pantalla de 60 Hz (o
+      // el visor, fijado en 72) nunca da más que eso, y con la regla de antes
+      // (objetivo + 10) un escalón perdido en el arranque no volvía nunca.
+      // Con tope se exige más tiempo. Si una recuperación hace caer los
       // cuadros enseguida, la próxima espera el doble: así no oscila.
-      const healthy = capped ? fps >= target * 0.96 : fps >= target + 10;
+      const healthy = fps >= target * 0.96;
       if (healthy && this.adaptive > 0) {
         this.healthyMs += 2500;
-        if (this.healthyMs >= (capped ? this.recoverMs : 8000)) {
+        if (this.healthyMs >= (capped ? CAPPED_RECOVER_MS : RECOVER_MS) * this.recoverFactor) {
           this.adaptive--;
           this.healthyMs = 0;
           this.recoveredAt = this.clockMs;
@@ -299,8 +331,8 @@ export class QualityManager {
       }
     }
 
-    if (capped && this.adaptive > previous && this.clockMs - this.recoveredAt < 15000) {
-      this.recoverMs = Math.min(CAPPED_RECOVER_MAX_MS, this.recoverMs * 2);
+    if (this.adaptive > previous && this.clockMs - this.recoveredAt < 15000) {
+      this.recoverFactor = Math.min(MAX_RECOVER_FACTOR, this.recoverFactor * 2);
     }
     if (this.adaptive === previous) return null;
     this.applyRuntime();
@@ -319,7 +351,7 @@ export class QualityManager {
       // sus cámaras de ojo heredan el de ella; allí la palanca adaptativa es
       // la foveación. Pisarlo recortaba el horizonte dentro del visor.
       if (isXrCamera(camera)) continue;
-      camera.maxZ = p.maxZ * distanceScale;
+      camera.maxZ = Math.max(p.maxZ * distanceScale, this.farFloor);
     }
     for (const texture of this.scene.textures) {
       if (!this.textureAnisotropy.has(texture)) {
@@ -335,8 +367,19 @@ export class QualityManager {
     this.tier = tier;
     this.adaptive = 0;
     this.resetWindow();
-    this.recoverMs = CAPPED_RECOVER_MS;
+    this.recoverFactor = 1;
     this.applyRuntime();
+  }
+
+  /**
+   * Deja de medir durante `ms` (por omisión 6 s) y empieza una ventana nueva.
+   * Se llama al terminar de arrancar, al reconstruir la escuela y al entrar
+   * al visor: esos cuadros son compilación y carga, no el equipo. Con
+   * `Infinity` no mide hasta el próximo `settle` (mientras se reconstruye).
+   */
+  settle(ms = 6000): void {
+    this.resetWindow();
+    this.skipMs = ms;
   }
 
   private resetWindow(): void {
@@ -345,6 +388,22 @@ export class QualityManager {
     this.slowWindows = 0;
     this.healthyMs = 0;
     this.hitchMs = 0;
+  }
+
+  /**
+   * Distancia a la que la niebla funde el suelo (Environment.fogReach): el
+   * plano lejano adaptativo no baja de `FAR_FLOOR_FACTOR` veces eso.
+   *
+   * Recortar antes de la niebla no ahorra casi nada: el suelo es una sola
+   * losa y la ciudad de fondo va entera en los lotes de color (TintFarm),
+   * que el plano lejano no descarta por partes. Lo único que hacía era
+   * mostrar el corte: en 'low' y 'mobile' al nivel 3 el plano caía a 348 m
+   * con la niebla al 76 %, y desde el aire aparecía una franja marrón bajo
+   * el perfil. Por encima del piso la palanca sigue igual (Alta, Media).
+   */
+  setFogReach(reach: number): void {
+    this.farFloor = Math.max(0, reach) * FAR_FLOOR_FACTOR;
+    this.applyRuntime();
   }
 
   /** Siguiente nivel, en ciclo. Para el botón del HUD. */

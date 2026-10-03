@@ -10,7 +10,7 @@ import { CreateIcoSphere } from '@babylonjs/core/Meshes/Builders/icoSphereBuilde
 import { VertexBuffer } from '@babylonjs/core/Buffers/buffer';
 import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData';
 
-export type Primitive = 'box' | 'cylinder' | 'cone' | 'sphere' | 'plane' | 'blob' | 'blobHi';
+export type Primitive = 'box' | 'cylinder' | 'cylinderHi' | 'cone' | 'sphere' | 'plane' | 'blob' | 'blobHi';
 
 /**
  * Granja de instancias finas (thin instances).
@@ -183,6 +183,13 @@ export class InstanceFarm {
       case 'cylinder':
         // 6 lados: un tronco o una columna no necesitan mas, y baja de 40 a 24 tris.
         mesh = CreateCylinder(name, { height: 1, diameter: 1, tessellation: 6 }, this.scene);
+        break;
+      case 'cylinderHi':
+        // 10 lados (40 tris): lo redondo que se ve a un metro (mesas
+        // redondas, matafuegos, piletas, columnas). Con 6 lados una mesa
+        // redonda era un hexágono. Mapeo de textura: como el cilindro
+        // (`Materials`, mapeo propio de cilindros y conos).
+        mesh = CreateCylinder(name, { height: 1, diameter: 1, tessellation: 10 }, this.scene);
         break;
       case 'cone':
         // Cono de 6 lados: suficiente para una copa de árbol vista a distancia.

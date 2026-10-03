@@ -3,11 +3,18 @@ import { Color3 } from '@babylonjs/core/Maths/math.color';
 import type { InstanceFarm } from '../../core/InstanceFarm';
 import type { Materials } from '../Materials';
 import type { Rng } from '../../utils/rng';
-import type { Block, CityPlan } from '../CityLayout';
+import { CROSS_AT, KERB_W, LANE_FRAC, RAMP_LEN, SIDEWALK_H, type Block, type CityPlan, type Street } from '../CityLayout';
 import type { NatureBuilder } from './NatureBuilder';
 import type { BuildingBuilder } from './BuildingBuilder';
 import type { StreetLevel } from './StreetLevel';
+import { DistantCity } from './DistantCity';
+import { GROUND_MARGIN } from '../TimeOfDay';
 import { PALETTE } from '../Palette';
+
+// LANE_FRAC, RAMP_LEN, CROSS_AT y KERB_W viven en `CityLayout` (los usan
+// también la gente y el tránsito).
+/** Medio ancho de una rampa (y de la senda). */
+const RAMP_HALF = 1.3;
 
 const hex = (h: string) => Color3.FromHexString(h);
 
@@ -40,47 +47,86 @@ export class InfraBuilder {
    * construirlo (la escuela es la protagonista).
    */
   ground(plan: CityPlan): void {
+    // `ground` es lo primero que se levanta: desde acá, las mesitas que
+    // `StreetLevel` saque a la vereda van directo al plano (las lee la gente
+    // de la vereda, que se arma después de la ciudad).
+    plan.cafeTables.length = 0;
+    this.street.cafeTables = plan.cafeTables;
     const b = districtBounds(plan);
-    const size = plan.extent * 2 + 400;
+    // Una sola caja (el mapeo es métrico: la textura no se estira). Su borde
+    // tiene que quedar dentro de la niebla desde cualquier punto del barrio:
+    // ver TimeOfDay.GROUND_MARGIN y fogReach. Centrada en el barrio, no en la
+    // escuela: el barrio se extiende más hacia el este (−x).
+    const size = (plan.extent + GROUND_MARGIN) * 2;
     this.farm.add(
       'box',
       this.mats.surface(hex('#7d8a5c'), 0.95, 0, 'pavementXL'),
-      new Vector3(0, -0.52, 0),
+      new Vector3((b.x0 + b.x1) / 2, -0.52, (b.z0 + b.z1) / 2),
       new Vector3(size, 1, size),
     );
+    const paving = this.mats.surface(PALETTE.pavement, 0.9, 0, 'pavementXL');
     this.farm.add(
       'box',
-      this.mats.surface(PALETTE.pavement, 0.9, 0, 'pavementXL'),
+      paving,
       new Vector3((b.x0 + b.x1) / 2, -0.5, (b.z0 + b.z1) / 2),
       new Vector3(b.x1 - b.x0, 1, b.z1 - b.z0),
     );
-    // Cinturón de árboles alrededor, más denso cerca y ralo lejos.
-    const count = Math.round(110 * this.greenDensity);
+    // La ciudad sigue: solado de las manzanas de enfrente (capa 1), en cuatro
+    // franjas alrededor del barrio para no superponerse con su solado.
+    const o = outerBounds(plan);
+    for (const [x0, x1, z0, z1] of [
+      [o.x0, o.x1, o.z0, b.z0],
+      [o.x0, o.x1, b.z1, o.z1],
+      [o.x0, b.x0, b.z0, b.z1],
+      [b.x1, o.x1, b.z0, b.z1],
+    ] as const) {
+      this.farm.add('box', paving, new Vector3((x0 + x1) / 2, -0.5, (z0 + z1) / 2), new Vector3(x1 - x0, 1, z1 - z0));
+    }
+    new DistantCity(this.street.tint, this.street.fullDetail).build(plan);
+
+    // Cinturón de árboles más allá de la capa 1, entre las torres del
+    // horizonte (antes estaba donde hoy están las manzanas de enfrente). Los
+    // que caen sobre la capa 1 o sobre una torre no se plantan. En el visor
+    // no va: a más de 200 m la niebla los deja en un 90 % y costaban ~15k
+    // triángulos (desde la calle los tapan las manzanas de enfrente).
+    const count = this.street.fullDetail ? Math.round(110 * this.greenDensity) : 0;
+    const masses = plan.backdrop.masses.filter((m) => m.layer === 2);
+    const push = o.x1 - b.x1;
     for (let i = 0; i < count; i++) {
       const side = this.rng.int(0, 3);
-      const out = 6 + Math.pow(this.rng.next(), 1.6) * 55;
+      const out = 6 + Math.pow(this.rng.next(), 1.6) * 55 + push;
       const t = this.rng.next();
-      const x = side === 0 ? b.x0 - out : side === 1 ? b.x1 + out : b.x0 - 40 + t * (b.x1 - b.x0 + 80);
-      const z = side === 2 ? b.z0 - out : side === 3 ? b.z1 + out : b.z0 - 40 + t * (b.z1 - b.z0 + 80);
-      if (this.rng.chance(0.85)) this.nature.broadleaf(x, z, this.rng.range(0.9, 1.5), 0);
-      else this.nature.conifer(x, z, this.rng.range(0.9, 1.3), 0);
+      const x = side === 0 ? b.x0 - out : side === 1 ? b.x1 + out : o.x0 - 40 + t * (o.x1 - o.x0 + 80);
+      const z = side === 2 ? b.z0 - out : side === 3 ? b.z1 + out : o.z0 - 40 + t * (o.z1 - o.z0 + 80);
+      const conifer = !this.rng.chance(0.85);
+      const scale = conifer ? this.rng.range(0.9, 1.3) : this.rng.range(0.9, 1.5);
+      const blocked =
+        (x > o.x0 - 2 && x < o.x1 + 2 && z > o.z0 - 2 && z < o.z1 + 2) ||
+        masses.some((m) => Math.abs(x - m.x) < m.w / 2 + 3 && Math.abs(z - m.z) < m.d / 2 + 3);
+      if (blocked) continue;
+      if (conifer) this.nature.conifer(x, z, scale, 0);
+      else this.nature.broadleaf(x, z, scale, 0);
     }
   }
 
-  /** Calzadas y veredas. */
+  /** Calzadas, cordones, veredas elevadas con sus rampas y sendas peatonales. */
   streets(plan: CityPlan): void {
     const laneMat = this.mats.surface(PALETTE.pavementDark, 0.88, 0, 'pavementXL');
     const tramMat = this.mats.surface(PALETTE.tramLane, 0.7, 0.12, 'pavementXL');
     const length = plan.extent * 2 + 40;
+    const lane = plan.streetWidth * LANE_FRAC;
 
     for (const street of plan.streets) {
-      // Calzada central angosta (la mitad del ancho de la calle).
-      const lane = street.width * 0.42;
       const isX = street.axis === 'x';
       // Tramos existentes: la calle entre las dos manzanas de la escuela se
-      // corta, porque el predio es uno solo.
+      // corta, porque el predio es uno solo. Cada punta se estira media
+      // calzada: en las esquinas del barrio la calzada no queda mordida.
       const [from, to] = street.span ?? [-length / 2, length / 2];
-      for (const [s0, s1] of streetSpans(from, to, street.gaps)) {
+      // El hueco se agranda hasta el borde de la calzada transversal: si no,
+      // un muñón de asfalto cortaba la vereda de la escuela sobre Laprida y Lafinur.
+      const pad = plan.streetWidth / 2 - lane / 2;
+      const gaps = street.gaps?.map(([g0, g1]): [number, number] => [g0 - pad, g1 + pad]);
+      for (const [s0, s1] of streetSpans(from - lane / 2, to + lane / 2, gaps)) {
         const c = (s0 + s1) / 2;
         const l = s1 - s0;
         this.farm.add(
@@ -89,44 +135,228 @@ export class InfraBuilder {
           new Vector3(isX ? c : street.at, 0.04, isX ? street.at : c),
           isX ? new Vector3(l, 0.08, lane) : new Vector3(lane, 0.08, l),
         );
-
-        // Cordón: la línea que separa calzada de vereda. Es un detalle
-        // baratísimo (dos cajas por calle) y de los que más se notan al
-        // caminar: sin él, vereda y calzada son el mismo plano pintado de otro
-        // color.
-        this.street.kerb(street.axis, street.at, lane / 2 + 0.16, l, c);
       }
+      this.schoolKerbs(plan, street);
+    }
+    // Calles de la ciudad de fondo: sólo la calzada (las veredas son de sus manzanas).
+    for (const st of plan.backdrop.streets) {
+      const isX = st.axis === 'x';
+      const c = (st.from + st.to) / 2;
+      const l = st.to - st.from + lane;
+      this.farm.add('box', laneMat, new Vector3(isX ? c : st.at, 0.04, isX ? st.at : c), isX ? new Vector3(l, 0.08, lane) : new Vector3(lane, 0.08, l));
+    }
 
-      // Rieles del tranvía: dos líneas finas y brillantes.
-      if (street.tram) {
-        const railMat = this.mats.metal(PALETTE.solarFrame, 0.2);
+    // Veredas elevadas: las manzanas del barrio y las de enfrente.
+    for (const block of plan.blocks) if (!block.landmark) this.raisedSidewalk(plan, block.cx, block.cz);
+    for (const k of plan.backdrop.blocks) this.backdropSidewalk(plan, k.cx, k.cz);
+
+    this.crossings(plan);
+    this.corners(plan);
+    // Bancos de vereda y de explanada (los de las paradas los arma el refugio).
+    for (const b of plan.benches) if (b.kind !== 'stop') this.street.bench(b.x, b.z, b.rotY, SIDEWALK_H);
+    for (const p of plan.props) {
+      if (p.kind === 'busStop') this.street.tramStop(p.x, p.z, Math.atan2(-p.nx, -p.nz), SIDEWALK_H);
+      else this.street.newsKiosk(p.x, p.z, p.nx, p.nz, SIDEWALK_H);
+      // El arbolado y el mobiliario de la vereda los esquivan.
+      this.stops.push({ x: p.x, z: p.z });
+    }
+  }
+
+  /**
+   * Cordón del lado de la escuela: su vereda sigue a cota cero (la arma el
+   * frente de la escuela), así que el cordón es el de antes, un canto de 17 cm.
+   */
+  private schoolKerbs(plan: CityPlan, street: Street): void {
+    const site = plan.schoolSite;
+    if (!site) return;
+    const lane = plan.streetWidth * LANE_FRAC;
+    const reach = plan.streetWidth / 2 - lane / 2 - KERB_W;
+    const isX = street.axis === 'x';
+    const lo = (isX ? site.x0 : site.z0) - reach;
+    const hi = (isX ? site.x1 : site.z1) + reach;
+    for (const edge of isX ? [site.z0, site.z1] : [site.x0, site.x1]) {
+      if (Math.abs(street.at - edge) > plan.streetWidth / 2 + 0.01) continue;
+      const side = edge > street.at ? 1 : -1;
+      this.street.kerb(street.axis, street.at, lane / 2 + 0.16, hi - lo, (lo + hi) / 2, [side]);
+    }
+  }
+
+  /**
+   * Vereda elevada de una manzana: solado a `SIDEWALK_H` hasta el cordón,
+   * con una rampa en cada senda peatonal.
+   *
+   * El núcleo es una losa; la franja exterior (la del cordón) se arma por
+   * tramos, dejando el hueco de cada rampa, que baja hasta la calzada. Antes
+   * la calzada estaba 8 cm POR ENCIMA de la vereda y el cordón era un listón
+   * suelto: desde la altura de los ojos, calle y vereda eran el mismo plano.
+   */
+  private raisedSidewalk(plan: CityPlan, cx: number, cz: number): void {
+    const paving = this.mats.surface(PALETTE.pavement, 0.9, 0, 'pavementXL');
+    const kerbMat = this.mats.surface(PALETTE.concreteShade, 0.9, 0, 'pavement');
+    const lane = plan.streetWidth * LANE_FRAC;
+    const pitch = plan.blockSize + plan.streetWidth;
+    // Borde exterior de la vereda (cara interior del cordón) desde el centro.
+    const E = pitch / 2 - lane / 2 - KERB_W;
+    const I = E - RAMP_LEN;
+    const H = SIDEWALK_H;
+    this.farm.add('box', paving, new Vector3(cx, H / 2 - 0.01, cz), new Vector3(I * 2, H + 0.02, I * 2));
+    // Ventanas de rampa a lo largo de cada lado.
+    const rampC = pitch / 2 - CROSS_AT;
+    const windows: Array<[number, number]> = [
+      [-rampC - RAMP_HALF, -rampC + RAMP_HALF],
+      [rampC - RAMP_HALF, rampC + RAMP_HALF],
+    ];
+    const segments = (a: number, b: number): Array<[number, number]> => {
+      const out: Array<[number, number]> = [];
+      let cur = a;
+      for (const [w0, w1] of windows) {
+        if (w1 <= cur || w0 >= b) continue;
+        if (w0 > cur) out.push([cur, w0]);
+        cur = Math.max(cur, w1);
+      }
+      if (cur < b) out.push([cur, b]);
+      return out;
+    };
+    const drop = H - 0.09;
+    const len = RAMP_LEN + KERB_W;
+    const tilt = Math.atan2(drop, len);
+    for (const [nx, nz] of [
+      [0, -1],
+      [0, 1],
+      [-1, 0],
+      [1, 0],
+    ] as const) {
+      const alongX = nz !== 0;
+      // Las franjas N y S llegan a las esquinas; las E y O van entre ellas.
+      const ext = alongX ? E : I;
+      const r = (I + E) / 2;
+      for (const [a, b] of segments(-ext, ext)) {
+        const m = (a + b) / 2;
+        const l = b - a;
+        const x = alongX ? cx + m : cx + nx * r;
+        const z = alongX ? cz + nz * r : cz + m;
+        this.farm.add('box', paving, new Vector3(x, H / 2 - 0.01, z), alongX ? new Vector3(l, H + 0.02, RAMP_LEN) : new Vector3(RAMP_LEN, H + 0.02, l));
+        // Cordón: canto de piedra más claro sobre el borde.
+        const kx = alongX ? x : cx + nx * (E + 0.16);
+        const kz = alongX ? cz + nz * (E + 0.16) : z;
+        this.farm.add('box', kerbMat, new Vector3(kx, (H + 0.015) / 2, kz), alongX ? new Vector3(l, H + 0.015, KERB_W) : new Vector3(KERB_W, H + 0.015, l));
+      }
+      // Rampas: bajan de la vereda a la calzada en cada senda peatonal.
+      for (const [w0, w1] of windows) {
+        const m = (w0 + w1) / 2;
+        const rr = (I + E + KERB_W) / 2;
+        const x = alongX ? cx + m : cx + nx * rr;
+        const z = alongX ? cz + nz * rr : cz + m;
+        // Girar +α sobre X baja el extremo +Z; −α sobre Z baja el +X.
+        this.farm.add(
+          'box',
+          paving,
+          new Vector3(x, (H + 0.09) / 2 - 0.08, z),
+          alongX ? new Vector3(w1 - w0, 0.16, len / Math.cos(tilt)) : new Vector3(len / Math.cos(tilt), 0.16, w1 - w0),
+          0,
+          alongX ? nz * tilt : 0,
+          alongX ? 0 : -nx * tilt,
+        );
+      }
+    }
+  }
+
+  /**
+   * Vereda de una manzana de la ciudad de fondo: una losa y su cordón, sin
+   * rampas (sus esquinas no tienen sendas: no se cruza por ahí).
+   */
+  private backdropSidewalk(plan: CityPlan, cx: number, cz: number): void {
+    const paving = this.mats.surface(PALETTE.pavement, 0.9, 0, 'pavementXL');
+    const kerbMat = this.mats.surface(PALETTE.concreteShade, 0.9, 0, 'pavement');
+    const pitch = plan.blockSize + plan.streetWidth;
+    const E = pitch / 2 - (plan.streetWidth * LANE_FRAC) / 2 - KERB_W;
+    const H = SIDEWALK_H;
+    this.farm.add('box', paving, new Vector3(cx, H / 2 - 0.01, cz), new Vector3(E * 2, H + 0.02, E * 2));
+    for (const [nx, nz] of [
+      [0, -1],
+      [0, 1],
+      [-1, 0],
+      [1, 0],
+    ] as const) {
+      const l = E * 2 + (nz !== 0 ? 0.64 : 0);
+      this.farm.add('box', kerbMat, new Vector3(cx + nx * (E + 0.16), (H + 0.015) / 2, cz + nz * (E + 0.16)), nz !== 0 ? new Vector3(l, H + 0.015, KERB_W) : new Vector3(KERB_W, H + 0.015, l));
+    }
+  }
+
+  /** Sendas peatonales (cebra) en cada brazo de cada esquina del barrio. */
+  private crossings(plan: CityPlan): void {
+    const lane = plan.streetWidth * LANE_FRAC;
+    const paint: readonly [number, number, number] = [0.86, 0.86, 0.82];
+    const tint = this.street.tint;
+    const xs = plan.streets.filter((s) => s.axis === 'x');
+    const zs = plan.streets.filter((s) => s.axis === 'z');
+    const stripes = 6;
+    for (const sx of xs) {
+      for (const sz of zs) {
+        const X = sz.at;
+        const Z = sx.at;
+        if (!streetAt(sx, X) || !streetAt(sz, Z)) continue;
         for (const s of [-1, 1]) {
-          this.farm.add(
-            'box',
-            railMat,
-            new Vector3(
-              isX ? 0 : street.at + s * lane * 0.22,
-              0.1,
-              isX ? street.at + s * lane * 0.22 : 0,
-            ),
-            isX ? new Vector3(length, 0.06, 0.12) : new Vector3(0.12, 0.06, length),
-          );
+          // Brazo de la calle en X hacia ±x: la senda la cruza a lo largo de Z.
+          if (streetAt(sx, X + s * 12)) {
+            for (let k = 0; k < stripes; k++) {
+              const o = ((k + 0.5) / stripes - 0.5) * (lane - 0.5);
+              tint.decal(paint, X + s * CROSS_AT, 0.092, Z + o, RAMP_HALF * 2, 0.5);
+            }
+          }
+          // Brazo de la calle en Z hacia ±z.
+          if (streetAt(sz, Z + s * 12)) {
+            for (let k = 0; k < stripes; k++) {
+              const o = ((k + 0.5) / stripes - 0.5) * (lane - 0.5);
+              tint.decal(paint, X + o, 0.092, Z + s * CROSS_AT, 0.5, RAMP_HALF * 2);
+            }
+          }
         }
+      }
+    }
+  }
 
-        // Paradas cada ~3 manzanas, alternando de lado de la vía.
-        const pitch = (plan.blockSize + plan.streetWidth) * 3;
-        const stops = Math.floor(plan.extent / pitch) * 2;
-        for (let k = -stops / 2; k <= stops / 2; k++) {
-          // La parada central se corre del eje: en el cruce con el eje central
-          // caía justo delante del portón de la escuela y lo tapaba.
-          const along = k * pitch + (k === 0 ? 19 : 0);
-          if (Math.abs(along) > plan.extent - 20) continue;
-          const side = k % 2 === 0 ? 1 : -1;
-          const offset = lane / 2 + 2.6;
-          const sx = isX ? along : street.at + side * offset;
-          const sz = isX ? street.at + side * offset : along;
-          this.street.tramStop(sx, sz, isX ? 0 : Math.PI / 2);
-          this.stops.push({ x: sx, z: sz });
+  /**
+   * Esquinas: chapas con el nombre de las calles. Los semáforos no van acá:
+   * los dibuja y los anima el tránsito (`world/life`), sincronizados con los
+   * autos; la chapa se corre 1,8 m de la esquina para no pisar su columna.
+   */
+  private corners(plan: CityPlan): void {
+    const pitch = plan.blockSize + plan.streetWidth;
+    const lane = plan.streetWidth * LANE_FRAC;
+    const E = pitch / 2 - lane / 2 - KERB_W;
+    // Esquina de la vereda, a 55 cm de los dos cordones.
+    const corner = pitch / 2 - E + 0.55;
+    const xs = plan.streets.filter((s) => s.axis === 'x');
+    const zs = plan.streets.filter((s) => s.axis === 'z');
+    const site = plan.schoolSite;
+    const onSchool = (x: number, z: number) => !!site && x > site.x0 - 8 && x < site.x1 + 8 && z > site.z0 - 8 && z < site.z1 + 8;
+    for (const sx of xs) {
+      for (const sz of zs) {
+        const X = sz.at;
+        const Z = sx.at;
+        if (!streetAt(sx, X) || !streetAt(sz, Z)) continue;
+        const names = [sx, sz].filter((s) => s.name);
+        if (names.length === 0) continue;
+        // Esquinas de vereda elevada (las del lado de la escuela las arma ella).
+        const spots = (
+          [
+            [-1, -1],
+            [1, -1],
+            [-1, 1],
+            [1, 1],
+          ] as const
+        ).filter(([s, t]) => !onSchool(X + s * corner, Z + t * corner));
+        if (spots.length === 0) continue;
+        // Dos postes en esquinas opuestas: se leen llegando por cualquier lado.
+        const picks = spots.length > 1 ? [spots[0], spots[spots.length - 1]] : [spots[0]];
+        for (const [s, t] of picks) {
+          this.street.streetSigns(
+            X + s * corner,
+            Z + t * (corner + 1.8),
+            names.map((n) => ({ text: n.name!, ax: n.axis === 'x' ? 1 : 0, az: n.axis === 'z' ? 1 : 0 })),
+            SIDEWALK_H,
+          );
         }
       }
     }
@@ -149,13 +379,15 @@ export class InfraBuilder {
       return;
     }
     const half = plan.blockSize / 2;
+    // Vereda elevada: todo lo que se apoya en ella arranca a esa cota.
+    const g = SIDEWALK_H;
     // Línea de arbolado sobre la vereda, justo detrás del cordón.
     //
     // Antes estaba a 0,3 del ancho de calle desde el borde de la manzana, o sea
     // 15 cm DENTRO de la calzada: los alcorques pisaban el cordón y los troncos
     // salían del asfalto. Ahora el alcorque entero queda en la vereda.
     const lane = plan.streetWidth * 0.21;
-    const treeLine = plan.streetWidth / 2 - (lane + 0.32 + 1.0);
+    const treeLine = plan.streetWidth / 2 - (lane + KERB_W + 1.0);
     const offset = half + treeLine;
     const spacing = 12;
     const count = Math.max(2, Math.floor((plan.blockSize / spacing) * this.greenDensity));
@@ -163,20 +395,17 @@ export class InfraBuilder {
     for (let i = 0; i < count; i++) {
       const t = (i + 0.5) / count - 0.5;
       const along = t * plan.blockSize + this.rng.range(-1.5, 1.5);
-      // Frente de la escuela: el acceso necesita respirar y verse desde la
-      // plaza, así que el tramo central queda libre de árboles y mobiliario.
-      if (block.landmark === 'school' && Math.abs(along) < 12) continue;
 
       // Solo dos lados por manzana: asi ninguna calle se planta dos veces.
-      // `ax`/`az` es la dirección de la calle (a lo largo de la vereda).
-      const spots: Array<{ x: number; z: number; ax: number; az: number }> = [
-        { x: block.cx + along, z: block.cz - offset, ax: 1, az: 0 },
-        { x: block.cx - offset, z: block.cz + along, ax: 0, az: 1 },
+      // `ax` dice si la calle corre en X (a lo largo de la vereda).
+      const spots: Array<{ x: number; z: number; ax: number }> = [
+        { x: block.cx + along, z: block.cz - offset, ax: 1 },
+        { x: block.cx - offset, z: block.cz + along, ax: 0 },
       ];
       for (const spot of spots) {
-        const { x, z, ax, az } = spot;
-        // Una parada de tranvía ocupa ~5 m de vereda: nada de árboles, bancos
-        // ni farolas encima (antes un tronco salía por el medio del banco).
+        const { x, z, ax } = spot;
+        // Una parada o el kiosco ocupan ~5 m de vereda: nada de árboles,
+        // bancos ni farolas encima (antes un tronco salía por el medio del banco).
         if (this.stops.some((p) => Math.abs(p.x - x) < 5 && Math.abs(p.z - z) < 5)) continue;
         const streetRot = ax === 1 ? 0 : Math.PI / 2;
         const hasTree = this.rng.chance(0.72);
@@ -186,25 +415,72 @@ export class InfraBuilder {
           const scale = this.rng.range(0.62, 1.12);
           // Alcorque: el árbol de vereda sale de un cuadro de tierra, no del
           // solado. Sin esto los troncos parecen clavados en el hormigón.
-          this.street.treePit(x, z);
-          if (this.rng.chance(0.82)) this.nature.broadleaf(x, z, scale, 0.1);
-          else this.nature.conifer(x, z, scale * 0.9, 0.1);
-        } else if (this.street.fullDetail && this.rng.chance(0.3)) {
+          this.street.treePit(x, z, g);
+          if (this.rng.chance(0.82)) this.nature.broadleaf(x, z, scale, g + 0.1);
+          else this.nature.conifer(x, z, scale * 0.9, g + 0.1);
+        } else if (this.rng.chance(0.55)) {
           // Donde no hay árbol, mobiliario: la vereda vacía se ve muerta.
           const pick = this.rng.next();
-          if (pick < 0.4) this.street.bikeRack(x, z, streetRot);
-          else if (pick < 0.7) this.street.bin(x, z);
-          else this.street.bollard(x, z);
+          if (pick < 0.4) this.street.bikeRack(x, z, streetRot, g);
+          else if (pick < 0.75) this.street.bin(x, z, g);
+          else this.street.bollard(x, z, g);
         }
-        // Farolas y bancos van sobre la MISMA línea que los árboles, entre
-        // alcorques. Antes se corrían hacia la manzana y los bancos terminaban
-        // metidos dentro de las fachadas.
-        if (this.rng.chance(0.2)) {
-          this.solarLamp(x - ax * 3.6, z - az * 3.6);
-        }
-        if (this.rng.chance(0.14)) {
-          this.bench(x + ax * 3.4, z + az * 3.4, streetRot);
-        }
+        // Los bancos salen del plano (`plan.benches`, los dibuja `streets`):
+        // la gente se sienta en ellos. Se sigue tirando el dado de antes para
+        // no correr el azar compartido (la escuela se arma después con él).
+        this.rng.chance(0.22);
+      }
+    }
+    this.lamps(block, plan);
+    this.planters(block, plan);
+  }
+
+  /**
+   * Canteros en las veredas sur y este de cada manzana, las que no llevan
+   * arbolado (cada calle se planta una sola vez, desde el norte y el oeste):
+   * sin ellos esas veredas quedaban peladas.
+   */
+  private planters(block: Block, plan: CityPlan): void {
+    const pitch = plan.blockSize + plan.streetWidth;
+    const E = pitch / 2 - (plan.streetWidth * LANE_FRAC) / 2 - KERB_W;
+    const r = E - 0.9;
+    const spots = this.street.fullDetail ? [-15, 3] : [-15];
+    for (const [nx, nz] of [
+      [0, 1],
+      [1, 0],
+    ] as const) {
+      for (const along of spots) {
+        const x = block.cx + (nz !== 0 ? along : nx * r);
+        const z = block.cz + (nx !== 0 ? along : nz * r);
+        if (this.stops.some((p) => Math.abs(p.x - x) < 4 && Math.abs(p.z - z) < 4)) continue;
+        this.nature.planter(x, z, nz !== 0 ? 2.6 : 0.9, nz !== 0 ? 0.9 : 2.6, SIDEWALK_H, 1.6);
+      }
+    }
+  }
+
+  /**
+   * Farolas: dos por cuadra en cada vereda del barrio, con el brazo sobre la
+   * calzada. Antes salían al azar (una cada cinco lugares) y había cuadras
+   * enteras sin una sola luz.
+   */
+  private lamps(block: Block, plan: CityPlan): void {
+    const pitch = plan.blockSize + plan.streetWidth;
+    const E = pitch / 2 - (plan.streetWidth * LANE_FRAC) / 2 - KERB_W;
+    const r = E - 0.55;
+    for (const [nx, nz] of [
+      [0, -1],
+      [0, 1],
+      [-1, 0],
+      [1, 0],
+    ] as const) {
+      // En el visor, una por vereda, alternando el lado: con las de la vereda
+      // de enfrente queda una luz cada ~20 m de calle.
+      const spots = this.street.fullDetail ? [-9, 9] : [nx + nz > 0 ? 9 : -9];
+      for (const along of spots) {
+        const x = block.cx + (nz !== 0 ? along : nx * r);
+        const z = block.cz + (nx !== 0 ? along : nz * r);
+        if (this.stops.some((p) => Math.abs(p.x - x) < 4 && Math.abs(p.z - z) < 4)) continue;
+        this.street.streetLamp(x, z, nx, nz, SIDEWALK_H);
       }
     }
   }
@@ -218,7 +494,7 @@ export class InfraBuilder {
     const site = plan.schoolSite;
     if (!site) return;
     const lane = plan.streetWidth * 0.21;
-    const treeLine = plan.streetWidth / 2 - (lane + 0.32 + 1.0);
+    const treeLine = plan.streetWidth / 2 - (lane + KERB_W + 1.0);
     const north = block.landmark === 'school';
     const from = north ? site.x0 : site.z0;
     const to = north ? site.x1 : site.z1;
@@ -233,51 +509,21 @@ export class InfraBuilder {
     }
   }
 
-  /** Farola con panel solar propio y luz cálida. */
-  private solarLamp(x: number, z: number): void {
-    const h = 5.2;
-    const poleMat = this.mats.metal(PALETTE.solarFrame, 0.4);
-    this.farm.add('cylinder', poleMat, new Vector3(x, h / 2, z), new Vector3(0.14, h, 0.14));
-    // Panel inclinado en la punta.
-    this.farm.add(
-      'box',
-      this.mats.solar(),
-      new Vector3(x, h + 0.12, z),
-      new Vector3(1.1, 0.07, 0.7),
-      0,
-      -0.3,
-    );
-    // Luminaria emisiva (no es una luz real: sería carísimo tener cientos).
-    this.farm.add(
-      'box',
-      this.mats.glow(PALETTE.sun, 0.55),
-      new Vector3(x, h - 0.35, z),
-      new Vector3(0.5, 0.1, 0.34),
-    );
-  }
-
-  /** Banco de madera. */
-  private bench(x: number, z: number, rotY: number): void {
-    const mat = this.mats.surface(PALETTE.timberLight, 0.85, 0, 'timber');
-    this.farm.add('box', mat, new Vector3(x, 0.45, z), new Vector3(1.9, 0.12, 0.52), rotY);
-    for (const s of [-1, 1]) {
-      // El eje X local de una caja girada `rotY` apunta a (cos, −sin). Con +sin
-      // las patas quedaban espejadas respecto del asiento en cualquier banco
-      // que no estuviera alineado con los ejes (los de la plaza, por ejemplo).
-      this.farm.add(
-        'box',
-        mat,
-        new Vector3(x + Math.cos(rotY) * s * 0.75, 0.22, z - Math.sin(rotY) * s * 0.75),
-        new Vector3(0.14, 0.44, 0.46),
-        rotY,
-      );
-    }
+  /**
+   * Sube el detalle con color (`TintFarm`) y pinta los carteles. Idempotente:
+   * lo llama `canal`, que `City` invoca después de todas las manzanas.
+   */
+  finish(): void {
+    this.street.finish();
   }
 
   // --------------------------------------------------------------------- agua
 
   /** Canal: agua, taludes verdes y muelles de madera. */
   canal(plan: CityPlan): void {
+    // Es lo último que `City` le pide a los constructores antes de subir la
+    // granja: el detalle con color y los carteles se suben acá (ver `finish`).
+    this.finish();
     const { canal } = plan;
     // El barrio de la escuela no tiene canal.
     if (canal.halfWidth <= 0) return;
@@ -569,4 +815,18 @@ export function districtBounds(plan: CityPlan): { x0: number; x1: number; z0: nu
   const pitch = plan.blockSize + plan.streetWidth;
   const margin = plan.streetWidth / 2;
   return { x0: -2.5 * pitch - margin, x1: 1.5 * pitch + margin, z0: -1.5 * pitch - margin, z1: 1.5 * pitch + margin };
+}
+
+/** ¿La calle existe en esa coordenada a lo largo de su eje (dentro del tramo y fuera de los huecos)? */
+function streetAt(st: Street, v: number): boolean {
+  const [a, b] = st.span ?? [-Infinity, Infinity];
+  if (v < a - 0.01 || v > b + 0.01) return false;
+  return !(st.gaps ?? []).some(([g0, g1]) => v > g0 && v < g1);
+}
+
+/** Rectángulo de la capa 1 de la ciudad de fondo, con sus veredas exteriores. */
+export function outerBounds(plan: CityPlan): { x0: number; x1: number; z0: number; z1: number } {
+  const pitch = plan.blockSize + plan.streetWidth;
+  const margin = plan.streetWidth / 2;
+  return { x0: -3.5 * pitch - margin, x1: 2.5 * pitch + margin, z0: -2.5 * pitch - margin, z1: 2.5 * pitch + margin };
 }

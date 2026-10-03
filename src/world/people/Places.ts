@@ -1,11 +1,14 @@
 import {
   FURNITURE,
   ITEMS,
+  KINDER_ROOMS,
   LANDINGS,
   LEVEL_Y,
   ROOMS,
   STAIRS,
   WALLS,
+  chairScaleOf,
+  deskTopOf,
   hasFloor,
   inPoly,
   roomAt,
@@ -15,7 +18,6 @@ import {
   type Level,
   type Room,
 } from '../SchoolLayout';
-import { JARDIN_ROOMS } from '../SchoolJardin';
 import type { NavGrid, NavPoint } from './NavGrid';
 
 /**
@@ -181,8 +183,6 @@ const CLASS_KIND: Record<string, ClassKind> = {
 
 /** Mobiliario que hace de mesa delante de una silla. */
 const TABLES = new Set<Item['kind']>(['desk', 'table', 'teacherDesk', 'desk2', 'workbench', 'counter', 'longTable', 'hexTable', 'roundTable']);
-/** Ambientes del jardín (sus sillas son para los más chicos). */
-const JARDIN_IDS: ReadonlySet<string> = new Set(JARDIN_ROOMS.map((r) => r.id));
 
 /** Altura de la tapa de cada mesa sobre el piso, como la dibuja `SchoolBuilder`. */
 const TABLE_TOP: Partial<Record<Item['kind'], number>> = {
@@ -412,7 +412,9 @@ export class Places {
           const u = line.u + fu * (depth / 2 + 0.5) + au * e * off;
           const v = line.v + fv * (depth / 2 + 0.5) + av * e * off;
           const p = this.nav.nearestWalkable(level, u, v, 0.35);
-          if (!p) continue;
+          // Al ajustarse a la grilla dos lugares podían quedar a 25 cm (dos
+          // cabezas fundidas en la fila): se saltea y se sigue más allá.
+          if (!p || slots.some((q) => Math.hypot(q.u - p.u, q.v - p.v) < 0.5)) continue;
           const yaw = slots.length === 0 ? headYaw : yawOfLocal(au * e, av * e);
           slots.push({ u: p.u, v: p.v, level, yaw });
         }
@@ -465,7 +467,7 @@ export class Places {
     face: Facing,
     height: number,
     kind: SeatKind,
-    opts: { small?: boolean; footDrop?: number; desk?: boolean; stand?: [number, number, number]; dir?: [number, number] } = {},
+    opts: { small?: boolean; footDrop?: number; desk?: boolean; stand?: [number, number, number]; dir?: [number, number]; approachFrom?: [number, number] } = {},
   ): Seat {
     const [fu, fv] = opts.dir ?? faceVec(face);
     const room = roomAt(u, v, level);
@@ -497,6 +499,9 @@ export class Places {
     if (opts.stand) {
       [s.au, s.av, s.ay] = opts.stand;
       s.ready = true;
+    } else if (opts.approachFrom) {
+      // Base desde la que se busca dónde pararse (ver `chooseApproach`).
+      [s.au, s.av] = opts.approachFrom;
     }
     this.seats.push(s);
     return s;
@@ -510,7 +515,8 @@ export class Places {
    */
   private chooseApproach(s: Seat): void {
     s.ready = true;
-    const { u, v, fu, fv, level } = s;
+    // Los candidatos salen de `au, av` (el asiento, salvo que se diera otra base).
+    const { au: u, av: v, fu, fv, level } = s;
     const pu = -fv;
     const pv = fu;
     const cands: Array<[number, number]> = s.desk
@@ -567,7 +573,9 @@ export class Places {
     let best: { d: number; y: number } | null = null;
     for (const it of ITEMS) {
       if (itemLevel(it) !== level || !TABLES.has(it.kind)) continue;
-      const y = TABLE_TOP[it.kind] ?? FURNITURE.tableTop;
+      // Pupitres y mesas con el talle que dibuja el constructor (chico en el
+      // jardín, de primaria en las aulas de 2º a 6º grado).
+      const y = it.kind === 'table' || it.kind === 'desk' ? deskTopOf(it) : (TABLE_TOP[it.kind] ?? FURNITURE.tableTop);
       for (let d = 0.1; d <= 0.9; d += 0.02) {
         const qu = u + fu * d;
         const qv = v + fv * d;
@@ -591,27 +599,58 @@ export class Places {
       const level = itemLevel(it);
       switch (it.kind) {
         case 'chair':
-        case 'plasticChair':
-          // Sillas de jardín: por la lista de ambientes del jardín (con
-          // `startsWith('sala')` entraban la preceptoría y los baños).
-          this.addSeat(it.u, it.v, level, it.face, chairY, 'chair', { small: JARDIN_IDS.has(roomAt(it.u, it.v, level)?.id ?? '') });
+        case 'plasticChair': {
+          // Sillitas del jardín: en las salas de `KINDER_ROOMS`, las mismas
+          // que el constructor dibuja de talle chico (asiento a 0,345 m). Con
+          // la lista de todo el jardín y la altura de adulto, quien se
+          // sentara quedaba 11 cm en el aire.
+          // En las aulas de primaria, sillas de talle de primaria (0,40 m).
+          const small = it.kind === 'chair' && KINDER_ROOMS.has(roomAt(it.u, it.v, level)?.id ?? '');
+          this.addSeat(it.u, it.v, level, it.face, it.kind === 'chair' ? chairY * chairScaleOf(it) : chairY, 'chair', { small });
           break;
-        case 'stool':
-          this.addSeat(it.u, it.v, level, it.face, 0.76, 'stool');
+        }
+        case 'stool': {
+          // Frente a un mostrador cerrado (la sala de profesores) no hay
+          // lugar para las rodillas: las piernas quedaban adentro del mueble.
+          // Ahí no se sienta nadie (usan las sillas de la mesa).
+          const [fu, fv] = faceVec(it.face);
+          const boxed = ITEMS.some((c) => {
+            if (c.kind !== 'counter' || itemLevel(c) !== level) return false;
+            const r = rectOf(c);
+            return [0.3, 0.45].some((d) => {
+              const qu = it.u + fu * d;
+              const qv = it.v + fv * d;
+              return qu > r.u0 && qu < r.u1 && qv > r.v0 && qv < r.v1;
+            });
+          });
+          // Pies en el travesaño de la banqueta, a 28 cm del piso.
+          if (!boxed) this.addSeat(it.u, it.v, level, it.face, 0.76, 'stool', { footDrop: 0.48 });
           break;
+        }
         case 'hexTable':
         case 'roundTable': {
           // Las sillas de estas mesas las dibuja el constructor, no están en el plano.
           const small = it.kind === 'roundTable';
           for (let k = 0; k < 4; k++) {
             const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
-            const cu = it.u + Math.cos(a) * (it.w / 2 + 0.3);
-            const cv = it.v + Math.sin(a) * (it.w / 2 + 0.3);
+            // A la misma distancia a la que el constructor dibuja las sillas
+            // (con 0,3 la gente se sentaba 13 cm detrás de su silla).
+            const cu = it.u + Math.cos(a) * (it.w / 2 + FURNITURE.roundChair);
+            const cv = it.v + Math.sin(a) * (it.w / 2 + FURNITURE.roundChair);
             const face: Facing = Math.abs(Math.cos(a)) > 0.5 ? (Math.cos(a) > 0 ? 'w' : 'e') : Math.sin(a) > 0 ? 'n' : 's';
             // Las sillas van en diagonal (a 45°) pero miran a un punto
             // cardinal: de frente se miraba al costado de la mesa, con las
             // manos en el aire. Se sienta girado hacia el centro de la mesa.
-            this.addSeat(cu, cv, level, face, small ? chairY * FURNITURE.smallScale : chairY, 'chair', { small, desk: true, dir: [-Math.cos(a), -Math.sin(a)] });
+            // Dónde pararse antes de sentarse: desde 13 cm más afuera (con la
+            // silla metida bajo la mesa, el costado del asiento quedaba en
+            // celdas que la grilla cierra por la mesa vecina).
+            const out = it.w / 2 + 0.3;
+            this.addSeat(cu, cv, level, face, small ? chairY * FURNITURE.smallScale : chairY, 'chair', {
+              small,
+              desk: true,
+              dir: [-Math.cos(a), -Math.sin(a)],
+              approachFrom: [it.u + Math.cos(a) * out, it.v + Math.sin(a) * out],
+            });
           }
           break;
         }

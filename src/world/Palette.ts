@@ -41,6 +41,18 @@ export const PALETTE = {
   leafBright: hex('#6d9c63'),
   leafPale: hex('#8fab6d'),
   moss: hex('#57724b'),
+  // Flores de las especies porteñas (ver NatureBuilder): el lila del
+  // jacarandá y el rosa del palo borracho, que también usan azaleas,
+  // santa ritas y canteros. Apenas más oscuros que la flor real: el follaje
+  // suma un emisivo alto (×1,45 al sol) y un lila más claro se recortaba a
+  // blanco por canal; más oscuros, se leían morado y fucsia. El del
+  // jacarandá tira a azul y va menos saturado: con #9883c4 la copa salía
+  // violeta uva (el mapeo tonal y la saturación de la escena lo empujan),
+  // no el lila celeste de las veredas en noviembre.
+  jacaranda: hex('#a39ad2'),
+  blossomPink: hex('#c98aa8'),
+  // Corteza verde grisácea del palo borracho (tronco en botella).
+  barkGreen: hex('#7c8768'),
 
   // --- energía ---
   solarPanel: hex('#2f4270'), // azul profundo: legible, nunca negro
@@ -53,7 +65,10 @@ export const PALETTE = {
 
   // --- suelo urbano ---
   pavement: hex('#c3b9a5'),
-  pavementDark: hex('#8e8879'),  // calzada: bien mas oscura que la vereda
+  // Calzada: asfalto gris gastado, bien más oscuro que la vereda. Con el
+  // beige anterior (#8e8879), al sol la calle y la vereda eran el mismo plano
+  // claro y las sendas peatonales casi no se distinguían.
+  pavementDark: hex('#6f6d69'),
   tramLane: hex('#7d7768'),
   soil: hex('#5b4836'),
   // Corteza: gris pardo. Los troncos usaban la madera laminada de los

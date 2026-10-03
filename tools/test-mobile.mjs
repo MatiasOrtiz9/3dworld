@@ -10,9 +10,10 @@
  *   node tools/test-mobile.mjs [url-base] [carpeta-capturas] [sw]
  *
  * Verifica: detección (modo táctil, perfil 'Móvil', escala de render, campo
- * visual), título, diálogo con toques, joystick analógico, mirar
- * deslizando, los dos pulgares a la vez, saltar, correr, tocar a una
- * persona, el botón de usar, menú y ajustes, HUD mínimo, volar, actividad
+ * visual), título, que nadie habla (el juego no tiene frases), joystick
+ * analógico, mirar deslizando, los dos pulgares a la vez, saltar, correr,
+ * tocar a una persona (la saluda sin frases), el botón de usar, menú y
+ * ajustes, HUD mínimo, volar, actividad
  * en dos columnas, que nada se superponga ni salga de pantalla, el aviso
  * de girar el teléfono, tope de cuadros y la consola limpia. Al final,
  * que el escritorio NO entra en modo táctil.
@@ -233,8 +234,27 @@ async function layoutProblems(page, sels) {
     }
     await sleep(450);
   }
-  check('tocar la pantalla avanza y cierra el diálogo', !(await visible(page, '#dialogue')));
+  // El juego no tiene frases (lo pidió el usuario, ver src/game/story/phrases.ts):
+  // al empezar nadie habla. Con `?frases=1` el bucle de arriba avanza el diálogo.
+  check('sin diálogos ni comentarios al empezar', !(await visible(page, '#dialogue')) && !(await visible(page, '#bark')));
   await sleep(600);
+  // Cuenta las voces que pide el juego (el audio en sí no se toca).
+  await page.evaluate(() => {
+    window.__voices = 0;
+    const snd = window.__sound;
+    const voice = snd.voice.bind(snd);
+    snd.voice = (...a) => {
+      window.__voices++;
+      return voice(...a);
+    };
+  });
+  /** Reacción sin frases: el saludo quedó registrado después de `since` y nadie dijo nada. */
+  const silentReaction = async (since) => {
+    const r = await page.evaluate(() => ({ greet: window.__game.lastGreeting, voices: window.__voices }));
+    const quiet = !(await visible(page, '#dialogue')) && !(await visible(page, '#bark'));
+    return { ok: Boolean(r.greet && r.greet.at > since) && r.voices === 0 && quiet, text: JSON.stringify(r) };
+  };
+  const greetAt = () => page.evaluate(() => window.__game.lastGreeting?.at ?? -1);
 
   // --- controles a la vista ---
   for (const sel of ['#t-use', '#t-jump', '#t-run', '#t-menu', '#t-hud', '#stick-move']) {
@@ -368,10 +388,11 @@ async function layoutProblems(page, sels) {
       const v = V.TransformCoordinates(new V(t.x, t.y, t.z), m);
       return { x: ((v.x + 1) / 2) * window.innerWidth, y: ((1 - v.y) / 2) * window.innerHeight };
     }, target);
+    const before = await greetAt();
     await touch.tap(scr.x, scr.y);
     await sleep(500);
-    const reacted = (await visible(page, '#dialogue')) || (await visible(page, '#bark'));
-    check('tocar a una persona le habla', reacted, `${target.key} en (${scr.x | 0}, ${scr.y | 0})`);
+    const reacted = await silentReaction(before);
+    check('tocar a una persona la saluda, sin frases', reacted.ok, `${target.key} en (${scr.x | 0}, ${scr.y | 0}) · ${reacted.text}`);
     await page.screenshot({ path: `${shotDir}/m5-tocar-persona.png` });
     for (let i = 0; i < 14 && (await visible(page, '#dialogue')); i++) {
       const choices = await page.$$('#dlg-choices .choice');
@@ -391,11 +412,14 @@ async function layoutProblems(page, sels) {
     await frames(page, 15);
     const ready = await page.$eval('#t-use', (el) => ({ on: el.classList.contains('ready'), label: el.textContent.trim() }));
     check('el botón de usar se enciende con algo a mano', ready.on, ready.label);
+    check('frente a una persona el botón dice «Saludar» (nadie habla)', ready.label === 'Saludar', ready.label);
     if (ready.on) {
       const u = await box(page, '#t-use');
+      const before2 = await greetAt();
       await touch.tap(u.cx, u.cy);
       await sleep(500);
-      check('el botón de usar interactúa', (await visible(page, '#dialogue')) || (await visible(page, '#bark')));
+      const used = await silentReaction(before2);
+      check('el botón de usar saluda, sin frases', used.ok, used.text);
       for (let i = 0; i < 14 && (await visible(page, '#dialogue')); i++) {
         const choices = await page.$$('#dlg-choices .choice');
         if (choices.length) {

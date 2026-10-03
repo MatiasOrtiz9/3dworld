@@ -168,14 +168,13 @@ export class RenderPipeline {
     if (this.quality === 'off' || !this.pipeline) return;
 
     const s = POST_SETTINGS[this.quality];
-    if (s.ssao && this.adaptiveLevel >= 3 && this.ssao) {
-      this.ssao.dispose();
-      this.ssao = null;
-    } else if (s.ssao && this.adaptiveLevel < 3 && !this.ssao) {
-      this.createSsao(s.ssao);
-    }
-
     const full = this.adaptiveLevel === 0;
+    // Primero el pipeline y DESPUÉS el SSAO: `samples`, `fxaaEnabled`,
+    // `bloomEnabled` y `sharpenEnabled` reconstruyen el pipeline, que se
+    // desengancha y se vuelve a enganchar AL FINAL de la cadena de la
+    // cámara, detrás del SSAO. Así la escena se dibujaba en la primera pasada
+    // del SSAO (8 bits, sin MSAA) por el resto de la sesión: sin disco solar,
+    // sin bloom y con las luces planas.
     this.pipeline.bloomEnabled = this.adaptiveLevel < 2;
     this.pipeline.sharpenEnabled = this.adaptiveLevel < 2;
     this.pipeline.imageProcessing.vignetteEnabled = full;
@@ -185,11 +184,25 @@ export class RenderPipeline {
     // búfer HDR, y el FXAA cubre casi lo mismo por una fracción.
     this.pipeline.samples = full ? s.msaa : 1;
     this.pipeline.fxaaEnabled = s.fxaa || !full;
+
+    // SSAO sólo con su desenfoque bilateral (niveles 0 y 1). Sin desenfoque,
+    // 8 muestras eran grano negro sobre muros, gente y encuentros aun con
+    // 0,6 de intensidad: en el nivel 2 se quita, que además es lo que más
+    // tiempo de GPU devuelve.
+    if (!s.ssao || this.adaptiveLevel >= 2) {
+      this.ssao?.dispose();
+      this.ssao = null;
+    } else if (!this.ssao) {
+      this.createSsao(s.ssao);
+    } else {
+      // Reenganchar el SSAO que ya existía: vuelve a quedar último, como al
+      // arrancar (detrás del mapeo tonal, donde se ajustó su intensidad).
+      const manager = this.scene.postProcessRenderPipelineManager;
+      manager.detachCamerasFromRenderPipeline('ssao', [this.camera]);
+      manager.attachCamerasToRenderPipeline('ssao', [this.camera]);
+    }
     if (this.ssao && s.ssao) {
       this.ssao.samples = full ? s.ssao.samples : 8;
-      this.ssao.bypassBlur = this.adaptiveLevel >= 2;
-      // Sin desenfoque el ruido de 8 muestras se ve como grano: más suave.
-      this.ssao.totalStrength = this.adaptiveLevel >= 2 ? s.ssao.strength * 0.6 : s.ssao.strength;
       this.ssao.maxZ = full ? s.ssao.maxZ : 80;
     }
   }

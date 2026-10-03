@@ -1,3 +1,4 @@
+import { FRASES } from '../story/phrases';
 import { ActivityBase, type ActivityView, type IconId, type RandomFn } from './types';
 
 /**
@@ -35,7 +36,11 @@ export class DanceSequence extends ActivityBase {
   private roundErrors = 0;
   private feedback: ActivityView['feedback'];
 
-  constructor(private readonly random: RandomFn = Math.random) {
+  /** `phrases` (ver `story/phrases.ts`): sin frases, el cierre no cita a la Profe Ana. */
+  constructor(
+    private readonly random: RandomFn = Math.random,
+    private readonly phrases = FRASES,
+  ) {
     super();
     for (let k = 0; k < FIRST_LEN; k++) this.seq.push(this.pick());
   }
@@ -62,7 +67,11 @@ export class DanceSequence extends ActivityBase {
       return this.finalView(
         'Aula de danzas · Segundo piso',
         '¡Coreografía lista!',
-        this.errors === 0 ? 'Tres rondas sin un error. La Profe Ana te quiere en la primera fila del acto.' : 'Con práctica salió entera. «Bailar es repetir hasta que el cuerpo se acuerda solo», dice la Profe Ana.',
+        this.errors === 0
+          ? 'Tres rondas sin un error. La Profe Ana te quiere en la primera fila del acto.'
+          : this.phrases
+            ? 'Con práctica salió entera. «Bailar es repetir hasta que el cuerpo se acuerda solo», dice la Profe Ana.'
+            : 'Con práctica salió entera: repetir hasta que el cuerpo se acuerda solo.',
       );
     }
     const n = this.length;

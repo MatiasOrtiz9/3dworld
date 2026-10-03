@@ -133,7 +133,9 @@ export const UPPER_VOLUMES: readonly Volume[] = [
   // Sobre el hall: Secretaría, 6° BD, 6° AC y el pasillo de los trofeos.
   { poly: rect(U.east1, V1.trophyN, U.salonW, V.facade), floors: 1 },
   // Torre de la escalera del hall: muros propios de dos plantas, sin cerramiento.
-  { poly: rect(U.east1, V.kiosk, U1.towerE, V1.trophyN), floors: 1, shell: false },
+  // Sin cornisa: sus aristas cruzan los dos vanos de dos plantas (pasarela
+  // y escalera blanca) y se metían 34 cm en el aula C1.
+  { poly: rect(U.east1, V.kiosk, U1.towerE, V1.trophyN), floors: 1, shell: false, cornice: false },
   // Edificio de bloque: la franja oeste tiene azotea; el resto queda bajo la
   // bóveda del polideportivo, que se prolonga hasta el muro de los espejos.
   { poly: rect(U.salonW, V1.blockHall, U1.vaultW, V.facade), floors: 1 },
@@ -357,6 +359,9 @@ const W1: Wall[] = [
   // 6° AC da al norte a un patio de aire: ladrillo pintado con los equipos de aire.
   // Muro norte de 6° AC hacia la pasarela: ciego, con las condensadoras.
   hw(V1.trophyN, U1.trophyE, U.salonW, 'ext'),
+  // Lado este de la torre de la escalera del hall, entre la pasarela y 6° AC:
+  // sin este muro, desde el segundo tramo se veían el patio de aire y el cielo.
+  vw(U1.towerE, V1.walkS, V1.trophyN, 'ext'),
   // Pasarela vidriada: paños de aluminio blanco a los dos lados, sin rejas.
   {
     ...hw(V1.walkS, U1.towerE, U.salonW, 'ext', [[35.9, 41.65, 'window', 0.9, 2.35, undefined, 'none']], 2.65),
@@ -653,7 +658,8 @@ const I1: Item[] = [
   // Baños: cubículos de mampostería con puertas de madera oscura.
   item('stall', 31.9, -1.4, 1.4, 1.2, 'w'),
   item('stall', 31.9, -2.8, 1.4, 1.2, 'w'),
-  { ...item('sinkCounter', 30.0, -4.9, 0.55, 1.6, 'e'), color: 'board' },
+  // Contra el muro oeste (antes quedaba a 32 cm y el espejo, en el aire).
+  { ...item('sinkCounter', 29.675, -4.9, 0.55, 1.6, 'e'), color: 'board' },
 
   // Pasillo de los trofeos: dispenser con el estante de trofeos encima, dos
   // sillas plásticas frente a la Secretaría, pizarras verdes y matafuego.
@@ -672,16 +678,16 @@ const I1: Item[] = [
   { ...item('desk2', 34.3, -0.75, 1.4, 0.6, 's'), color: 'board' },
   { ...item('shelf', 33.25, -2.0, 0.4, 1.0, 'e'), color: 'board' },
   { ...item('ac', 33.115, -2.0, 0.22, 0.86, 'e', false), y: 2.35 },
-  // 6° BD: mesas rojas en U con sillas azul marino.
-  // El frente de la U fuera del barrido de la puerta y los brazos 30 cm más
-  // al sur: los respaldos de las sillas del frente se metían en la mesa.
-  ...[37.3, 38.6, 39.9].map((u) => ({ ...item('table', u, -5.1, 1.2, 0.6), color: 'red' })),
-  ...[-3.7, -2.5, -1.3].flatMap((v) => [
+  // 6° BD: mesas rojas en U con sillas azul marino. La U abre hacia la
+  // pizarra (el fondo junto a la fachada): con el fondo bajo la pizarra no
+  // quedaba lugar para el docente delante de ella.
+  ...[37.3, 38.6, 39.9].map((u) => ({ ...item('table', u, -1.5, 1.2, 0.6), color: 'red' })),
+  ...[-2.45, -3.65].flatMap((v) => [
     { ...item('table', 36.67, v, 0.6, 1.2), color: 'red' },
     { ...item('table', 41.0, v, 0.6, 1.2), color: 'red' },
   ]),
-  ...[37.3, 38.6, 39.9].map((u) => ({ ...item('chair', u, -4.55, 0.42, 0.42, 'n', false), color: 'navy' })),
-  ...[-3.7, -2.5, -1.3].flatMap((v) => [
+  ...[37.3, 38.6, 39.9].map((u) => ({ ...item('chair', u, -0.95, 0.42, 0.42, 'n', false), color: 'navy' })),
+  ...[-2.45, -3.65].flatMap((v) => [
     { ...item('chair', 37.2, v, 0.42, 0.42, 'w', false), color: 'navy' },
     { ...item('chair', 40.45, v, 0.42, 0.42, 'e', false), color: 'navy' },
   ]),
@@ -703,10 +709,14 @@ const I1: Item[] = [
   // Sector nuevo: mesada de venecitas con bachas y espejos en el pasillo,
   // perchero azul y la escalera principal con su baranda.
   // Entre la puerta del baño y la de la escalera exterior, sin taparlas.
-  { ...item('sinkCounter', 31.25, V1.bathN + 0.38, 1.75, 0.55, 's'), color: 'yellow' },
+  // Más corta: deja 1 m libre delante de la puerta de la escalera exterior.
+  { ...item('sinkCounter', 31.15, V1.bathN + 0.38, 1.2, 0.55, 's'), color: 'yellow' },
   // Barandas sobre el canto de la losa (antes flotaban 5–10 cm sobre el hueco).
   { ...item('gate', 25.05, V1.northCorr, 3.6, 0.05, 's', true), color: 'red', h: 1.05 },
   { ...item('gate', 23.3, -26.4, 0.05, 2.2, 'e', true), color: 'red', h: 1.05 },
+  // Y sobre el canto este del hueco, hasta el muro de los baños: ahí el piso
+  // terminaba en el aire sobre el descanso (1,65 m más abajo).
+  { ...item('gate', 26.9, -25.85, 0.05, 1.1, 'e', true), color: 'red', h: 1.05 },
   // Biblioteca: fichero rojo, vitrina blanca, estanterías y mesas con sillas azules.
   // Contra el muro exterior del fondo (30 cm de espesor).
   { ...item('filing', 20.6, V.nBlockN + 0.43, 0.9, 0.55, 's'), h: 1.75 },
@@ -786,13 +796,21 @@ const I2: Item[] = [
   { ...item('barre', U.gymW - 0.6, -9.6, 0.06, 2.4, 'w'), color: 'metalDark' },
   // A los dos lados de la puerta del aula (el del medio la tapaba).
   ...[45.2, 47.75, 48.85].map((u) => ({ ...item('mirror', u, V1.danceS - 0.35, 1.0, 0.05, 'n', false) })),
-  item('coatBench', 47.8, -13.05, 1.9, 0.42, 's'),
-  { ...item('drawers', 49.7, -12.8, 0.9, 0.5, 'w'), color: 'board', h: 1.0 },
-  { ...item('speaker', 49.7, -12.8, 0.3, 0.3, 'w', false), y: 1.0 },
+  // Perchero sobre el paño lleno junto a la ventana a la escalera (antes
+  // colgaba a 26 cm del muro, delante del vidrio).
+  item('coatBench', 49.4, -13.29, 1.5, 0.42, 's'),
+  { ...item('drawers', 49.7, -12.15, 0.9, 0.5, 'w'), color: 'board', h: 1.0 },
+  { ...item('speaker', 49.7, -12.15, 0.3, 0.3, 'w', false), y: 1.0 },
   { ...item('ac', 45.6, V1.blockHall + 0.215, 0.86, 0.22, 's', false), y: 2.45 },
   // Hall: matafuego sobre el cartel y baranda negra de la escalera de chapa.
   item('extinguisher', U.salonW + 0.24, -16.8, 0.17, 0.17, 'e', false),
   { ...item('gate', 46.0, -14.55, 3.2, 0.05, 's', true), color: 'metalDark', h: 1.05 },
+  // El resto del canto del hueco: sobre el descanso (este y norte) y sobre
+  // el pie del tramo A (oeste, junto a la llegada del tramo B), con caídas
+  // de 1,65 y 3,3 m sin nada.
+  { ...item('gate', 48.925, -16.025, 0.05, 2.85, 'e', true), color: 'metalDark', h: 1.05 },
+  { ...item('gate', 48.25, -14.55, 1.3, 0.05, 's', true), color: 'metalDark', h: 1.05 },
+  { ...item('gate', 44.375, -15.4, 0.05, 1.6, 'e', true), color: 'metalDark', h: 1.05 },
   // Tanque de agua sobre la azotea del remate.
   { ...item('waterTank', 43.0, -15.6, 1.3, 1.3, 's', false), y: 3.3 },
 ];

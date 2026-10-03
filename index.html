@@ -164,6 +164,12 @@
       #prompt.locked { border-color: var(--line-strong); }
       #prompt.locked #prompt-verb { color: var(--dim); }
 
+      /* Frases (diálogos, voces, entrevistas): apagadas por defecto, el usuario
+         pidió que nadie hable. `?frases=1` pone html.phrases y vuelven los
+         textos de antes (ver src/game/story/phrases.ts). */
+      html:not(.phrases) .phrases-only { display: none !important; }
+      html.phrases .silent-only { display: none !important; }
+
       /* comentario al pasar (subtítulo) */
       #bark {
         position: absolute; left: 50%; bottom: calc(8.6rem + var(--safe-b)); transform: translateX(-50%);
@@ -637,7 +643,7 @@
             <p class="fine" id="pause-summary"></p>
             <div class="menu-buttons">
               <button class="big-btn primary" id="pause-resume" type="button">Seguir jugando <span class="desk-only">Esc</span></button>
-              <button class="big-btn" data-goto="pasaporte" type="button">Ver el Pasaporte 40 <span>sellos, lugares y voces</span></button>
+              <button class="big-btn" data-goto="pasaporte" type="button">Ver el Pasaporte 40 <span class="phrases-only">sellos, lugares y voces</span><span class="silent-only">sellos, lugares e insignias</span></button>
             </div>
           </section>
           <section data-pane="pasaporte" hidden>
@@ -645,8 +651,10 @@
             <canvas id="stamps-canvas" width="1120" height="300"></canvas>
             <h3>Lugares descubiertos <span id="places-count"></span></h3>
             <div class="chips" id="places-list"></div>
-            <h3>Voces del recorrido</h3>
-            <div id="quotes-list" class="fine"></div>
+            <div class="phrases-only">
+              <h3>Voces del recorrido</h3>
+              <div id="quotes-list" class="fine"></div>
+            </div>
             <h3>Objetos e insignias</h3>
             <div class="chips" id="items-list"></div>
           </section>
@@ -673,7 +681,7 @@
             <div id="help" class="desk-only">
               <div id="help-walk">
                 <div><b>Caminar</b> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> · <b>Correr</b> <kbd>Shift</kbd> · <b>Saltar</b> <kbd>Espacio</kbd></div>
-                <div><b>Mirar</b> clic + arrastrar · <b>Interactuar / hablar</b> <kbd>E</kbd></div>
+                <div><b>Mirar</b> clic + arrastrar · <b>Interactuar <span class="phrases-only">/ hablar</span><span class="silent-only">/ saludar</span></b> <kbd>E</kbd></div>
               </div>
               <div id="help-fly" hidden>
                 <div><b>Volar</b> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> · <b>Rápido</b> <kbd>Shift</kbd> · <b>Subir/bajar</b> <kbd>E</kbd> <kbd>Q</kbd></div>
@@ -683,8 +691,8 @@
             </div>
             <div id="help-touch" class="touch-only">
               <div><b>Caminar</b> apoyá el pulgar en la mitad izquierda y arrastralo · <b>Mirar</b> deslizá en la mitad derecha</div>
-              <div><b>Interactuar / hablar</b> tocá a la persona u objeto, o el botón dorado · <b>Saltar</b> y <b>Correr</b> botones de la derecha</div>
-              <div><b>Diálogos</b> tocá la pantalla para avanzar · <b>Menú</b> ≡ arriba · <b>Ocultar objetivo y mapa</b> el ojo</div>
+              <div><b>Interactuar <span class="phrases-only">/ hablar</span><span class="silent-only">/ saludar</span></b> tocá a la persona u objeto, o el botón dorado · <b>Saltar</b> y <b>Correr</b> botones de la derecha</div>
+              <div><span class="phrases-only"><b>Diálogos</b> tocá la pantalla para avanzar · </span><b>Menú</b> ≡ arriba · <b>Ocultar objetivo y mapa</b> el ojo</div>
               <div><b>Volar</b> Ajustes → Movimiento (aparecen subir y bajar)</div>
             </div>
             <h3>Realidad virtual</h3>
@@ -692,12 +700,12 @@
           </section>
           <section data-pane="creditos" hidden>
             <h2>Créditos</h2>
-            <p class="fine">Recorrido 40 es un juego educativo sobre la Escuela CIMDIP &amp; Miguel Cané (Laprida y Miguel Cané). La escuela se reconstruyó a partir de su plano de evacuación y del recorrido virtual de 2020; los personajes y sus diálogos son ficticios.</p>
+            <p class="fine">Recorrido 40 es un juego educativo sobre la Escuela CIMDIP &amp; Miguel Cané (Laprida y Miguel Cané). La escuela se reconstruyó a partir de su plano de evacuación y del recorrido virtual de 2020; los personajes<span class="phrases-only"> y sus diálogos</span> son ficticios.</p>
             <p class="fine">Todo se genera por código: geometría, texturas dibujadas en canvas y sonido sintetizado. Motor: Babylon.js. Sin modelos, imágenes ni audio descargados.</p>
           </section>
           <section data-pane="reiniciar" hidden>
             <h2>Reiniciar progreso</h2>
-            <p class="fine">Se borran los sellos, los lugares descubiertos y las entrevistas guardadas en este dispositivo. La historia vuelve a empezar en Laprida.</p>
+            <p class="fine">Se borran los sellos<span class="phrases-only">, los lugares descubiertos y las entrevistas guardadas</span><span class="silent-only"> y los lugares descubiertos</span> en este dispositivo. La historia vuelve a empezar en Laprida.</p>
             <div class="menu-buttons"><button class="big-btn" id="pause-reset" type="button">Borrar y empezar de nuevo <span>no se puede deshacer</span></button></div>
           </section>
         </div>
@@ -717,7 +725,7 @@
         <button class="big-btn" id="title-start" type="button">Nueva partida <span>empieza en Laprida</span></button>
         <button class="big-btn" id="title-vr" type="button" hidden>Jugar en VR <span>visor conectado</span></button>
       </div>
-      <p class="fine"><span class="desk-only">WASD para caminar · clic y arrastrar para mirar · E para interactuar · Esc para el menú. </span><span class="touch-only">Pulgar izquierdo para caminar · derecho para mirar · tocá a las personas para hablar. </span>Personajes ficticios; escuela reconstruida desde su plano y el recorrido virtual de 2020.</p>
+      <p class="fine"><span class="desk-only">WASD para caminar · clic y arrastrar para mirar · E para interactuar · Esc para el menú. </span><span class="touch-only">Pulgar izquierdo para caminar · derecho para mirar · tocá a las personas para <span class="phrases-only">hablar</span><span class="silent-only">saludarlas</span>. </span>Personajes ficticios; escuela reconstruida desde su plano y el recorrido virtual de 2020.</p>
     </div>
 
     <!-- ==================== créditos finales ==================== -->

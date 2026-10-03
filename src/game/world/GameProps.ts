@@ -134,6 +134,11 @@ export class GameProps {
 
     const mk = (mesh: ReturnType<typeof CreateBox>, cap: number) => {
       mesh.material = this.material;
+      // Reciben sombra como las hojas de las puertas (Doors): al activar las
+      // sombras sólo se marcan las mallas de la ciudad, y éstas se crean
+      // después; sin esto el timbre y los cestos del patio quedaban al sol
+      // debajo de techos y aleros. Sin sombras activas no cuesta nada.
+      mesh.receiveShadows = true;
       return new ThinSet(mesh, cap);
     };
     this.box = mk(CreateBox('game-box', { size: 1 }, scene), 96);

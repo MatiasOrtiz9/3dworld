@@ -65,6 +65,7 @@ const LITE_RELIEF = new Set<SurfaceKind>([
   'brick',
   'corrugated',
   'fabric',
+  'treadPlate',
 ]);
 
 /**
@@ -102,7 +103,7 @@ export class Materials {
    * escala según la calidad. El relieve sólo va en los materiales métricos:
    * con la UV 0..1 de la caja se estiraría igual que se estiraba el color.
    */
-  private applyMaps(mat: PBRMetallicRoughnessMaterial, kind: SurfaceKind | null, opts: SurfaceOpts): void {
+  private applyMaps(mat: PBRMetallicRoughnessMaterial, kind: SurfaceKind | null, opts: SurfaceOpts, exterior = false): void {
     const metric = opts.metric === true;
     // Textura COMPARTIDA, no clonada: la escala de repeticion ya viene fijada
     // por tipo desde Textures. Compartirla ademas ayuda al batching, porque
@@ -114,8 +115,19 @@ export class Materials {
     // Variación procedural de gran escala (ver MetricUVPlugin): más en pisos,
     // que se ven enteros y en ángulo rasante; menos en paredes; apenas en el
     // mobiliario, donde sólo hace que dos sillas iguales no sean idénticas.
-    const [tone, rough] = opts.detail === 'floor' ? [0.05, 0.18] : opts.detail === 'wall' ? [0.035, 0.08] : [0.03, 0.06];
-    new MetricUVPlugin(mat, tone, rough);
+    // Calzadas, veredas lisas y patios de tierra (árido sin juntas, ver
+    // Textures.BASE_KIND) llevan bastante más: parches de bacheo, zonas más
+    // gastadas y más mates. Lisos, en el visor (que no paga la capa macro) se
+    // leían como un plástico gris continuo de punta a punta de la calle.
+    const ground = kind === 'pavementXL' || kind === 'aggregate';
+    const [tone, rough] = ground
+      ? [0.085, 0.2]
+      : opts.detail === 'floor'
+        ? [0.05, 0.18]
+        : opts.detail === 'wall'
+          ? [0.035, 0.08]
+          : [0.03, 0.06];
+    new MetricUVPlugin(mat, tone, rough, exterior && !ground);
     if (kind && hasRelief(kind) && (q.normals === 'all' || (q.normals === 'lite' && LITE_RELIEF.has(kind)))) {
       // Relieve por el mapa de DETALLE, no por normalTexture: ver reliefMap
       // (el SSAO deformaba las normales del mapa en las cajas escaladas).
@@ -176,7 +188,7 @@ export class Materials {
     mat.roughness = roughness;
     mat.metallic = metallic;
 
-    this.applyMaps(mat, kind, opts);
+    this.applyMaps(mat, kind, opts, true);
 
     this.cache.set(key, mat);
     return mat;
@@ -314,6 +326,13 @@ export class Materials {
     // del cielo, que es exactamente cómo se comporta el vidrio real. Eso da el
     // degradado natural — claro arriba donde refleja cielo, oscuro abajo.
     mat.metallic = 0.72;
+    // Reflejo del cielo más fuerte en el vidrio OSCURO de las fachadas: con la
+    // intensidad de la escena (≈0,4) las ventanas eran paños gris verdoso
+    // planos y, desde la vereda (siempre en ángulo rasante), no devolvían
+    // cielo: no se leían vidrio. El vidrio claro y casi transparente de las
+    // aulas (alfa < 0,5) se queda como estaba: se mira desde adentro, y un
+    // cielo reflejado fuerte lavaba la vista hacia afuera.
+    if (alpha >= 0.5) (mat as unknown as { _environmentIntensity: number })._environmentIntensity = GLASS_ENV;
     mat.alpha = alpha;
     mat.backFaceCulling = true;
     this.cache.set(key, mat);
@@ -344,8 +363,11 @@ export class Materials {
    * sombra quedaban casi negras y los árboles se leían como cristales. Subir el
    * piso de luz propia aplana esa diferencia y devuelve masa vegetal.
    */
-  foliage(color: Color3): StandardMaterial {
-    const key = `f:${color.toHexString()}`;
+  foliage(color: Color3, second?: Color3, mix = 0.55): StandardMaterial {
+    // Sin color secundario, la clave es la de siempre: los demás
+    // constructores (frondas, enredaderas de la torre, macetas) comparten el
+    // mismo material y el mismo draw call que los árboles de ese tono.
+    const key = second ? `f:${color.toHexString()}:${second.toHexString()}:${mix}` : `f:${color.toHexString()}`;
     const hit = this.cache.get(key);
     if (hit) return hit as StandardMaterial;
 
@@ -356,20 +378,36 @@ export class Materials {
     // canal y el verde se volvía menta blanquecino: el "plástico pálido" de
     // las fotos. Escalado, la cara al sol da el verde real y la sombreada
     // conserva modelado.
-    // Algo menos de difuso y más emisivo que antes: al sol da lo mismo
-    // (0,85 × 0,45 × 2,4 + 0,45 ≈ 1,37 contra 1,08 + 0,30), pero la copa en
-    // sombra —bajo los edificios de enfrente, a contraluz— deja de ser una
-    // mancha negra.
-    mat.diffuseColor = color.scale(STANDARD_SUN_COMP * 0.85);
+    // Menos difuso y más emisivo: al sol da casi lo mismo
+    // (0,70 × 0,45 × 2,4 + 0,70 ≈ 1,46 contra 1,37 antes, +6 %), pero la copa
+    // en sombra —bajo los edificios de enfrente, a contraluz, en los patios—
+    // recibe 0,70 en vez de 0,45. OJO: StandardMaterial suma el emisivo en
+    // espacio gamma, ANTES de pasar a lineal: +55 % en gamma es ≈ 2,6× en
+    // lineal. Con 0,45 la copa en sombra medía luminancia 22 (una mancha
+    // negra y plana en el patio este); con 0,70 mide 45 y al sol 55 → 59.
+    mat.diffuseColor = color.scale(STANDARD_SUN_COMP * 0.7);
     mat.specularColor = new Color3(0.03, 0.035, 0.03);
     // Con 0,3 sin compensar los árboles brillaban por su cuenta; con 0,18
     // quedaban NEGROS a contraluz. Una hoja real es fina y translúcida:
     // iluminada por detrás transmite luz. Este emisivo es un sustituto barato de
     // ese efecto, que de otro modo exigiría dispersión subsuperficial.
-    mat.emissiveColor = color.scale(0.45);
+    mat.emissiveColor = color.scale(0.7);
     // El viento sólo se instala en follaje: mover un edificio con el viento
     // sería, además de raro, un coste por vértice que no aporta nada.
-    this.winds.push(new WindPlugin(mat));
+    // El plugin pinta además los racimos (ver WindPlugin): en el verde, los
+    // huecos entre racimos van más oscuros y fríos; con un color secundario
+    // (flores), los huecos muestran ese color (las hojas entre las flores).
+    // El cociente va acotado: el canal de la flor que el sol ya satura (el
+    // azul del jacarandá) no tiene margen, y un cociente de 0,5 lo hundía en
+    // manchas verde negruzco. Los huecos de las copas floridas, a un tercio
+    // de profundidad (ver WindPlugin.gap): medido en el visor, con la mitad
+    // la copa lila seguía moteada como un leopardo.
+    const ratio: [number, number, number, number] = second
+      ? [softRatio(second.r, color.r), softRatio(second.g, color.g), softRatio(second.b, color.b), mix]
+      : [0.84, 0.94, 1.0, 0.45];
+    // El color pleno va también al plugin: es la base del relleno de cielo y
+    // la translucidez de la panza de la copa (ver WindPlugin, `leafFill`).
+    this.winds.push(new WindPlugin(mat, ratio, second ? 0.35 : 1, [color.r, color.g, color.b]));
     this.cache.set(key, mat);
     return mat;
   }
@@ -522,6 +560,13 @@ export const INTERIOR_LIFT = 0.8;
  */
 export const INTERIOR_ENV = 0.26;
 
+/**
+ * Reflejo del entorno en el vidrio oscuro de fachada. Es ABSOLUTO (reemplaza
+ * al de la escena, 0,36-0,42 según la hora): ≈5× el del resto, que es lo que
+ * hace falta para que el paño devuelva cielo en ángulo rasante.
+ */
+export const GLASS_ENV = 2;
+
 /** Ganancia de las fuentes de luz sobre su color nominal (ver `glow`). */
 export const GLOW_GAIN = 1.9;
 
@@ -586,9 +631,11 @@ class MetricUVPlugin extends MaterialPluginBase {
     private readonly tone: number,
     /** Amplitud de la variación de rugosidad de gran escala (±, fracción). */
     private readonly rough: number,
+    /** Exterior: muros más sucios cerca del suelo (salpicado de lluvia). */
+    private readonly grime = false,
   ) {
     // Los dos `true` registran Y activan el plugin (ver WindPlugin).
-    super(material, 'MetricUV', 110, { METRICUV: false, METRICCYL: false, METRICVAR: false }, true, true);
+    super(material, 'MetricUV', 110, { METRICUV: false, METRICCYL: false, METRICVAR: false, METRICGRIME: false }, true, true);
   }
 
   override getClassName(): string {
@@ -603,6 +650,7 @@ class MetricUVPlugin extends MaterialPluginBase {
     defines.METRICUV = isMetricMesh(mesh);
     defines.METRICCYL = isTurnedMesh(mesh);
     defines.METRICVAR = this.tone > 0 || this.rough > 0;
+    defines.METRICGRIME = this.grime;
   }
 
   override getUniforms() {
@@ -661,6 +709,19 @@ class MetricUVPlugin extends MaterialPluginBase {
         #ifdef METRICVAR
         surfaceAlbedo *= 1.0 + metricVar.x * metricField(vPositionW);
         #endif
+        // Muros exteriores: el primer medio metro sobre el suelo, algo más
+        // oscuro (salpicado de lluvia, polvo de la vereda), con un borde que
+        // sube y baja a lo largo del muro. Asienta los edificios en la vereda
+        // sin una pasada de oclusión, también en el visor. Sólo en caras
+        // verticales y cerca de la cota 0 (vereda y planta baja).
+        #if defined(METRICGRIME) && defined(NORMAL)
+        {
+          float gWall = 1.0 - smoothstep(0.35, 0.6, abs(vNormalW.y));
+          float gAlong = abs(vNormalW.x) > abs(vNormalW.z) ? vPositionW.z : vPositionW.x;
+          float gEdge = 0.5 + 0.22 * sin(gAlong * 3.1 + sin(gAlong * 1.3) * 1.7);
+          surfaceAlbedo *= 1.0 - gWall * 0.09 * (1.0 - smoothstep(0.08, gEdge, vPositionW.y));
+        }
+        #endif
       `,
       CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS: `
         #ifdef METRICVAR
@@ -679,9 +740,14 @@ function isMetricMesh(mesh: AbstractMesh): boolean {
   return mesh.name.startsWith('box|') || mesh.name.startsWith('school-');
 }
 
-/** Cilindros y conos de la granja (`cylinder|…`, `cone|…`). */
+/** Cociente secundario/principal de un canal del follaje, acotado a ±25-30 %. */
+function softRatio(second: number, main: number): number {
+  return Math.min(1.25, Math.max(0.72, second / Math.max(main, 0.02)));
+}
+
+/** Cilindros y conos de la granja (`cylinder|…`, `cylinderHi|…`, `cone|…`). */
 function isTurnedMesh(mesh: AbstractMesh): boolean {
-  return mesh.name.startsWith('cylinder|') || mesh.name.startsWith('cone|');
+  return mesh.name.startsWith('cylinder|') || mesh.name.startsWith('cone|') || mesh.name.startsWith('cylinderHi|');
 }
 
 /**

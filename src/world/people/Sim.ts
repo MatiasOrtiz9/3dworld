@@ -29,6 +29,15 @@ const STAIR_RIGHT = 0.2;
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp = (x: number, a: number, b: number) => (x < a ? a : x > b ? b : x);
 
+/** Lugar `slot` de una ronda de `size` personas alrededor de (cu, cv), con su variación propia. */
+function slotAt(id: number, cu: number, cv: number, r: number, size: number, slot: number): { u: number; v: number } {
+  const n = Math.max(2, size);
+  const a = (slot / n) * TAU + id * 1.7;
+  const jitter = Math.sin(id * 3.1 + slot * 7.7) * 0.12;
+  const rr = r + jitter * 0.5;
+  return { u: cu + Math.cos(a + jitter) * rr, v: cv + Math.sin(a + jitter) * rr };
+}
+
 export interface SimOptions {
   crowdSize: number;
   detailed: boolean;
@@ -180,6 +189,8 @@ export class Agent {
     this.anim.shY = body.shoulderY;
     this.anim.l1 = body.upperArm;
     this.anim.l2 = body.forearm;
+    this.anim.thigh = body.thigh;
+    this.anim.thighR = body.seatOffset;
   }
 
   get alive(): boolean {
@@ -230,6 +241,8 @@ export class PeopleSim {
   private readonly homeSeatIds = new Set<number>();
   private readonly homeRoom = new Map<Agent, string>();
   private readonly teacherBoard = new Map<Agent, Board>();
+  /** Maestras del jardín (sin pizarrón): su lugar entre las mesitas (null = todavía no buscado). */
+  private readonly teacherSpot = new Map<Agent, Spot | null>();
   private groups: Group[] = [];
   private queue: Agent[] = [];
   private groupId = 0;
@@ -331,11 +344,50 @@ export class PeopleSim {
     for (const room of [...KINDER_ROOMS, ...PRIMARY_ROOMS, ...SECONDARY_ROOMS]) {
       if ((used.get(room) ?? 0) < 3 || t >= teachers.length) continue;
       const board = this.places.classrooms.get(room)?.board;
-      if (!board) continue;
-      this.teacherBoard.set(teachers[t], board);
+      if (board) this.teacherBoard.set(teachers[t], board);
+      // Las salas del jardín no tienen pizarrón: antes se quedaban sin
+      // ninguna maestra (15 chicos de 4 años solos en la Sala Amarilla). La
+      // maestra se para entre las mesitas (el lugar se busca al primer uso).
+      else if (KINDER_ROOMS.includes(room)) this.teacherSpot.set(teachers[t], null);
+      else continue;
       this.homeRoom.set(teachers[t], room);
       t++;
     }
+  }
+
+  /**
+   * Dónde se para la maestra de una sala del jardín: cerca del centro de las
+   * sillitas de los chicos, en un lugar transitable, dentro de la sala y sin
+   * pisar ninguna silla; de cara a las mesas.
+   */
+  private kinderSpot(room: string): Spot | null {
+    const cls = this.places.classrooms.get(room);
+    if (!cls) return null;
+    let cu = 0;
+    let cv = 0;
+    let n = 0;
+    for (const s of this.homeSeat.values()) {
+      if (s.room !== room) continue;
+      cu += s.u;
+      cv += s.v;
+      n++;
+    }
+    if (n === 0) return null;
+    cu /= n;
+    cv /= n;
+    const level = cls.level;
+    for (const r of [0.9, 1.3, 1.7, 2.2]) {
+      for (let k = 0; k < 12; k++) {
+        const ang = (k / 12) * TAU;
+        const u = cu + Math.cos(ang) * r;
+        const v = cv + Math.sin(ang) * r;
+        if (!this.nav.isMain(level, u, v) || !this.nav.clear(level, u, v, 0.3)) continue;
+        if (roomAt(u, v, level)?.id !== room) continue;
+        if (cls.seats.some((s) => Math.hypot(s.u - u, s.v - v) < 0.65)) continue;
+        return { u, v, level, yaw: yawOfLocal(cu - u, cv - v) };
+      }
+    }
+    return null;
   }
 
   /** Hasta dónde llega la vereda de Laprida sin chocar con el barrio. */
@@ -570,6 +622,15 @@ export class PeopleSim {
   private teacherWork(t: Agent): Task {
     const b = this.teacherBoard.get(t);
     if (b && this.places.boardSpot(b) && !this.namedNear(b.level, b.u, b.v, 1.4)) return { k: 'teach', board: b };
+    if (this.teacherSpot.has(t)) {
+      let sp = this.teacherSpot.get(t) ?? null;
+      if (!sp) {
+        const room = this.homeRoom.get(t);
+        sp = room ? this.kinderSpot(room) : null;
+        if (sp) this.teacherSpot.set(t, sp);
+      }
+      if (sp && !this.namedNear(sp.level, sp.u, sp.v, 1.4)) return { k: 'stand', at: sp, anim: 'talk' };
+    }
     return this.seatTask(t, ['prof'], 'sitTalk') ?? this.wanderTask('hall', 0);
   }
 
@@ -654,6 +715,16 @@ export class PeopleSim {
       const p = typeof where === 'string' ? this.places.randomIn(where, rnd, r + 0.45) : this.places.randomInRect(where, rnd, level, r + 0.45);
       if (!p) continue;
       if (this.groups.some((g) => g.level === p.level && Math.hypot(g.u - p.u, g.v - p.v) < g.r + r + 1.6)) continue;
+      // Cada lugar de la ronda, no sólo el centro, tiene que poder pisarse con
+      // aire alrededor: si no, alguien quedaba parado en el marco de una
+      // puerta (hall ↔ pasaje) o pegado a un muro.
+      const id = this.groupId;
+      let ok = true;
+      for (let s = 0; s < size && ok; s++) {
+        const q = slotAt(id, p.u, p.v, r, size, s);
+        ok = this.nav.isWalkable(p.level, q.u, q.v) && this.nav.clear(p.level, q.u, q.v, 0.25);
+      }
+      if (!ok) continue;
       const g: Group = { id: this.groupId++, u: p.u, v: p.v, level: p.level, r, members: [], speaker: null, next: 0 };
       this.groups.push(g);
       return g;
@@ -663,12 +734,7 @@ export class PeopleSim {
 
   /** Posición del lugar de un integrante del grupo. */
   private slotOf(g: Group, slot: number): { u: number; v: number; yaw: number } {
-    const n = Math.max(2, g.members.length);
-    const a = (slot / n) * TAU + g.id * 1.7;
-    const jitter = Math.sin(g.id * 3.1 + slot * 7.7) * 0.12;
-    const r = g.r + jitter * 0.5;
-    const u = g.u + Math.cos(a + jitter) * r;
-    const v = g.v + Math.sin(a + jitter) * r;
+    const { u, v } = slotAt(g.id, g.u, g.v, g.r, g.members.length, slot);
     return { u, v, yaw: yawOfLocal(g.u - u, g.v - v) };
   }
 
@@ -799,7 +865,8 @@ export class PeopleSim {
         return { u: task.board.u, v: task.board.v, level: task.board.level, yaw: task.board.talkYaw };
       case 'wander': {
         const rnd = () => this.rt.next();
-        const p = task.room ? this.places.randomIn(task.room, rnd, 0.35) : task.rect ? this.places.randomInRect(task.rect, rnd, task.level, 0.35) : null;
+        // Con medio metro de aire: a 35 cm de un muro se quedaban mirándolo.
+        const p = task.room ? this.places.randomIn(task.room, rnd, 0.5) : task.rect ? this.places.randomInRect(task.rect, rnd, task.level, 0.5) : null;
         return p;
       }
       case 'play': {
@@ -874,11 +941,17 @@ export class PeopleSim {
       a.stage = 'act';
       return;
     }
-    if (task.k === 'post' && !a.visible) {
-      // El portero vive en su cabina: si no está a la vista, ya llegó.
-      this.teleport(a, task.at.u, task.at.v, task.at.level, task.at.yaw);
+    if (task.k === 'post' && (!a.visible || Math.hypot(a.u - task.at.u, a.v - task.at.v) < 0.6)) {
+      // El portero vive en su cabina: si no está a la vista, ya llegó. Y si
+      // ya está en su puesto no "viaja": el puesto queda dentro de la cabina
+      // (maciza para la grilla) y el camino arrancaba del otro lado del muro,
+      // en el aula 6, a cada cambio de momento del día. A la vista no salta:
+      // se acomoda los centímetros que falten.
+      if (!a.visible) this.teleport(a, task.at.u, task.at.v, task.at.level, task.at.yaw);
       a.stage = 'act';
       this.startAct(a);
+      a.au = task.at.u;
+      a.av = task.at.v;
       return;
     }
     if (task.k === 'queue' && !this.queue.includes(a)) this.queue.push(a);
@@ -1047,8 +1120,27 @@ export class PeopleSim {
     // centro del asiento): para apoyar los brazos en la tapa.
     a.anim.deskH = s.desk ? s.deskY - (s.y + d.seatOffset) : NaN;
     a.anim.deskZ = s.deskD + 0.06;
-    const hip = 1.4;
-    const drop = s.y + d.seatOffset - d.thigh * Math.cos(hip) - s.footY;
+    const top = s.y + d.seatOffset;
+    if (s.kind === 'stool') {
+      // Banqueta: muslo algo caído y las tibias hacia atrás, con las suelas en
+      // el travesaño (con la rodilla hacia adelante los pies quedaban 60 cm
+      // delante de la banqueta, en el aire; colgando, a 26 cm del piso).
+      const hip = 1.2;
+      const drop = top - d.thigh * Math.cos(hip) - s.footY;
+      a.anim.hipFlex = hip;
+      a.anim.knee = hip + Math.acos(clamp(drop / d.shin, 0, 1));
+      a.anim.dangle = false;
+      return;
+    }
+    // Muslo casi horizontal; si así la tibia no llega al piso (adolescentes y
+    // adultos en sillas y bancos de 0,46-0,50 m), la rodilla baja un poco
+    // (cadera hasta 1,0 rad) en vez de dejar los pies 3-9 cm en el aire.
+    let hip = 1.4;
+    let drop = top - d.thigh * Math.cos(hip) - s.footY;
+    if (d.shin * 0.98 < drop) {
+      hip = clamp(Math.acos(clamp((top - s.footY - 0.98 * d.shin) / d.thigh, -1, 1)), 1.0, 1.4);
+      drop = top - d.thigh * Math.cos(hip) - s.footY;
+    }
     a.anim.hipFlex = hip;
     if (d.shin * 0.98 >= drop) {
       a.anim.knee = hip - Math.acos(clamp(drop / d.shin, 0, 1));
@@ -1107,6 +1199,12 @@ export class PeopleSim {
       case 'play':
         setBase(a.anim, this.rt.chance(0.35) ? 'lookAround' : 'idle');
         a.timer = t.k === 'play' ? 0.4 + this.rt.next() * 1.6 : 2 + this.rt.next() * 7;
+        if (t.k === 'wander' && !this.nav.isWalkable(a.level, a.u - Math.sin(a.yaw) * 0.8, a.v + Math.cos(a.yaw) * 0.8)) {
+          // Llegó mirando una pared (el rincón junto a la escalera del hall):
+          // se da vuelta hacia el centro del ambiente en vez de quedarse así.
+          const c = this.wanderCenter(t);
+          if (c) a.wantYaw = yawOfLocal(c.u - a.u, c.v - a.v);
+        }
         break;
       case 'script':
         setBase(a.anim, a.scriptAnim);
@@ -1115,6 +1213,20 @@ export class PeopleSim {
         setBase(a.anim, 'idle');
         break;
     }
+  }
+
+  /** Centro de la zona de un paseo: promedio del polígono del ambiente, o centro del rectángulo. */
+  private wanderCenter(t: { room: string | null; rect: Rect | null }): { u: number; v: number } | null {
+    if (t.rect) return { u: (t.rect.u0 + t.rect.u1) / 2, v: (t.rect.v0 + t.rect.v1) / 2 };
+    const r = t.room ? this.places.room(t.room) : undefined;
+    if (!r || r.poly.length === 0) return null;
+    let u = 0;
+    let v = 0;
+    for (const [pu, pv] of r.poly) {
+      u += pu;
+      v += pv;
+    }
+    return { u: u / r.poly.length, v: v / r.poly.length };
   }
 
   /**
@@ -1144,6 +1256,12 @@ export class PeopleSim {
         } else if (!t.wave && a.timer <= 0 && t.anim === 'idle') {
           setBase(a.anim, this.rt.chance(0.3) ? 'lookAround' : 'idle');
           a.timer = 4 + this.rt.next() * 8;
+        } else if (!t.wave && a.timer <= 0 && t.anim === 'talk' && this.phase !== 'acto') {
+          // La maestra del jardín habla, escucha y se vuelve hacia una mesa u
+          // otra (el discurso del acto, en cambio, sigue de frente).
+          setBase(a.anim, this.rt.chance(0.6) ? 'talk' : 'listen');
+          a.wantYaw = t.at.yaw + (this.rt.next() - 0.5) * 1.0;
+          a.timer = 4 + this.rt.next() * 6;
         }
         break;
       case 'post':
@@ -1270,6 +1388,18 @@ export class PeopleSim {
       a.speed = 0;
       if (a.anim.base !== 'idle' && a.anim.base !== 'lookAround') setBase(a.anim, 'lookAround');
       return;
+    }
+    if (!walkOff) {
+      // El paseo de la vereda no mira a nadie: un personaje con nombre parado
+      // en el carril (Lola en el portón) era atravesado. Se da la vuelta antes.
+      for (const n of this.named.values()) {
+        if (!n.alive || n.hidden || n.level !== 0) continue;
+        const ahead = (n.u - a.u) * a.laneDir;
+        if (ahead > 0 && ahead < 0.9 && Math.abs(n.v - a.v) < a.radius + n.radius + 0.1) {
+          a.laneDir = -a.laneDir;
+          break;
+        }
+      }
     }
     const sp = a.walkSpeed * (walkOff && !a.visible ? 2 : 1);
     if (a.anim.base !== 'walk') setBase(a.anim, 'walk');
@@ -1456,10 +1586,17 @@ export class PeopleSim {
       if (this.nav.isWalkable(a.level, nu, nv) || !this.nav.isWalkable(a.level, a.u, a.v)) {
         a.u = nu;
         a.v = nv;
+        a.speed = sp;
+        a.vu = (du / d) * sp;
+        a.vv = (dv / d) * sp;
+      } else {
+        // El ancla (o el corrimiento) cae en un lugar que no se pisa: se queda
+        // donde está en vez de caminar en el lugar contra el obstáculo.
+        a.speed = 0;
+        a.vu = a.vv = 0;
+        a.au = a.u;
+        a.av = a.v;
       }
-      a.speed = sp;
-      a.vu = (du / d) * sp;
-      a.vv = (dv / d) * sp;
     } else {
       a.speed = 0;
       a.vu = a.vv = 0;
@@ -1485,7 +1622,8 @@ export class PeopleSim {
           const du = a.au - o.u;
           const dv = a.av - o.v;
           const d = Math.hypot(du, dv);
-          const minD = a.radius + o.radius + 0.04;
+          // De un personaje con nombre, un paso más de distancia (charla, no roce).
+          const minD = a.radius + o.radius + (o.named ? 0.3 : 0.04);
           if (d >= minD) continue;
           const share = o.named || o.task.k === 'post' ? 1 : 0.5;
           const ku = d > 1e-3 ? du / d : Math.cos(a.idx * 2.4);
@@ -1520,12 +1658,7 @@ export class PeopleSim {
       // atravesaban por el medio) y sin pisarle los talones al de adelante.
       const pts = leg.pts;
       let budget = a.walkSpeed * 0.7 * dt;
-      if (a.wp > 0 && a.wp < pts.length / 2) {
-        const su = pts[a.wp * 2] - pts[a.wp * 2 - 2];
-        const sv = pts[a.wp * 2 + 1] - pts[a.wp * 2 - 1];
-        const sl = Math.hypot(su, sv) || 1;
-        if (this.stairAhead(a, leg, su / sl, sv / sl)) budget = 0;
-      }
+      if (a.wp > 0 && a.wp < pts.length / 2 && this.stairAhead(a, leg)) budget = 0;
       const moving = budget > 0;
       while (a.wp < pts.length / 2 && budget > 0) {
         const su = a.wp > 0 ? pts[a.wp * 2] - pts[a.wp * 2 - 2] : 0;
@@ -1620,6 +1753,8 @@ export class PeopleSim {
     const nu = a.u + vu * dt;
     const nv = a.v + vv * dt;
     const nav = this.nav;
+    const u0 = a.u;
+    const v0 = a.v;
     if (nav.isWalkable(a.level, nu, nv) || !nav.isWalkable(a.level, a.u, a.v)) {
       a.u = nu;
       a.v = nv;
@@ -1628,9 +1763,13 @@ export class PeopleSim {
     } else if (nav.isWalkable(a.level, a.u, nv)) {
       a.v = nv;
     }
-    a.vu = vu;
-    a.vv = vv;
-    a.speed = target;
+    // La velocidad es lo que de verdad avanzó: contra un muro (o un cierre),
+    // el ciclo de paso seguía la velocidad pedida y caminaba en el lugar.
+    // El rumbo sí sigue a la pedida (hacia donde quiere ir).
+    const inv = 1 / Math.max(dt, 1e-3);
+    a.vu = (a.u - u0) * inv;
+    a.vv = (a.v - v0) * inv;
+    a.speed = Math.hypot(a.vu, a.vv);
     if (target > 0.05) a.wantYaw = yawOfLocal(vu, vv);
     const fy = this.floorAt(a.level, a.u, a.v);
     a.y += (fy - a.y) * Math.min(1, dt * 8);
@@ -1671,11 +1810,23 @@ export class PeopleSim {
   }
 
   /**
-   * ¿Alguien adelante en la misma escalera, en el mismo sentido y a menos de
-   * un escalón y medio? Se miran los dos niveles del tramo: el que baja
-   * todavía figura en el piso de arriba.
+   * ¿Alguien adelante en el mismo tramo, en el mismo sentido y a menos de un
+   * escalón y medio? "Adelante" es el AVANCE sobre el recorrido del tramo
+   * (punto del recorrido y lo que falta hasta él), no la geometría: en el
+   * descanso de una escalera en U el de adelante ya dobló, el rumbo y el
+   * costado no coincidían, nadie esperaba y se fundían 6-8 en un bulto. Dos
+   * en el mismo punto se ordenan por índice: es un orden total, así que no
+   * se traban entre sí. Los que van en sentido contrario no cuentan (van
+   * por su derecha). Se miran los dos niveles del tramo: el que baja todavía
+   * figura en el piso de arriba.
    */
-  private stairAhead(a: Agent, leg: PathLeg, fu: number, fv: number): boolean {
+  private stairAhead(a: Agent, leg: PathLeg): boolean {
+    const pts = leg.pts;
+    const prog = (x: Agent) => {
+      const w = Math.min(x.wp, pts.length / 2 - 1);
+      return w - Math.hypot(pts[w * 2] - x.u, pts[w * 2 + 1] - x.v) * 1e-3;
+    };
+    const pa = prog(a);
     const levels = leg.toLevel !== undefined && leg.toLevel !== a.level ? [a.level, leg.toLevel] : [a.level];
     for (const lv of levels) {
       const cell = this.hashKey(lv, a.u, a.v);
@@ -1684,13 +1835,12 @@ export class PeopleSim {
           const list = this.hash.get(cell + di + dj * 1000);
           if (!list) continue;
           for (const o of list) {
-            if (o === a || !o.onStair || Math.abs(o.y - a.y) > 0.6) continue;
-            const du = o.u - a.u;
-            const dv = o.v - a.v;
-            const ahead = du * fu + dv * fv;
-            if (ahead <= 0 || ahead > 0.6 || Math.abs(dv * fu - du * fv) > 0.32) continue;
-            // Mismo sentido (el de frente va por su derecha: no hace falta esperarlo).
-            if (-Math.sin(o.yaw) * fu + Math.cos(o.yaw) * fv > 0.3) return true;
+            if (o === a || !o.onStair || Math.abs(o.y - a.y) > 0.6 || !o.path) continue;
+            const ol = o.path[o.leg];
+            if (!ol || ol.stair !== leg.stair || ol.toLevel !== leg.toLevel) continue;
+            if (Math.hypot(o.u - a.u, o.v - a.v) > 0.55) continue;
+            const po = prog(o);
+            if (po > pa + 1e-6 || (Math.abs(po - pa) <= 1e-6 && o.idx < a.idx)) return true;
           }
         }
       }
@@ -1761,6 +1911,22 @@ export class PeopleSim {
     }
     const p = this.view.player;
     if (p && levelOf(p.y) === a.level) consider(p.u, p.v, this.pvu, this.pvv, 0.3, 2.0);
+    if (!a.named) {
+      // A los personajes con nombre (Inés, Lola, Rubén…) se les deja aire como
+      // al jugador, también "afinado": la mochila de un alumno atravesaba los
+      // brazos de Inés y un visitante se metía en Lola.
+      for (const n of this.named.values()) {
+        if (!n.alive || n.hidden || n.level !== a.level) continue;
+        const du = n.u - a.u;
+        const dv = n.v - a.v;
+        const d = Math.hypot(du, dv);
+        const minD = a.radius + n.radius + 0.21;
+        if (d < 1e-3 || d >= minD) continue;
+        const push = ((minD - d) / minD) * 1.6 * 2.0;
+        au -= (du / d) * push;
+        av -= (dv / d) * push;
+      }
+    }
     const ru = vu + au * want;
     const rv = vv + av * want;
     const m = Math.hypot(ru, rv);
@@ -1904,6 +2070,9 @@ export class PeopleSim {
       }
       this.plast = { u: p.u, v: p.v };
     }
+    // Cierres dinámicos (cestos del juego, puertas con llave): unas cientas
+    // de celdas por cuadro con la colisión viva (~0,1 ms).
+    this.nav.sweepDynamic(this.opts.detailed ? 300 : 200);
     this.processPaths();
     this.rebuildHash();
     this.phaseEvents(dt);
@@ -1953,7 +2122,7 @@ export class PeopleSim {
           if ((t.k === 'stand' && t.anim !== 'talk') || t.k === 'floor' || (t.k === 'seat' && t.seat.kind === 'bleacher')) {
             // Cada uno arranca un poco después: un aplauso real no es sincrónico.
             a.anim.gesture = 'clap';
-            a.anim.gT = -this.rt.next() * 0.5;
+            a.anim.gT = -this.rt.next() * 1.2;
           }
         }
       }

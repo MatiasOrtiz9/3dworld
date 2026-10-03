@@ -59,7 +59,8 @@ describe('puertas que se abren', () => {
       }
       expect(top, d.id).toBeGreaterThan(0);
       const leafTop = LEVEL_Y[d.level] + d.height;
-      expect(top - leafTop, d.id).toBeGreaterThanOrEqual(0);
+      // La hoja entra hasta 5 mm en el cabezal (sin ranura, sin caras coplanares).
+      expect(top - leafTop, d.id).toBeGreaterThanOrEqual(-0.006);
       expect(top - leafTop, d.id).toBeLessThan(0.02);
     }
   });

@@ -153,6 +153,8 @@ export interface InteractableDef {
   /** Se ve pero todavía no se puede usar: muestra `notReady` en vez de actuar. */
   ready?: Cond;
   notReady?: string;
+  /** `notReady` del juego sin frases, si el original pide hablar con alguien (ver `phrases.ts`). */
+  silentNotReady?: string;
   /** Actividad que abre, si es la entrada a una. */
   activity?: ActivityId;
 }
@@ -170,8 +172,15 @@ export interface ObjectiveDef {
   id: string;
   chapter: ChapterId;
   title: string;
+  /**
+   * Título del juego sin frases (ver `phrases.ts`): «Hablá con Rubén» no
+   * tiene sentido si nadie contesta y el aviso dice «Saludar».
+   */
+  silentTitle?: string;
   hint?: string;
   optional?: boolean;
+  /** Sólo existe con frases: las entrevistas son frases, en el juego callado no se ofrece. */
+  phrases?: boolean;
   requires?: string[];
   when?: Cond;
   target: Target;
@@ -239,4 +248,6 @@ export interface LockDef {
   h: number;
   /** Cartel cuando el jugador intenta pasar. */
   reason: string;
+  /** El cartel del juego sin frases, si el original pide hablar con alguien. */
+  silentReason?: string;
 }

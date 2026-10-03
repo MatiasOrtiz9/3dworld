@@ -2,9 +2,9 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import type { InstanceFarm } from '../../core/InstanceFarm';
 import type { Materials } from '../Materials';
 import type { Rng } from '../../utils/rng';
-import type { Block } from '../CityLayout';
+import { SIDEWALK_H, type Block } from '../CityLayout';
 import type { NatureBuilder } from './NatureBuilder';
-import { StreetLevel, GROUND_FLOOR_H } from './StreetLevel';
+import { StreetLevel, GROUND_FLOOR_H, SHOP_DEPTH } from './StreetLevel';
 import { FACADE_TONES, PALETTE } from '../Palette';
 
 const FLOOR_H = 3.4;
@@ -61,7 +61,8 @@ export class BuildingBuilder {
     const { cx, cz, width, depth } = block;
     const facade = this.rng.pick(FACADE_TONES);
     const bodyMat = this.mats.surfaceVaried(facade, 0.78, 0, 'concreteXL');
-    const slabMat = this.mats.surface(PALETTE.concreteLight, 0.7, 0, 'concrete');
+    // Misma clave que balcones y cornisas: un draw call menos por manzana.
+    const slabMat = this.mats.surface(PALETTE.concreteLight, 0.72, 0, 'concrete');
 
     // Manzana perimetral: cuatro barras alrededor de un patio.
     const barDepth = block.barDepth ?? this.rng.range(11, 14);
@@ -103,22 +104,25 @@ export class BuildingBuilder {
         floors,
         bodyMat,
         slabMat,
-        facade,
         side.face,
+        // Las barras largas tienen el hall de entrada de los departamentos.
+        side.face === 'north' || side.face === 'south',
+        faceIsOuter(block, side.face),
       );
     }
 
-    // Patio interior: verde y sombra.
+    // Patio interior: verde y sombra, sobre el solado de la manzana.
     const courtW = width - barDepth * 2;
     const courtD = depth - barDepth * 2;
     if (courtW > 6 && courtD > 6) {
-      this.nature.lawn(cx, cz, courtW * 0.94, courtD * 0.94);
+      this.nature.lawn(cx, cz, courtW * 0.94, courtD * 0.94, SIDEWALK_H + 0.06);
       const trees = this.rng.int(2, 5);
       for (let i = 0; i < trees; i++) {
         this.nature.broadleaf(
           cx + this.rng.range(-courtW / 2 + 2, courtW / 2 - 2),
           cz + this.rng.range(-courtD / 2 + 2, courtD / 2 - 2),
           this.rng.range(0.8, 1.15),
+          SIDEWALK_H,
         );
       }
     }
@@ -136,8 +140,9 @@ export class BuildingBuilder {
     floors: number,
     bodyMat: ReturnType<Materials['surface']>,
     slabMat: ReturnType<Materials['surface']>,
-    facadeTone: (typeof FACADE_TONES)[number],
     streetFace: StreetFace | null = null,
+    lobby = false,
+    outer = false,
   ): void {
     const steps = floors > 7 ? this.rng.int(2, 3) : floors > 4 ? 2 : 1;
     let y = 0;
@@ -152,8 +157,20 @@ export class BuildingBuilder {
     // distinta — más alta, más vidriada, con acceso y local. Y es justo la
     // parte que se mira desde la vereda.
     if (streetFace && remaining > 1) {
-      this.farm.addBoxOnGround(bodyMat, x, z, w, GROUND_FLOOR_H, d, 0);
-      this.street.shopfront(x, z, w, d, streetFace);
+      // La caja de la planta baja se retira detrás de la vidriera: el hueco
+      // es el local, con la losa del primer piso como cielorraso.
+      const alongX = streetFace === 'north' || streetFace === 'south';
+      const out = streetFace === 'north' || streetFace === 'east' ? 1 : -1;
+      this.farm.addBoxOnGround(
+        bodyMat,
+        alongX ? x : x - (out * SHOP_DEPTH) / 2,
+        alongX ? z - (out * SHOP_DEPTH) / 2 : z,
+        alongX ? w : w - SHOP_DEPTH,
+        GROUND_FLOOR_H,
+        alongX ? d - SHOP_DEPTH : d,
+        0,
+      );
+      this.street.shopfront(x, z, w, d, streetFace, lobby, outer);
       // Losa de separación con el primer piso.
       this.farm.addBoxOnGround(slabMat, x, z, w + 0.3, 0.22, d + 0.3, GROUND_FLOOR_H - 0.22);
       y = GROUND_FLOOR_H;
@@ -177,8 +194,11 @@ export class BuildingBuilder {
       }
 
       // Balcones: sólo en el primer tramo y sobre la cara que da a la calle.
+      // Sin balcones, la fachada igual muestra gente: aires colgados.
       if (s === 0 && streetFace && this.rng.chance(0.75)) {
         this.street.balconies(x, z, w, d, streetFace, stepFloors, y + 0.2, FLOOR_H);
+      } else if (streetFace) {
+        this.street.facadeLife(x, z, w, d, streetFace, stepFloors, y, FLOOR_H);
       }
 
       y += h;
@@ -205,17 +225,20 @@ export class BuildingBuilder {
       this.nature.planter(x, z, w * 0.7, d * 0.7, y, 1.4);
     }
 
-    // Equipamiento de azotea: tanques, conductos, antenas.
-    if (this.street.fullDetail && this.rng.chance(0.65)) {
+    // Equipamiento de azotea: tanques de agua, conductos, antenas. También
+    // en el visor (son cajas de color, casi gratis): una azotea vacía se lee
+    // como una tapa desde los patios y desde arriba.
+    if (this.rng.chance(0.8)) {
       this.street.roofClutter(x, z, w, d, y);
     }
     // Un poco de vegetación cayendo del borde superior.
     if (this.rng.chance(0.5)) {
       this.nature.hangingVines(x, z - d / 2, w * 0.8, y, 'x', this.rng.range(2, 5));
     }
-    // Insinúa la estructura: un canto de losa del tono de la fachada.
+    // Insinúa la estructura: un canto de losa del tono de la fachada (con el
+    // mismo material del cuerpo: un material por tono era un draw call más).
     this.farm.addBoxOnGround(
-      this.mats.surface(facadeTone, 0.7, 0, 'concrete'),
+      bodyMat,
       x,
       z,
       w + 0.3,
@@ -251,7 +274,7 @@ export class BuildingBuilder {
       this.rng.chance(0.6) ? PALETTE.glassGreen : PALETTE.glassBlue,
       0.92,
     );
-    const mullionMat = this.mats.surface(PALETTE.concreteShade, 0.8, 0, 'concrete');
+    const mullionMat = this.mats.surface(PALETTE.concreteShade, 0.85, 0, 'concrete');
     // Las esquinas quedan macizas: la ventana no da la vuelta al edificio.
     const windowW = w * 0.82;
     const windowD = d * 0.82;
@@ -290,8 +313,9 @@ export class BuildingBuilder {
       // lo que generaba el rayado horizontal.
       this.farm.addBoxOnGround(slabMat, x, z, w + 0.22, 0.16, d + 0.22, y + FLOOR_H - 0.16);
 
-      // Parteluz vertical cada dos pisos: rompe la horizontalidad.
-      if (f % 2 === 0) {
+      // Parteluz vertical cada dos pisos: rompe la horizontalidad. En el
+      // visor no: una varilla de 20 cm a 20 m no se distingue del vidrio.
+      if (f % 2 === 0 && this.street.fullDetail) {
         this.farm.addBoxOnGround(mullionMat, x, z + d / 2 + 0.02, 0.2, FLOOR_H, 0.2, y);
       }
     }
@@ -306,15 +330,15 @@ export class BuildingBuilder {
     baseY: number,
     height: number,
   ): void {
-    const mat = this.mats.surfaceVaried(
-      this.rng.pick([PALETTE.timberMid, PALETTE.timberLight]),
-      0.85,
-      0,
-      'timber',
-    );
+    // Dos maderas fijas: con la variante teñida por edificio eran hasta doce
+    // materiales (doce draw calls) para lamas que de lejos se ven iguales.
+    const mat = this.mats.surface(this.rng.pick([PALETTE.timberMid, PALETTE.timberLight]), 0.85, 0, 'timber');
     const onXFace = w >= d;
     const span = (onXFace ? w : d) * 0.86;
-    const count = Math.max(3, Math.round(span / 1.5));
+    // En el visor, la mitad de lamas y más anchas: el ritmo se lee igual.
+    const full = this.street.fullDetail;
+    const count = Math.max(3, Math.round(span / (full ? 1.5 : 2.6)));
+    const fin = full ? 0.28 : 0.42;
     const edge = onXFace ? d / 2 + 0.25 : w / 2 + 0.25;
 
     for (let i = 0; i < count; i++) {
@@ -325,7 +349,7 @@ export class BuildingBuilder {
         'box',
         mat,
         new Vector3(px, baseY + height / 2, pz),
-        onXFace ? new Vector3(0.28, height * 0.92, 0.5) : new Vector3(0.5, height * 0.92, 0.28),
+        onXFace ? new Vector3(fin, height * 0.92, 0.5) : new Vector3(0.5, height * 0.92, fin),
       );
     }
   }
@@ -340,7 +364,7 @@ export class BuildingBuilder {
     shrinkX: number,
     shrinkZ: number,
   ): void {
-    const railMat = this.mats.surface(PALETTE.concreteLight, 0.75, 0, 'concrete');
+    const railMat = this.mats.surface(PALETTE.concreteLight, 0.72, 0, 'concrete');
     const railH = 1.05;
     // Cuatro tramos de baranda en el perímetro exterior.
     this.farm.addBoxOnGround(railMat, x, z - d / 2 + 0.2, w, railH, 0.22, y);
@@ -415,15 +439,19 @@ export class BuildingBuilder {
     const slabMat = this.mats.surface(PALETTE.concreteLight, 0.68, 0, 'concrete');
     const coreMat = this.mats.surface(PALETTE.concreteShade, 0.8, 0, 'concrete');
 
-    // Base ancha de dos plantas: conecta la torre con la calle.
+    // Base ancha de dos plantas: conecta la torre con la calle. La planta
+    // baja se retira detrás de las vidrieras de los locales (ver SHOP_DEPTH).
     const podiumH = GROUND_FLOOR_H + FLOOR_H;
     const podiumW = footprint * 1.65;
-    this.farm.addBoxOnGround(bodyMat, cx, cz, podiumW, podiumH, podiumW, 0);
+    this.farm.addBoxOnGround(bodyMat, cx, cz, podiumW - SHOP_DEPTH * 2, GROUND_FLOOR_H, podiumW - SHOP_DEPTH * 2, 0);
+    this.farm.addBoxOnGround(bodyMat, cx, cz, podiumW, FLOOR_H, podiumW, GROUND_FLOOR_H);
     // Locales en las cuatro caras del basamento: una torre que apoya en un
     // zócalo ciego mata la calle. Con locales, la torre participa del barrio.
     for (const face of ['north', 'south', 'east', 'west'] as const) {
-      this.street.shopfront(cx, cz, podiumW, podiumW, face);
+      this.street.shopfront(cx, cz, podiumW, podiumW, face, face === 'west', faceIsOuter(block, face));
     }
+    this.street.facadeLife(cx, cz, podiumW, podiumW, 'west', 1, GROUND_FLOOR_H, FLOOR_H);
+    this.street.facadeLife(cx, cz, podiumW, podiumW, 'north', 1, GROUND_FLOOR_H, FLOOR_H);
     this.farm.addBoxOnGround(
       slabMat,
       cx,
@@ -454,7 +482,7 @@ export class BuildingBuilder {
         this.nature.planter(cx + w * 0.3, cz, w * 0.3, w * 0.7, y + 0.4, 1.8);
         this.nature.hangingVines(cx, cz + w / 2, w * 0.9, y, 'x', this.rng.range(3, 7));
         // Barandas.
-        const railMat = this.mats.metal(PALETTE.solarFrame, 0.4);
+        const railMat = this.mats.metal(PALETTE.solarFrame, 0.45);
         this.farm.addBoxOnGround(railMat, cx, cz - w / 2, w, 1.1, 0.15, y + 0.4);
         this.farm.addBoxOnGround(railMat, cx, cz + w / 2, w, 1.1, 0.15, y + 0.4);
       } else {
@@ -462,7 +490,7 @@ export class BuildingBuilder {
         // Ventana corrida con esquinas macizas, igual que en vivienda.
         const gw = w * 0.84;
         this.farm.addBoxOnGround(
-          this.mats.glass(PALETTE.glassGreen, 0.9),
+          this.mats.glass(PALETTE.glassGreen, 0.92),
           cx,
           cz,
           gw,
@@ -471,7 +499,7 @@ export class BuildingBuilder {
           y + 0.9,
         );
         this.farm.addBoxOnGround(
-          this.mats.glass(PALETTE.glassGreen, 0.9),
+          this.mats.glass(PALETTE.glassGreen, 0.92),
           cx,
           cz,
           w + 0.08,
@@ -487,27 +515,34 @@ export class BuildingBuilder {
       if (f > 0 && f % 8 === 0) w *= 0.93;
     }
 
-    // Aristas verticales de vegetación: el rasgo más característico.
+    // Fajas verticales de vegetación: el rasgo más característico. Antes eran
+    // trozos de 2–4 m sueltos a alturas y posiciones al azar, que se leían
+    // como manchas verdes pegadas a la fachada. Ahora son dos columnas
+    // continuas por cara, de piso a azotea, que siguen el angostamiento.
     const vineCorners = this.rng.chance(0.7);
     if (vineCorners) {
+      const leaf = this.mats.foliage(PALETTE.leafMid);
+      const moss = this.mats.foliage(PALETTE.moss);
       for (const sx of [-1, 1]) {
-        const segments = Math.floor((y - podiumH) / 4);
-        for (let i = 0; i < segments; i++) {
-          const segY = podiumH + i * 4 + 2;
-          const f = Math.min(widths.length - 1, Math.floor((segY - podiumH) / FLOOR_H));
-          const fw = widths[f];
-          this.farm.add(
-            'box',
-            this.mats.foliage(this.rng.pick([PALETTE.leafMid, PALETTE.moss, PALETTE.leafDeep])),
-            new Vector3(cx + (sx * fw) / 2, segY, cz + this.rng.range(-fw / 3, fw / 3)),
-            new Vector3(0.8, this.rng.range(2.4, 3.8), 0.8),
-          );
+        for (const k of [-0.3, 0.3]) {
+          // Tramos de tres pisos encadenados (el ancho de la torre cambia cada 8).
+          for (let f = 0; f < widths.length; f += 3) {
+            const n = Math.min(3, widths.length - f);
+            const fw = widths[f];
+            this.farm.add(
+              'box',
+              (f / 3) % 2 === 1 ? moss : leaf,
+              new Vector3(cx + (sx * (fw + 0.5)) / 2, podiumH + (f + n / 2) * FLOOR_H, cz + k * fw),
+              new Vector3(0.5, n * FLOOR_H + 0.05, 1.3 + ((f * 7) % 3) * 0.25),
+            );
+          }
         }
       }
     }
 
-    // Corona: paneles solares y turbina de eje vertical.
+    // Corona: paneles solares, tanques y turbina de eje vertical.
     this.roofSolar(cx, cz, w * 0.9, w * 0.9, y);
+    this.street.roofClutter(cx, cz, w, w, y);
     if (this.rng.chance(0.4)) this.verticalTurbine(cx, cz, y + 3.4, this.rng.range(5, 8), y);
   }
 
@@ -593,7 +628,9 @@ export class BuildingBuilder {
       if (f > 0) {
         this.nature.planter(cx, cz - fd / 2 - 0.8, fw * 0.8, 1.5, y, 1.6);
       }
+      this.civicInterior(cx, cz, fw, fd, y + 0.45, f);
     }
+    this.civicFront(block, w, d);
 
     const topY = Math.min(floors, Math.floor((w - 4) / 2.8)) * FLOOR_H;
     this.roofSolar(cx, cz, w * 0.6, d * 0.6, topY);
@@ -696,22 +733,156 @@ export class BuildingBuilder {
         h: this.rng.range(2.1, 2.6),
         d: this.rng.range(1.6, 2.4),
       }));
+    this.marketLife(cx, cz, stalls, w, d, height);
+  }
+
+  /**
+   * Interior del edificio cívico visto a través del vidrio: núcleo de
+   * servicios, luminarias encendidas bajo cada losa, estanterías o escritorios
+   * y gente. Sin esto, el vidrio mostraba otra pared de vidrio detrás: una
+   * pecera vacía.
+   */
+  private civicInterior(cx: number, cz: number, fw: number, fd: number, y: number, floor: number): void {
+    const tint = this.street.tint;
+    const rng = this.street.deco(cx, cz + floor * 7, 61);
+    const h = FLOOR_H - 0.6;
+    // Núcleo cálido en el centro (escaleras, baños): el fondo encendido.
+    tint.boxOn('glow', [0.78, 0.7, 0.58], cx, cz, fw * 0.32, h, fd * 0.32, y);
+    // Luminarias lineales bajo la losa de arriba.
+    for (let i = -1; i <= 1; i++) {
+      tint.add('plane', 'glow', [0.96, 0.93, 0.86], new Vector3(cx + i * fw * 0.28, y + h - 0.02, cz), new Vector3(0.3, fd * 0.75, 1), 0, -Math.PI / 2);
+    }
+    // Estanterías de biblioteca o escritorios de trabajo, y quien los usa.
+    const n = this.street.fullDetail ? 6 : 3;
+    for (let i = 0; i < n; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      const px = cx + rng.range(-fw * 0.4, fw * 0.4);
+      const pz = cz + side * fd * rng.range(0.25, 0.4);
+      // De cara al vidrio más cercano (el que da a la calle de ese lado).
+      if (rng.chance(0.5)) {
+        tint.panel('glow', [0.45, 0.32, 0.2], px, y + 0.9, pz, 2.4, 1.8, 0, side);
+        tint.panel('glow', rng.pick(BOOKS), px, y + 1.1, pz + side * 0.02, 2.2, 0.9, 0, side);
+      } else {
+        tint.panel('glow', [0.62, 0.5, 0.36], px, y + 0.38, pz, 1.6, 0.75, 0, side);
+        tint.panel('glow', rng.pick(PEOPLE), px, y + 0.62, pz - side * 0.7, 0.45, 1.25, 0, side);
+      }
+    }
+  }
+
+  /** Frente del edificio cívico: su nombre, bicicleteros y bancos en la explanada. */
+  private civicFront(block: Block, w: number, d: number): void {
+    const { cx, cz } = block;
+    const rng = this.street.deco(cx, cz, 67);
+    const names = ['BIBLIOTECA DEL BARRIO', 'CENTRO DE SALUD', 'CENTRO CULTURAL', 'CLUB DE BARRIO'];
+    const name = names[Math.abs(Math.round(cx / 57 + cz / 19)) % names.length];
+    const style = { text: name, bg: '#24423a', fg: '#f3ead2', font: 'sans' as const };
+    const g = SIDEWALK_H;
+    // El cartel sobre la losa del primer piso, en las dos caras largas.
+    for (const s of [-1, 1]) {
+      this.street.tint.add('box', 'lit', [0.14, 0.26, 0.22], new Vector3(cx, g + FLOOR_H + 0.1, cz + s * (d / 2 + 0.12)), new Vector3(Math.min(9, w * 0.5), 0.75, 0.12));
+      this.street.signs.plate(style, cx, g + FLOOR_H + 0.1, cz + s * (d / 2 + 0.19), Math.min(8.6, w * 0.48), 0.6, 0, s);
+    }
+    // Explanada: bicicletero entre el vidrio y la vereda. Los bancos de al
+    // lado son del plano (`plan.benches`, la gente se sienta en ellos); el
+    // dado se sigue tirando para que el bicicletero no se mueva.
+    const out = (w / 2 + block.width / 2) / 2;
+    for (const s of [-1, 1]) {
+      this.street.bikeRack(cx + rng.range(-6, 6), cz + s * out, Math.PI / 2, g);
+      rng.range(8, 12);
+    }
+  }
+
+  /**
+   * El mercado vivo: puestos de colores con su toldo, mercadería en el
+   * mostrador, cajones apilados y guirnaldas de luz bajo la cubierta.
+   */
+  private marketLife(
+    cx: number,
+    cz: number,
+    stalls: NonNullable<Block['stalls']>,
+    w: number,
+    d: number,
+    height: number,
+  ): void {
+    const tint = this.street.tint;
+    const rng = this.street.deco(cx, cz, 71);
+    const base = 0.25;
+    const STALL: Array<readonly [number, number, number]> = [
+      [0.79, 0.44, 0.28],
+      [0.95, 0.76, 0.31],
+      [0.91, 0.52, 0.36],
+      [0.35, 0.55, 0.42],
+      [0.3, 0.45, 0.65],
+      [0.85, 0.85, 0.8],
+    ];
+    const GOODS: Array<readonly [number, number, number]> = [
+      [0.85, 0.22, 0.15],
+      [0.95, 0.6, 0.12],
+      [0.4, 0.65, 0.25],
+      [0.92, 0.85, 0.3],
+      [0.6, 0.3, 0.55],
+      [0.8, 0.65, 0.45],
+    ];
     for (const st of stalls) {
-      this.farm.addBoxOnGround(
-        this.mats.surfaceVaried(
-          this.rng.pick([PALETTE.terracotta, PALETTE.sun, PALETTE.signal]),
-          0.7,
-          0,
-          null,
-          0.12,
-        ),
-        st.x,
-        st.z,
-        st.w,
-        st.h,
-        st.d,
-        0.25,
-      );
+      const c = rng.pick(STALL);
+      const along = st.w >= st.d;
+      // Mostrador de madera y el puesto detrás, abierto hacia el pasillo.
+      tint.boxOn('lit', [0.55, 0.38, 0.22], st.x, st.z, st.w, 0.9, st.d, base);
+      tint.boxOn('lit', c, st.x + (along ? 0 : st.w * 0.4), st.z + (along ? st.d * 0.4 : 0), along ? st.w : st.w * 0.2, st.h - 0.9, along ? st.d * 0.2 : st.d, base + 0.9);
+      // Mercadería sobre el mostrador, en dos o tres montones de color.
+      const n = this.street.fullDetail ? 3 : 2;
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n - 0.5;
+        // Paño horizontal sobre el mostrador: de pie se ve desde arriba.
+        tint.decal(rng.pick(GOODS), st.x + (along ? t * st.w * 0.85 : -st.w * 0.15), base + 0.915, st.z + (along ? -st.d * 0.15 : t * st.d * 0.85), along ? st.w / n - 0.1 : st.w * 0.5, along ? st.d * 0.5 : st.d / n - 0.1);
+      }
+      // Toldo a dos colores sobre el puesto.
+      tint.add('box', 'lit', c, new Vector3(st.x, base + st.h + 0.08, st.z), new Vector3(st.w + 0.5, 0.06, st.d + 0.5), 0, along ? 0.12 : 0, along ? 0 : 0.12);
+      // Cajones apilados al costado.
+      if (rng.chance(0.6)) {
+        const sx = st.x + (along ? (st.w / 2 + 0.45) * (rng.chance(0.5) ? -1 : 1) : 0);
+        const sz = st.z + (along ? 0 : (st.d / 2 + 0.45) * (rng.chance(0.5) ? -1 : 1));
+        tint.boxOn('lit', [0.6, 0.45, 0.28], sx, sz, 0.6, 0.35, 0.45, base);
+        tint.boxOn('lit', rng.pick(GOODS), sx, sz, 0.55, 0.1, 0.4, base + 0.35);
+      }
+    }
+    // Guirnaldas de lamparitas cruzando la nave bajo la cumbrera.
+    const strands = this.street.fullDetail ? 4 : 2;
+    for (let k = 0; k < strands; k++) {
+      const px = cx + ((k + 0.5) / strands - 0.5) * w * 0.8;
+      const bulbs = this.street.fullDetail ? 9 : 5;
+      for (let i = 0; i < bulbs; i++) {
+        const t = (i + 0.5) / bulbs - 0.5;
+        const sag = 0.6 * (1 - 4 * t * t);
+        tint.add('box', 'glow', [1, 0.86, 0.55], new Vector3(px, height - 0.4 - sag, cz + t * d * 0.85), new Vector3(0.14, 0.14, 0.14));
+      }
     }
   }
 }
+
+/**
+ * ¿La cara da a la calle perimetral (de espaldas al barrio)? Del otro lado
+ * de la calle está la manzana vecina de la grilla: si cae fuera del barrio
+ * (gx 0–3, gz 1–3), la cara mira afuera. Las caras usan +z = 'north' y
+ * +x = 'east' (ver `StreetLevel.shopfront`).
+ */
+function faceIsOuter(block: Block, face: StreetFace): boolean {
+  const gx = block.gx + (face === 'east' ? 1 : face === 'west' ? -1 : 0);
+  const gz = block.gz + (face === 'north' ? 1 : face === 'south' ? -1 : 0);
+  return gx < 0 || gx > 3 || gz < 1 || gz > 3;
+}
+
+/** Lomos de libros y carpetas vistos de lejos: franjas de color apagadas. */
+const BOOKS: Array<readonly [number, number, number]> = [
+  [0.55, 0.3, 0.25],
+  [0.3, 0.4, 0.55],
+  [0.6, 0.55, 0.35],
+  [0.35, 0.5, 0.38],
+];
+/** Ropa de la gente adentro de los edificios (siluetas sin luz propia). */
+const PEOPLE: Array<readonly [number, number, number]> = [
+  [0.25, 0.3, 0.45],
+  [0.55, 0.25, 0.25],
+  [0.3, 0.3, 0.3],
+  [0.7, 0.65, 0.55],
+];

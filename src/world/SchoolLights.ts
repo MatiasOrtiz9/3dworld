@@ -72,8 +72,13 @@ function switchFor(d: DoorDef): SwitchDef {
   // Si tampoco, lo más cerca del marco que se pueda (el paño entre la
   // puerta y una ventana puede ser angosto).
   const onAxis = (end: P, s: number, dist: number): P => [end[0] + d.dir[0] * dist * s, end[1] + d.dir[1] * dist * s];
+  // Una puerta simple puede tener la bisagra en `b` (SchoolDoors la da
+  // vuelta si abierta atravesaría un muro): el picaporte queda en `a`.
+  const hingeAtB = d.leaves.length === 1 && d.leaves[0].dir[0] * d.dir[0] + d.leaves[0].dir[1] * d.dir[1] < 0;
+  const latch = (dist: number) => (hingeAtB ? onAxis(d.a, -1, dist) : onAxis(d.b, 1, dist));
+  const hinge = (dist: number) => (hingeAtB ? onAxis(d.b, 1, dist) : onAxis(d.a, -1, dist));
   const options: P[] = [];
-  for (const dist of [0.25, 0.2, 0.16, 0.13]) options.push(onAxis(d.b, 1, dist), onAxis(d.a, -1, dist));
+  for (const dist of [0.25, 0.2, 0.16, 0.13]) options.push(latch(dist), hinge(dist));
   const base = options.find((p) => clearOnWall(d.level, p)) ?? options[0];
   const at: P = [base[0] + d.swing[0] * (d.wallT / 2 + 0.01), base[1] + d.swing[1] * (d.wallT / 2 + 0.01)];
   return { roomId: d.room.id, label: d.label, level: d.level, at, facing: d.swing };

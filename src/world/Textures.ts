@@ -40,7 +40,9 @@ export type SurfaceKind =
   | 'plaster'
   | 'fabric'
   | 'rubber'
-  | 'aggregate';
+  | 'aggregate'
+  // Chapa semillada de la escalera negra del edificio de bloque.
+  | 'treadPlate';
 
 /**
  * Texturas generadas por código.
@@ -116,6 +118,7 @@ const UV_SCALE: Record<SurfaceKind, number> = {
   fabric: 2,
   rubber: 6,
   aggregate: 6,
+  treadPlate: 1 / 0.24,
 };
 
 /**
@@ -156,7 +159,17 @@ const BASE_KIND: Partial<Record<SurfaceKind, SurfaceKind>> = {
  * mancha gris a tres metros (el resto se queda en 4×). QualityManager lo
  * escala hacia abajo con el nivel adaptativo.
  */
-const FLOOR_KINDS = new Set<SurfaceKind>(['granite', 'checker', 'parquet', 'ceramic', 'pavement', 'pavementXL', 'rubber', 'aggregate']);
+const FLOOR_KINDS = new Set<SurfaceKind>([
+  'granite',
+  'checker',
+  'parquet',
+  'ceramic',
+  'pavement',
+  'pavementXL',
+  'rubber',
+  'aggregate',
+  'treadPlate',
+]);
 
 const PAINTED = new Set<string>(PAINTED_KINDS);
 
@@ -250,7 +263,12 @@ export class Textures {
     ctx.putImageData(image, 0, 0);
     // Una normal no es un color: sin corrección de gamma.
     tex.gammaSpace = false;
-    this.finish(tex, key, this.scaleOf(kind, true), FLOOR_KINDS.has(drawKind) ? 8 : 4, t0);
+    // El relieve del revoque repite cada 0,72 m y no cada 1,8 m: a 7 mm por
+    // píxel el grano se veía como manchas de 1-2 cm frente a un interruptor.
+    // El látex no tiene juntas, así que color y relieve no necesitan
+    // coincidir (el color sigue a 1/1,8 m).
+    const tile = drawKind === 'plaster' ? 2.5 : 1;
+    this.finish(tex, key, this.scaleOf(kind, true) * tile, FLOOR_KINDS.has(drawKind) ? 8 : 4, t0);
     return tex;
   }
 

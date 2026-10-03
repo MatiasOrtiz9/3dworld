@@ -231,12 +231,14 @@ const I1: Item[] = [
   // Sala Celeste: mesas de colores juntas y sillitas de madera.
   { ...item('table', 64.2, -37.2, 1.2, 0.7), color: 'yellow' },
   { ...item('table', 65.4, -37.2, 1.2, 0.7), color: 'blue' },
-  ...[63.9, 64.7, 65.5].map((u) => ({ ...item('chair', u, -36.6, 0.36, 0.36, 's', false), color: 'timber' })),
-  // Sala Rosa: el castillo y la pizarra.
-  { ...item('playhouse', 66.2, -33.2, 1.6, 1.4), color: 'red' },
+  // Mirando a las mesas (al norte); antes les daban la espalda.
+  ...[63.9, 64.7, 65.5].map((u) => ({ ...item('chair', u, -36.6, 0.36, 0.36, 'n', false), color: 'timber' })),
+  // Sala Rosa: el castillo y la pizarra. Las casitas de las salas del
+  // primer piso son rosas con techo blanco (ref/roja_sheet.png), no rojas.
+  { ...item('playhouse', 66.2, -33.2, 1.6, 1.4), color: 'pinkWall' },
   item('board', UJ.e - 0.17, -34.4, 0.04, 1.6, 'w', false),
   // Sala Roja: carpa de circo (casita) y mesas redondas rojas.
-  { ...item('playhouse', 66.1, -29.4, 1.6, 1.4), color: 'red' },
+  { ...item('playhouse', 66.1, -29.4, 1.6, 1.4), color: 'pinkWall' },
   ...[
     [63.7, -30.2],
     [63.9, -28.5],
@@ -249,12 +251,17 @@ const I2: Item[] = [
   item('curtain', 64.0, -30.45, 5.6, 0.1, 'n', false),
   ...[64.4, 64.9, 65.4, 65.9].map((u, k) => ({ ...item('stack', u, -34.95, 0.45, 0.45), color: (['metalDark', 'chairGreen', 'orange', 'metalDark'] as const)[k], h: 1.4 })),
   { ...item('shelf', 60.88, -30.6, 0.45, 2.0, 'e'), color: 'board' },
+  // Baranda sobre el canto del pozo de la escalera, del muro a la llegada
+  // del último tramo (3,3 m de caída sin nada).
+  { ...item('gate', 58.5, VJ.hall - 0.025, 1.4, 0.05, 's', true), color: 'metalDark', h: 1.05 },
   // Tanques de agua sobre la azotea del frente (toma aérea).
   ...[58.6, 60.2].map((u) => ({ ...item('waterTank', u, -37.6, 1.2, 1.2, 's', false), y: 3.3 })),
   // Espacio de música: batería, gradas contra el muro este y mesa larga.
-  item('drumKit', 64.8, -37.4, 1.4, 1.2),
+  // Mesa contra el muro del hall y batería hacia la fachada: queda un paso
+  // de 1 m de la puerta a las gradas (antes la mesa tapaba la puerta).
+  item('drumKit', 64.9, -37.95, 1.4, 1.2),
   item('risers', 66.54, -37.2, 1.4, 2.6, 'w'),
-  { ...item('table', 63.95, -36.4, 1.8, 0.7) },
+  { ...item('table', 64.6, -35.95, 1.8, 0.7) },
 ];
 
 export const JARDIN_ITEMS: readonly Item[] = [...I0, ...itemsOn(1, I1), ...itemsOn(2, I2)];

@@ -310,6 +310,7 @@ window.addEventListener('pagehide', (event) => {
   xr?.dispose();
   engine.stopRenderLoop();
   director?.dispose();
+  unwireWorld?.();
   life?.dispose();
   people?.dispose();
   player?.dispose();
@@ -354,6 +355,8 @@ async function buildCity(newSeed: number): Promise<void> {
 
   scene.blockMaterialDirtyMechanism = false;
   director?.dispose();
+  // Los peatones y los autos dejan de consultarse antes de que se desarmen.
+  unwireWorld?.();
   life?.dispose();
   people?.dispose();
   player?.dispose();
@@ -383,6 +386,11 @@ async function buildCity(newSeed: number): Promise<void> {
 
   await progress(55, 'Calculando el cielo…');
   environment = new Environment(scene, city.plan.extent);
+  // El plano lejano adaptativo no corta antes de que cierre la niebla.
+  quality.setFogReach(environment.fogReach);
+  // Visor y celular no tienen post-proceso: su imagen lleva su propia
+  // gradación (ver Environment.setInMaterialGrade).
+  environment.setInMaterialGrade(profile.post === 'off');
   // La sombra estática gasta su resolución en la escuela, no en el barrio.
   const centre = toWorld(city.schoolFrame, 34, -20);
   environment.setFocus({ x: centre.x, z: centre.z }, 95);
@@ -425,8 +433,13 @@ async function buildCity(newSeed: number): Promise<void> {
     console.log(`[precompile] ${warm.compiled}/${warm.total} en ${warm.ms} ms`);
   }
 
-  // Autos por las calles del barrio y pájaros.
-  life = new Life(scene, city.plan, newSeed);
+  // Autos por las calles del barrio y pájaros. El detalle y el piso, del
+  // perfil y del índice de ESTA construcción (sin adivinarlos de globales).
+  const cityIndex = city.index;
+  life = new Life(scene, city.plan, newSeed, {
+    detailed: profile.highDetailStreet,
+    ground: (x, z) => cityIndex.surfaceHeight(x, z),
+  });
 
   // Alumnos, docentes, familias y personal: la escuela viva.
   people = new Population(scene, city.plan, city.index, city.schoolFrame, newSeed, {
@@ -435,6 +448,7 @@ async function buildCity(newSeed: number): Promise<void> {
   });
   people.setAdaptiveLevel(quality.adaptiveLevel);
   people.setSchoolPhase('entrada');
+  wireCrossings(life, people);
 
   // Jugador con colisión y modo caminar/volar.
   player = new PlayerController(scene, camera, city.index, virtualInput);
@@ -454,6 +468,8 @@ async function buildCity(newSeed: number): Promise<void> {
     // E sube mientras se vuela: sólo se interactúa caminando.
     canInteract: () => player?.mode === 'walk',
     fixtures: city.lightFixtures,
+    // Apagar un aula también baja su luz (mapa de luz natural, ver Environment).
+    onRoomLights: (id, on) => environment?.setRoomLights(id, on),
   });
   if (xr) await director.connectXR(xr.experience, xr);
 
@@ -470,6 +486,32 @@ async function buildCity(newSeed: number): Promise<void> {
     // eslint-disable-next-line no-console
     console.log('COSTBREAKDOWN ' + JSON.stringify(city.breakdown().slice(0, 14)));
   }
+}
+
+// ------------------------------------------------- peatones ↔ tránsito
+
+/** Suelta lo enganchado por `wireCrossings` (null si no hay nada enganchado). */
+let unwireWorld: (() => void) | null = null;
+
+/**
+ * La gente del barrio y los autos se consultan en cada cruce (se rearma en
+ * cada `buildCity`): la gente cruza con el semáforo que ven los autos, en las
+ * sendas sin semáforo los autos frenan y le ceden el paso, y un auto no dobla
+ * sobre la senda mientras alguien cruza delante. Sin esto cada uno usaba su
+ * propio reloj y se cruzaban sobre la senda.
+ */
+function wireCrossings(l: Life, p: Population): void {
+  unwireWorld?.();
+  const traffic = l.traffic;
+  p.setCrossingGate((x, z, axis) => traffic.pedestrianGo(x, z, axis));
+  traffic.setZebraBusy((x, z, axis) => p.zebraBusy(x, z, axis));
+  traffic.setPedestrianQuery((x, z, r) => p.pedestrianNear(x, z, r));
+  unwireWorld = () => {
+    unwireWorld = null;
+    traffic.setPedestrianQuery(null);
+    traffic.setZebraBusy(null);
+    p.setCrossingGate(null);
+  };
 }
 
 /** Panel de métricas (Ajustes → Métricas): es la herramienta de trabajo, no adorno. */
@@ -515,7 +557,14 @@ btnQuality.addEventListener('click', async () => {
 async function rebuildFor(_tier: QualityTier): Promise<void> {
   // La densidad de verde, el detalle y la multitud son datos de generación:
   // cambiarlos exige reconstruir. El resto se aplica en caliente.
-  await buildCity(seed);
+  // Mientras se reconstruye cada cuadro dura lo que un paso de la
+  // construcción: la calidad adaptativa no mide hasta unos segundos después.
+  quality.settle(Infinity);
+  try {
+    await buildCity(seed);
+  } finally {
+    quality.settle();
+  }
 }
 
 function updateQualityButton(): void {
@@ -606,6 +655,8 @@ async function start(): Promise<void> {
   setInterval(updateStats, 500);
 
   boot.classList.add('hidden');
+  // Los primeros cuadros compilan shaders y suben texturas: no miden el equipo.
+  quality.settle();
 
   // Frecuencia real de la pantalla del celular, ya con la escuela armada (mientras
   // carga, los cuadros duran lo que cada paso de la construcción).
@@ -651,12 +702,15 @@ async function start(): Promise<void> {
       base.onStateChangedObservable.add((state) => {
         if (state === WebXRState.IN_XR) {
           // El visor tiene su propio plano lejano y foveación: aplicar el
-          // nivel adaptativo vigente desde el primer cuadro.
+          // nivel adaptativo vigente desde el primer cuadro. Los primeros
+          // cuadros del visor (sesión, capas, shaders) no miden el equipo.
+          quality.settle();
           controls.setPerformanceLevel(quality.adaptiveLevel);
           sound.setLowPower(true);
           vrIdle('Salir de VR');
         } else if (state === WebXRState.NOT_IN_XR) {
           vrIdle();
+          quality.settle();
           sound.setLowPower(quality.current === 'vr' || touchMode);
           const previous = tierBeforeVr;
           tierBeforeVr = null;

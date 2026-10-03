@@ -1,7 +1,10 @@
 import type { Block, CityPlan } from './CityLayout';
 import {
   APEX,
+  FURNITURE,
+  KINDER_ROOMS,
   LEVEL_Y,
+  PRIMARY_ROOMS,
   SCHOOL,
   U,
   V,
@@ -210,7 +213,11 @@ const WALLS_PB: Wall[] = [
     [-22.6, -23.35, 'door', undefined, undefined, 'frame'],
   ]),
   vw(U.wingE, V.grayB, V.profB),
-  hw(V.profB, miguelCaneU(V.profB), U.wingE, 'int', [[11.8, 13.0, 'door']]),
+  // La puerta de la sala de profesores arranca en 12,28: el pie de la
+  // escalera del ala oeste (hasta 12,25, sobre este mismo muro) y la punta de
+  // su pasamanos quedaban delante de la hoja. El tramo no se puede acortar
+  // (riserCount) ni la puerta correrse al este (el muro del ala, en 13,1).
+  hw(V.profB, miguelCaneU(V.profB), U.wingE, 'int', [[12.28, 13.0, 'door']]),
   // Bajo el descanso de la escalera del ala oeste el muro llega sólo hasta la
   // losa del descanso (2,08 m): entero, el descanso lo atravesaba y quien
   // subía pasaba a través de la pared.
@@ -509,7 +516,10 @@ export function volumeTop(vol: Volume): number {
  */
 export const UPPER: readonly Volume[] = [
   ...UPPER_VOLUMES,
-  { poly: [[U.teaE, V.top], [U.e, V.top], rear(U.e), rear(U.teaE)], floors: 2, cornice: false, roofMat: 'jardinRoof' },
+  // Sin cerramiento genérico: el jardín tiene sus muros en cada piso (con
+  // él, el muro oeste se duplicaba en el mismo plano y aparecían ventanas y
+  // equipos de aire en un lateral que es ciego).
+  { poly: [[U.teaE, V.top], [U.e, V.top], rear(U.e), rear(U.teaE)], floors: 2, cornice: false, shell: false, roofMat: 'jardinRoof' },
 ];
 
 /** Cubiertas de una sola planta. */
@@ -548,7 +558,9 @@ export const STAIRS: readonly Stair[] = [
 /** Descansos de las escaleras. */
 export const LANDINGS: readonly Landing[] = [
   // Descanso alto de la escalera exterior, frente a la puerta del primer piso.
-  { u0: 33.05, v0: -26.7, u1: 34.35, v1: -25.3, y: 3.3, hollow: true },
+  // Cubre también el espesor del muro, hasta el piso del pasillo: con 15 cm
+  // sin piso delante de la puerta no se podía entrar al sector nuevo.
+  { u0: U.east1, v0: -26.7, u1: 34.35, v1: -25.3, y: 3.3, hollow: true },
   // Descanso entre los dos tramos de la escalera principal.
   { u0: 25.9, v0: -29.65, u1: 26.9, v1: -25.3, y: 1.65 },
   ...UPPER_LANDINGS,
@@ -880,9 +892,12 @@ const ITEMS_PB: Item[] = [
   item('bareTree', 19.4, -21.9, 0.6, 0.6),
   { ...item('floorPatch', 25.0, -21.2, 2.5, 2.5, 's', false), color: 'darkGreen' },
   item('bareTree', 25.2, -21.4, 0.6, 0.6),
-  { ...item('bench', 26.6, -20.4, 1.2, 0.4, 's', false), color: 'timberDark' },
+  // Macizo: la gente lo atravesaba (se sienta desde adelante, ver Places).
+  { ...item('bench', 26.6, -20.4, 1.2, 0.4, 's'), color: 'timberDark' },
   item('planter', 24.75, -12.75, 2.4, 2.4),
-  { ...item('palm', 24.75, -12.75, 0.4, 0.4), h: 6, y: 0.6 },
+  // 8,1 m: con 6 m las frondas entraban por el muro y el cielorraso de la
+  // galería roja (a 1,7 m del tronco); así pasan por encima de su pretil.
+  { ...item('palm', 24.75, -12.75, 0.4, 0.4), h: 8.1, y: 0.6 },
   ...[
     [24.75, -11.45, 2.4, 0.4],
     // Termina donde empieza el asiento del lado sur (sin encimarse en la esquina).
@@ -905,6 +920,10 @@ const ITEMS_PB: Item[] = [
   { ...item('wallPanel', 33.03, -22.0, 0.04, 2.6, 'e', false), y: 0, h: 1.08, color: 'block' },
   { ...item('wallPanel', 34.2, -24.0, 2.4, 3.0, 's', false), y: 2.85, h: 0.05, color: 'navy' },
   { ...item('wallPanel', 35.42, -24.0, 0.04, 3.0, 'e', false), y: 2.4, h: 0.5, color: 'navy' },
+  // Bajo los muros negros de la pasarela, donde arranca su escalera (más baja
+  // que el piso alto): cierran el costado del tramo, que desde el patio se
+  // veía colgando con su losa y su baranda por debajo de la pasarela.
+  ...[-13.525, -14.925].map((v) => ({ ...item('wallPanel', 36.35, v, 1.2, 0.15, 's', false), y: 2.13, h: 1.05, color: 'black' })),
   // Arena bajo los juegos.
   // Desde el pie de la escalera exterior (no por debajo de ella).
   { ...item('floorPatch', 42.125, -28.0, 15.35, 4.8, 's', false), color: 'sand' },
@@ -921,14 +940,18 @@ const ITEMS_PB: Item[] = [
   item('tree', 37.9, -19.4, 0.6, 0.6),
   item('bikeRack', 34.8, -25.0, 1.8, 0.5, 'e'),
   item('playTower', 35.75, -28.7, 2.6, 2.2, 's'),
-  { ...item('aviary', 35.5, -32.5, 3.6, 1.2, 's'), color: 'red' },
+  // Más corto por el oeste: el pie de la escalera exterior quedaba a 15 cm
+  // de su malla en la mitad del ancho.
+  { ...item('aviary', 36.1, -32.5, 2.4, 1.2, 's'), color: 'red' },
   { ...item('aviary', 38.6, -31.8, 1.9, 1.2, 's'), color: 'chairGreen' },
   item('hut', 41.0, -31.3, 2.4, 1.8, 's'),
   item('swing', 45.0, -28.6, 2.6, 1.4, 's'),
   { ...item('slide', 47.4, -30.1, 2.0, 1.2, 's'), color: 'lime' },
   item('climber', 43.5, -25.4, 1.8, 1.8),
   // Cerco de cañas delante del muro norte del edificio de bloque.
-  ...[37.9, 39.1, 40.3, 46.3, 47.5, 48.7].map((u) => item('hedge', u, -23.8, 1.2, 0.6, 's', false)),
+  // Macizo, y el follaje del tamaño del ítem (SchoolBuilder): los chicos
+  // caminaban a través del cerco.
+  ...[37.9, 39.1, 40.3, 46.3, 47.5, 48.7].map((u) => item('hedge', u, -23.8, 1.2, 0.6, 's')),
 
   // Equipos de aire de la fachada sobre Laprida (0:04, Street View) y del
   // lado del patio oeste (2:02–2:07).
@@ -1105,6 +1128,35 @@ export function roomLevel(r: Room): Level {
 export function roomAt(u: number, v: number, level: Level = 0): Room | null {
   for (const r of ROOMS) if (roomLevel(r) === level && inPoly(r.poly, u, v)) return r;
   return null;
+}
+
+/**
+ * Talle del mobiliario de un ítem (pupitre, mesa o silla): 'small' en las
+ * salas del jardín, 'primary' en las aulas de 2º a 6º grado (salvo la silla
+ * del docente, junto a su escritorio) y 'adult' en el resto. Constructor,
+ * gente y QA lo leen de acá: si sólo cambia uno, la gente flota sobre la
+ * silla o escribe en el aire.
+ */
+export function furnitureSize(it: Item): 'small' | 'primary' | 'adult' {
+  const level = it.level ?? 0;
+  const id = roomAt(it.u, it.v, level)?.id ?? '';
+  if (KINDER_ROOMS.has(id)) return 'small';
+  if (!PRIMARY_ROOMS.has(id)) return 'adult';
+  if (it.kind === 'chair' && ITEMS.some((t) => t.kind === 'teacherDesk' && (t.level ?? 0) === level && Math.hypot(t.u - it.u, t.v - it.v) < 1.0)) return 'adult';
+  return 'primary';
+}
+
+/** Altura de la tapa de un pupitre o una mesa común según su talle. */
+export function deskTopOf(it: Item): number {
+  const size = furnitureSize(it);
+  if (it.kind === 'desk') return size === 'primary' ? FURNITURE.primaryDeskTop : FURNITURE.deskTop;
+  return size === 'small' ? FURNITURE.smallTable : size === 'primary' ? FURNITURE.primaryDeskTop : FURNITURE.tableTop;
+}
+
+/** Escala de una silla según su talle (asiento a `FURNITURE.seat` × escala). */
+export function chairScaleOf(it: Item): number {
+  const size = furnitureSize(it);
+  return size === 'small' ? FURNITURE.smallScale : size === 'primary' ? FURNITURE.primarySeat / FURNITURE.seat : 1;
 }
 
 /** ¿Hay piso transitable de ese nivel en el punto? La planta baja cubre todo el predio. */
@@ -1324,9 +1376,11 @@ export const FENCES: readonly (readonly [P, P])[] = [
     [miguelCaneU(FENCE_V), FENCE_V],
     [miguelCaneU(-4.6), -4.6],
   ],
+  // Y vuelve a la esquina del edificio: la salida de emergencia del ochavo
+  // da a la vereda (antes el cerco pasaba por delante, entre sus hojas).
   [
     [miguelCaneU(-6.8), -6.8],
-    [miguelCaneU(V.corrS), V.corrS],
+    [U.w - SCHOOL.extT / 2, V.classTop],
   ],
 ];
 

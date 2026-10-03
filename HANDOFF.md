@@ -84,9 +84,11 @@ npm run build
 - Con `navigator.webdriver` (puppeteer) el juego entra directo, todo abierto y
   sin HUD, para que las capturas no dependan de la historia. Para probar la
   historia con puppeteer: `?titulo=1&libre=0&hud=1`.
+- `?frases=1|0` trae de vuelta (o apaga) diálogos, voces, comentarios y
+  entrevistas (ver 75). Sin el parámetro, nadie habla.
 
 **Controles de escritorio**: `WASD` mover, `Shift` correr, `Espacio` saltar,
-`E` interactuar (hablar, abrir, usar), `Esc` menú (pasaporte, ajustes,
+`E` interactuar (saludar, abrir, usar), `Esc` menú (pasaporte, ajustes,
 controles), `F` caminar/volar (volando, `E`/`Q` suben y bajan).
 
 **Controles VR**: stick izquierdo camina (clic: correr), stick derecho gira de
@@ -97,8 +99,9 @@ muñeca con el lugar y el objetivo.
 en la mitad izquierda (analógico), deslizar en la mitad derecha para mirar
 (o un segundo joystick, en Ajustes), tocar a una persona u objeto para
 usarlo, botones Usar (se enciende con algo a mano), Saltar y Correr; volando,
-Subir y Bajar. Arriba: menú, ocultar objetivo y mapa, pantalla completa. En
-un diálogo, un toque avanza. Con el teléfono vertical, el juego pide girarlo.
+Subir y Bajar. Arriba: menú, ocultar objetivo y mapa, pantalla completa. Con
+`?frases=1`, en un diálogo un toque avanza. Con el teléfono vertical, el juego
+pide girarlo.
 
 ---
 
@@ -306,12 +309,16 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     comía el 84 % de la escena. `flat: false` promedia las normales: con los
     mismos 20 triángulos la copa se lee redonda en vez de facetada.
 
-11. **Follaje: difuso × 0,85 y emisivo 0,45** (`Materials.foliage`).
+11. **Follaje: difuso × 0,70 y emisivo 0,70** (`Materials.foliage`).
     El emisivo es un sustituto barato de dispersión subsuperficial. Con la
-    luz hemisférica baja del entorno actual, 0,30 dejaba las copas en sombra
-    **negras** (bajo los edificios de enfrente, a contraluz); subir sólo el
-    emisivo las volvía plástico al sol, por eso se baja el difuso a la vez: al
-    sol la copa da lo mismo que antes (≈1,37 × color) y en sombra 50 % más.
+    luz hemisférica baja del entorno actual, 0,30 y después 0,45 dejaban las
+    copas en sombra **negras** (bajo los edificios de enfrente, a contraluz,
+    en el patio este): `StandardMaterial` suma el emisivo en espacio gamma,
+    antes de pasar a lineal, así que el piso de luz rinde mucho menos de lo
+    que sugiere la cuenta. Subir sólo el emisivo las volvía plástico al sol,
+    por eso se baja el difuso a la vez: al sol la copa da casi lo mismo
+    (≈1,46 × color, antes 1,37). Medido: copa en sombra luminancia 22 → 45;
+    árbol al sol en Laprida 55 → 59.
 
 12. **El ángulo del canal va NEGADO (`-Math.atan(slope)`).**
     Babylon es zurdo: rotar +X sobre Y por θ lo lleva a `(cos θ, 0, −sin θ)`.
@@ -617,8 +624,9 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
 
 55. **SSAO de contacto, de radio corto y con desenfoque que respeta bordes**
     también en 'balanced': el desenfoque barato dejaba manchas grises a lo
-    largo de las aristas muro/cielorraso. Cuando la calidad adaptativa apaga
-    ese desenfoque, la intensidad baja para que no quede granulado.
+    largo de las aristas muro/cielorraso. Desde el nivel adaptativo 2 el SSAO
+    se quita: sin desenfoque, 8 muestras eran grano negro aun con 0,6 de
+    intensidad (sobre la gente y los muebles).
 
 56. **El modo celular lo decide el puntero PRINCIPAL** (`ui/device.ts`,
     `(pointer: coarse)` + puntos táctiles), no el agente: una notebook con
@@ -649,13 +657,16 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     entero: el `dt` que ven jugador y animaciones es el real. 30 con menú,
     título o ahorro de batería; 10 con el teléfono vertical; sin tope en XR.
 
-60. **La calidad adaptativa con tope ignora tirones aislados y se recupera**
-    (`QualityManager.setFrameCap`). Con tope no hay margen que medir y la
-    regla de escritorio (recuperar a `objetivo + 10` fps) no se cumple nunca:
-    un solo shader compilado al entrar a un ambiente bajaba la resolución
-    para siempre. Con tope, un cuadro > 250 ms es un tirón; se recupera tras
-    15 s sosteniendo el tope y, si la recuperación falla, la espera se
-    duplica (no oscila). El escritorio no llama a `setFrameCap`: sin cambios.
+60. **Calidad adaptativa: sano es sostener el objetivo, no superarlo**
+    (fps ≥ 0,96 × objetivo: 60 en escritorio, el tope en celular, 72 en el
+    visor). Con la regla vieja (objetivo + 10) una pantalla de 60 Hz o el
+    visor nunca recuperaban un escalón perdido en el arranque. Un cuadro de
+    más de 250 ms es un tirón en todos los modos (salvo que sean ≥ 40 % de la
+    ventana). `QualityManager.settle()` no mide 6 s tras el arranque, al
+    reconstruir (`settle(Infinity)` mientras dura) y al entrar o salir del
+    visor. Recuperar exige 8 s sanos (15 s con tope) por un factor que se
+    duplica (hasta ×8) si una bajada llega menos de 15 s después de
+    recuperar: no oscila.
 
 61. **El aviso de interacción no atrapa el dedo en el celular**
     (`pointer-events: none`): un pulgar que arranca encima tiene que mover el
@@ -663,7 +674,7 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     él). La pantalla completa y el bloqueo horizontal se piden al
     LEVANTAR el dedo (con toque, `pointerdown` no cuenta como gesto).
 
-56. **En el visor nada traba la caminata ni exige puntería** (reportado con
+62. **En el visor nada traba la caminata ni exige puntería** (reportado con
     el Quest puesto: "no puedo caminar y es raro interactuar con los profes"):
     - Al entrar al visor desde el título se juega directo (`startInXR`):
       antes aparecía un menú que había que apuntar con el láser, y la
@@ -673,8 +684,10 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     - Los botones se leen del gamepad crudo en los dos controles
       (`pollXRButtons`, mapeo xr-standard: 0 gatillo, 4 A/X, 5 B/Y), sin
       depender del puntero de Babylon. Gatillo: elige lo que apunta ese
-      control. A/X: sigue el diálogo, elige la primera opción si no se apunta
-      a ninguna, o habla con quien está señalado. B/Y: cierra carteles. Con
+      control. A/X: sin frases, saluda a quien está señalado (aplica su
+      charla en silencio); con `?frases=1`, sigue el diálogo, elige la
+      primera opción si no se apunta a ninguna o habla con quien está
+      señalado. B/Y: cierra carteles. Con
       una sola opción (Continuar, Cerrar) cualquier botón la elige.
       `GamePanel3D` tiene antirrebote de 300 ms: el gatillo llega también por
       el puntero de Babylon en el mismo cuadro.
@@ -689,7 +702,234 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
       escribe la posición, pero el emulador la pisa. En el visor real ese
       mecanismo es el mismo de la teletransportación de Babylon.
       `tools/test-vr.mjs` prueba el resto con botones emulados (arranque sin
-      menú, caminata habilitada, diálogo completo sólo con A/X).
+      menú, caminata habilitada, la A sobre Rubén abre el portal sin panel
+      con líneas ni voz).
+
+63. **El SSAO va último en la cadena de post-proceso.** Cambiar
+    samples/FXAA/bloom/nitidez del `DefaultRenderingPipeline` lo reconstruye y
+    lo engancha al final, detrás del SSAO: la escena pasaba a dibujarse en la
+    primera pasada del SSAO (8 bits, sin MSAA), sin disco solar ni bloom, por
+    el resto de la sesión. `RenderPipeline.setAdaptiveLevel` aplica primero
+    esos setters y después reengancha el SSAO para que quede último, como al
+    arrancar.
+
+64. **Las sombras usan `forceBackFacesOnly`** (`Environment.enableShadows`):
+    sin esto la fachada de Laprida al sol tenía rayas verticales (mapa
+    estático del visor y cascadas) y las copas, puntitos. Todo proyector debe
+    ser cerrado o tener un cielorraso con cara inferior debajo: una losa
+    abierta sin cielorraso dejaría pasar el sol.
+
+65. **Mapa de luz natural: la altura sobre el piso del nivel se topa en 0**
+    (`max(p.y − piso, 0)`). La vereda y los patios están por debajo de la
+    planta baja: con h negativo la oclusión de contacto los oscurecía hasta
+    ×0,56 (sol incluido) en una franja recta hasta el borde de la grilla.
+    Disco solar de tamaño casi real (smoothstep 0,999965–0,99999, brillo ×8).
+
+66. **Gente (decisiones del QA de personajes):** `NavGrid` barre los cierres
+    dinámicos (`sweepDynamic`, ~300 celdas por cuadro), mantiene la marca
+    mientras el cierre exista y suma una celda de margen. En una escalera la
+    gente espera según su avance sobre el tramo compartido, no por geometría
+    (el descanso en U ya no se amontona). Sentados dibujan `smockSit` o
+    `torso` en vez del guardapolvo rígido. `Population.forEachPerson` (las
+    puertas) informa sólo a quien camina: un alumno sentado junto a la puerta
+    ya no la deja abierta toda la clase. Las maestras del jardín se paran
+    entre las mesas (`teacherSpot`): las salas no tienen pizarrón. `deskArm`
+    resuelve el codo exacto hasta la punta de los dedos y `lapArm` apoya las
+    manos en los muslos.
+
+67. **Mapa de luz natural en escaleras y aulas apagadas.** `bakeSchoolDaylight`
+    guarda en `slab()` el piso sobre el que apoya cada tramo y descanso
+    (`baseOf(y0)`) y nunca cubre un piso más bajo: sin esto los tramos del
+    primer piso manchaban el piso del salón de los espejos (1,2 × 1,7 m
+    oscuros). Los interruptores bajan la luz de verdad: `Lights` avisa por
+    `onChange(roomId, on)` → `GameDirector` (`onRoomLights`) → `main.ts` →
+    `Environment.setRoomLights`, que reescribe las celdas del aula con su
+    valor sin lámparas (`DAYLIGHT.lightsOff` 0,55) y sube la textura una sola
+    vez, en el cuadro siguiente. Los cambios de fase (recreo, acto, salida)
+    apagan igual las aulas vacías. Amplía los ítems 37 y 52.
+
+68. **Visor y celular tienen su propia gradación de imagen.** Sin post-proceso
+    la imagen se veía lavada: `Environment.setInMaterialGrade(profile.post ===
+    'off')` aplica `HEADSET_GRADE` (exposición ×1,05, contraste +0,08,
+    saturación 17 / 12 en sombras, halo del sol ×1,6 en lugar del bloom); el
+    escritorio sigue con `SCREEN_GRADE`. Mañana: horizonte (= color de la
+    niebla) celeste pálido, no gris, y `fogThickness` 1,0, el mínimo que
+    todavía tapa el borde del suelo (la niebla debe seguir ≥ 94 % en
+    `fogReach`); más fina exige agrandar el suelo.
+
+69. **Gente del barrio: simulación aparte y barata** (`people/Sidewalks.ts`,
+    sin Babylon, con su propio generador aleatorio: la multitud de la escuela
+    no cambia). Caminan por un carril por sentido (1,45 y 2,4 m desde la línea
+    de edificación), cruzan sólo por las sendas peatonales y, en las esquinas
+    con semáforo, sólo con rojo para los autos de esa calle
+    (`Population.setCrossingGate`; sin conectar, `Sidewalks.mayCross` copia el
+    ciclo de `SIGNAL`). Usan las mismas mallas de cuerpo: no suman llamadas
+    de dibujo si se ve a alguien de la escuela. Tope 16 dibujados en el visor
+    (40 en escritorio) con distancia de dibujo que se ajusta sola; la vereda
+    de Laprida de la escuela sigue siendo de `PeopleSim`. Dos ahorros de
+    dibujo pagan casi todo: la gente de los patios no se dibuja desde la
+    calle más allá de 14 m en el visor (26 m en escritorio; está detrás de
+    muros) y más allá de 12 m sólo se dibuja dentro de ±65° de la mirada
+    (`CONE_FAR` 0,42).
+
+70. **Puertas del juego: las hojas pisan 5 mm el marco y el dintel**
+    (`SchoolDoors`: bisagra en `face(0.065)`, ancho `len2 − 0.13`, alto
+    −0,025). No volver a 0,08 / 0,16: queda una rendija de 1 cm por la que se
+    ve el otro lado. Las dos hojas de una puerta doble no se superponen entre
+    sí (coplanares, titilan). Una hoja simple pasa la bisagra al otro lado si
+    al abrirse atravesaría un muro, y `SchoolLights` pone la llave del lado
+    del picaporte. Material `game-doors`: recibe sombra, emisivo 0, entorno
+    `INTERIOR_ENV × 2,2`, vidrio `#4f6470`.
+
+71. **Peatones y autos comparten los cruces** (`wireCrossings` en `main.ts`,
+    se rearma en cada `buildCity` y se suelta antes de desarmar). La gente
+    del barrio cruza según `TrafficSim.pedestrianGo`: rojo para los autos de
+    esa calle y más de 4 s de verde por delante en la otra, igual que el
+    semáforo peatonal; nunca con un reloj propio. En las esquinas sin
+    semáforo los autos frenan ante una senda ocupada (`setZebraBusy`); en las
+    que tienen semáforo siguen la luz y, al doblar, `setPedestrianQuery`. Los
+    autos paran a `CROSS_AT` + `ZEBRA_HALF` (1,3) + 0,6 m del centro de la
+    esquina: si cambia la posición o el ancho de la senda en `InfraBuilder`,
+    actualizar `traffic.ts`.
+
+72. **Árboles porteños y viento** (`NatureBuilder`, `WindPlugin`). La especie
+    (plátano, fresno, tipa, jacarandá, palo borracho) sale de la posición del
+    árbol y `broadleaf()` llama a `legacyDraws()` para sacar del generador
+    compartido los mismos números que antes (ítem 42): no quitarlo ni cambiar
+    cuántos saca. El viento busca la sombra en la posición de reposo (lo
+    inyectado después de `vPositionW=vec3(worldPos);`): el mapa de sombras se
+    dibuja sin viento y sin esto las copas se llenaban de manchas que
+    caminaban. El segundo color del follaje está acotado y los árboles en
+    flor tienen huecos menos profundos (0,35); el emisivo del follaje se suma
+    en gamma, y más fuerte deja las copas "atigradas". Nubes: umbral
+    `1 − cloudCover·1,12` (con 0,95 el cielo quedaba vacío). `GLASS_ENV` 2 es
+    absoluto y sólo para el vidrio de fachada (alfa ≥ 0,5); el de las aulas
+    sigue con el valor de la escena.
+
+73. **Calles: una sola fuente para medidas y bancos** (`CityLayout`).
+    `LANE_FRAC` 0,42, `RAMP_LEN` 1,3, `CROSS_AT` 6,2 y `KERB_W` 0,32 las usan
+    `InfraBuilder`, la gente y el tránsito: nada de copias locales.
+    `plan.benches` es la única lista de bancos (`kind` 'sidewalk', 'plaza' o
+    'stop'; el que se sienta mira hacia (sin rotY, cos rotY)), con su propio
+    generador (`seed ^ 0x0be4c5`) para no correr nada más de la ciudad;
+    `InfraBuilder.streetscape` y `BuildingBuilder.civicFront` siguen sacando
+    los mismos números de antes (ítem 42). Suelo: una losa de
+    (extensión + `GROUND_MARGIN` 640) × 2 centrada en el barrio y
+    `fogReach` = extensión + 360: el borde queda a ≥ 98 % de niebla desde
+    cualquier punto. No achicar la losa sin volver a espesar la niebla.
+    `DistantCity` dibuja toda la capa 2 también en el visor y una capa 3 de
+    unas 100 cajas pálidas entre 380 y 640 m (generador `seed ^ 0x5c71e3`,
+    sin llamadas extra): con la niebla más fina se veía una franja de pasto
+    vacía en el horizonte. En el visor, vidrieras, vidrios de puertas y
+    balcones son un solo plano, zócalos, barandas y sogas de ropa son paneles
+    de color, las celosías van a la mitad y no hay parteluces (8–10 mil
+    triángulos menos por vista).
+
+74. **Gente del barrio, segunda pasada** (`people/Sidewalks.ts`). Esquivan al
+    jugador sólo a menos de 3 m: pasan a 0,95 m, nunca a menos de 0,6 m de la
+    fachada (las exhibiciones llegan a 0,93) ni a más de 2,6 m (troncos a
+    3,03); si no hay lugar, esperan en vez de atravesarlo. Las parejas se
+    ponen en fila (`singleT`, el otro 0,8 m atrás) cuando viene alguien de
+    frente a menos de 5 m, al lado de algo parado o de un banco y al
+    esquivar al jugador; quien camina detrás usa la posición real del
+    segundo. Los bancos los ocupan los últimos en crearse (no corren el
+    generador de los demás) y sólo los 'sidewalk' y 'plaza'; los 'stop' son
+    de la parada. En el visor, celular y calidad baja el material de la gente
+    lleva un borde de luz (`emissiveFresnelParameters`): a contraluz del sol
+    de la mañana se veían casi negros. No subir el emisivo plano (0,46) en
+    escritorio: ahí el post-proceso ya levanta las sombras.
+
+75. **El juego no tiene frases por defecto** (lo pidió el usuario: "No quiero
+    que nadie me hable, así que sacá todas las frases; capaz más adelante
+    agregamos"). Un solo interruptor: `FRASES` en `src/game/story/phrases.ts`
+    (false) y `?frases=1` (`?frases=0` fuerza el modo callado). Sin frases:
+    ni diálogos (HUD ni panel del visor), ni voces (`audio.voice` no se
+    llama; el código de audio no cambió), ni `#bark`, ni avisos del visor con
+    frases, ni respuestas al pasar, ni la explicación de la campana, ni el
+    discurso en el acto o los créditos, ni citas dentro de las actividades.
+    Lola tampoco comenta por su cuenta, con o sin frases ("¡Llegaste!",
+    "¡Recreo!", comentarios de lugares y avisos de las reglas se borraron).
+    A la gente se la **saluda** (`GameDirector.greet` →
+    `StoryEngine.silentTalk`): se recorre en silencio la charla pendiente
+    eligiendo `DialogueRunner.silentPick` (la primera opción, salvo que lleve
+    a una entrevista) y se aplican todos sus efectos; el personaje contesta
+    con un gesto y suena un clic. Las entrevistas son frases: `s.voces` y la
+    insignia Cronista sólo existen con frases. Textos sin frases:
+    `silentTitle` (objetivos), `silentReason` (cerraduras), `silentNotReady`
+    (objetos), `.phrases-only` / `.silent-only` en `index.html`
+    (`Hud.setPhrases` pone `html.phrases`). Sin frases nadie gesticula
+    hablando (`stationAnim`: "talk" → "idle"). Todo el texto sigue en el
+    código: no volver a mostrar texto de personajes ni pedir voces sin pasar
+    por `SESSION.phrases`.
+
+76. **El plano lejano nunca corta antes de que cierre la niebla.**
+    `QualityManager.setFogReach` (lo llama `main.ts` al crear el
+    `Environment`) pone un piso a `camera.maxZ` de `fogReach ×
+    FAR_FLOOR_FACTOR` (1,09, niebla al 97 %), y `Environment.trackFarPlane`
+    espesa la niebla si alguna cámara corta antes de `fogReach / 0,92`.
+    Cortar antes no ahorraba dibujo (una losa de suelo y la ciudad lejana en
+    `TintFarm`) y en calidad baja o celular, en el nivel adaptativo 3 (348 m,
+    niebla al 76 %), dejaba una banda bajo el horizonte con el horizonte de
+    edificios flotando. En `Sky` la mezcla hacia el color del suelo empieza
+    en h = −0,1 (`smoothstep(-0.1, -0.35, h)`): la franja justo bajo el
+    horizonte sigue del color de la niebla, porque volando alto se ve por
+    debajo del suelo cortado. Multitud del visor: `crowdSize` 110 (con 90 el
+    portón a la hora de entrada, la primera vista con el visor, se veía
+    vacío); unos 735 triángulos por persona dibujada, sin llamadas extra.
+
+77. **Más gente en las veredas del visor sin pasar el tope.** En el visor,
+    50 caminantes (`crowdSize × 0,55`) y 5 grupos charlando, dibujados hasta
+    80 m (escritorio 90) con el tope de 16 (escritorio 40). Si hay más
+    candidatos que el tope se dibujan los MÁS CERCANOS, nunca los primeros
+    de la lista (alguien en un banco cercano titilaba). "Burbuja"
+    (`SidewalkOptions.bubble`: 90 en el visor, 100 en escritorio; no bajarla
+    de la distancia de dibujo + 10): un caminante por cuadro; si está fuera
+    de la burbuja y nadie lo vio (ni a su pareja) durante 1 s, reaparece
+    adelante, justo pasando la distancia de dibujo y dentro de ±40° de la
+    mirada (casi siempre caminando hacia la cámara), o a más de 80° de la
+    mirada a un tercio o dos tercios de la burbuja. Nunca volando (cámara a
+    más de 14 m). La gente de la escuela elige el detalle por distancia 3D.
+
+78. **Negocios: medidas y azar por local** (`StreetLevel`). Un plano girado
+    con `yaw` (piso y techo del local, línea de luz, mesa de exhibición, piso
+    del hall) siempre recibe (a lo largo de la fachada, fondo): no cambiar
+    los lados en las caras este y oeste; el giro ya lo hace `yaw = PI/2` y
+    cambiarlos otra vez sacaba los paneles 0,7 m sobre la vereda. Cada local
+    usa su propio generador (`deco(px(t), pz(t), 13)`), no uno por cara:
+    cuántos números saca cada local depende del detalle, y uno compartido
+    hacía que visor y escritorio armaran negocios distintos (ítem 42).
+    `DistantCity` también usa un generador por edificio. `plan.cafeTables`
+    lo llena `StreetLevel` al armar los locales (`InfraBuilder.ground` le
+    pasa el arreglo del plan) antes de crear la gente, y cada perfil publica
+    las suyas. En el visor, las fachadas de la primera fila del fondo tienen
+    bandas de ventanas partidas y bordes de losa hasta el piso 3, y el
+    horizonte lejano son dos paneles por edificio: no volverlos cajas sin
+    pagarlo en otro lado.
+
+79. **Tránsito: sendas libres y jugador sólido.** En las esquinas sin semáforo
+    cada carril espera con la trompa detrás de la senda (`stopBack` =
+    `CROSS_AT` + `ZEBRA_HALF` + 0,25 − `endFrom`): con 0 los autos frenaban
+    sobre la senda y la gente los atravesaba. La distancia al de adelante se
+    mide en su camino nuevo si cambió de camino en el mismo paso (antes el
+    de atrás frenaba de 8 m/s a 0 en un cuadro). El jugador parado en la
+    calzada es un obstáculo (`PLAYER_CLEAR` 0,7, ojos a menos de 3 m del
+    asfalto): sin esto los autos lo atravesaban y desde adentro no se veía
+    nada (caras traseras descartadas). `pedestrianGo` también frena el cruce
+    mientras haya un vehículo sobre la senda o que no llegue a frenar
+    (`vehicleOnZebra`), con o sin semáforo; los que doblan con verde ceden
+    a quien cruza la senda de salida. Vidrios de vehículos `#3a4853` con
+    franja de cielo en el colectivo: no volver a `#1d252c` (agujeros negros).
+
+80. **Copas vistas desde abajo: relleno de cielo y transparencia de las
+    hojas** (`WindPlugin`, `CUSTOM_FRAGMENT_BEFORE_FOG`). Las caras que no
+    miran hacia arriba reciben ~0,04 de luz de cielo y las que miran hacia
+    abajo hasta ~0,125 de verde amarillento traslúcido: el TONO de la hoja
+    con brillo fijo (no proporcional al color), un poco más en especies
+    oscuras, teñido con `scene.fogColor` para seguir la hora y sólo 35 % con
+    el dibujo de racimos. Sin esto la copa vista desde abajo medía luminancia
+    25–35 en el visor contra un cielo de 150. No escalarlo con el albedo
+    (las claras quedan lima y las oscuras esmeralda) ni sumarlo a las caras
+    que miran hacia arriba (es el "plástico pálido" del ítem 11).
 
 ---
 
@@ -753,6 +993,19 @@ juego delante, mandos, colores, salir, sin errores).
    los aviarios, oficina bajo la escalera de chapa.
 5. **Limpiar código de la ciudad** que el barrio ya no usa
    (`BuildingBuilder`, canal, energía, parque, tranvías de `Life`).
+6. **Que visor y escritorio armen la misma ciudad** (ítem 42, heredado):
+   `NatureBuilder.legacyDraws` saca los números de las ramas del generador
+   compartido sólo con detalle alto, y `StreetLevel.facadeLife` decide los
+   balcones con el generador compartido en un bucle de 8 pisos en escritorio
+   y 3 en el visor. Arreglo: consumir siempre los mismos números.
+7. **Margen del visor**: la vista aérea anda por 285–288 mil triángulos
+   (tope 300 mil). Lo más grande son las barandas y rejas de metal oscuro de
+   la escuela (`box|s:#2C2F35`, unos 37 mil triángulos): en el visor, una de
+   cada dos o paneles planos en lugar de cajas.
+8. **Detalles menores**: `tools/test-wind.mjs` busca una manzana 'park' que
+   ya no existe; en `Sidewalks` volver a mirar el semáforo hasta bajar del
+   cordón y pasarle el centro de la senda a `pedestrianGo`; nadie camina
+   por el césped de Miguel Cané.
 
 ---
 
@@ -768,16 +1021,19 @@ node tools/test-mobile.mjs http://localhost:5190/ <carpeta>        # celular hor
 node tools/school-shots.mjs "<url>&quality=high|vr" <carpeta> <vistas.json>
 ```
 
-- `test-interaction.mjs`: dos pasadas. Modo herramienta (caminar, volar,
-  gente, personajes, pájaros, sin HUD) y modo jugador (título, partida nueva,
-  objetivo, menú de pausa). Sale con 1 si algo falla.
+- `test-interaction.mjs`: tres pasadas. Modo herramienta (caminar, volar,
+  gente, personajes, pájaros, sin HUD), modo jugador (título, partida nueva,
+  objetivo, menú de pausa, saludar a Rubén sin frases) y una tercera con
+  `&frases=1` (diálogo y voz). Sale con 1 si algo falla.
 - `test-vr.mjs`: entra desde el título, verifica el menú del juego en el
   visor, empieza la partida y prueba locomoción (ver la limitación del
-  emulador en 6), paredes, mandos, salida y consola.
+  emulador en 6), paredes, mandos, saludar a Rubén con la A sin frases,
+  salida y consola.
 - `test-mobile.mjs`: un Android emulado de 844 × 390 jugando con los dedos
   (`Input.dispatchTouchEvent`, varios a la vez): detección y perfil,
   joystick analógico, mirar, dos pulgares, saltar, correr, tocar a una
-  persona, botón de usar, menú, ajustes, volar, actividad, superposiciones
+  persona y botón de usar (reacción sin frases: sin voces, sin `#dialogue`
+  ni `#bark`), menú, ajustes, volar, actividad, superposiciones
   del HUD, aviso vertical, tope de cuadros, un equipo de entrada y que el
   escritorio NO entre en modo táctil.
 - `school-shots.mjs`: capturas en coordenadas del plano
@@ -786,7 +1042,7 @@ node tools/school-shots.mjs "<url>&quality=high|vr" <carpeta> <vistas.json>
 - Tests de datos que conviene mirar al tocar la escuela: `schoolLayout`,
   `schoolLevels` (subir y bajar cada escalera), `peopleNav`, `gameReach`
   (cada paso de la historia es caminable), `gameStory` (la historia completa
-  sin callejones), `doors`, `vegetation`.
+  sin callejones, también en silencio hasta el final), `doors`, `vegetation`.
 
 ---
 

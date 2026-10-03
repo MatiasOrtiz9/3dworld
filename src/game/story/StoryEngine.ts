@@ -1,7 +1,9 @@
+import type { NpcAnim } from '../contracts';
 import { resolveAnchor } from './anchors';
 import { CHARACTERS } from './characters';
 import { TALK, dialogue } from './dialogues';
 import { ACTIVITY_REWARDS, OBJECTIVES, RULES, objective } from './objectives';
+import { FRASES } from './phrases';
 import { emptySave, type SaveData } from './save';
 import type {
   ActivityId,
@@ -27,16 +29,22 @@ import { INTERACTABLES, PLACES, interactable } from './world';
  * efectos que pasaron, en orden. El director los presenta (carteles,
  * sonidos, puertas que se abren); los tests los usan para jugar la
  * historia completa sin navegador.
+ *
+ * `phrases` (por defecto `FRASES`, ver `phrases.ts`) dice si hay frases:
+ * sin ellas se habla con `silentTalk` y lo que sólo existe con frases (las
+ * entrevistas) no se ofrece. La partida guardada es la misma en los dos modos.
  */
 export class StoryEngine implements QuestView {
+  readonly phrases: boolean;
   private s: SaveData;
   /** Cache de disponibilidad por versión del estado (las condiciones se consultan mucho). */
   private version = 0;
   private availCache = new Map<string, boolean>();
   private availVersion = -1;
 
-  constructor(save?: SaveData | null) {
+  constructor(save?: SaveData | null, opts: { phrases?: boolean } = {}) {
     this.s = save ? structuredCloneSave(save) : emptySave();
+    this.phrases = opts.phrases ?? FRASES;
   }
 
   // ================================================================ QuestView
@@ -55,7 +63,9 @@ export class StoryEngine implements QuestView {
     // Se marca falso antes de evaluar: una condición que se consulta a sí misma no cicla.
     this.availCache.set(id, false);
     const o = objective(id);
-    const ok = Boolean(o && !this.done(id) && (o.requires ?? []).every((r) => this.done(r)) && (!o.when || o.when(this)));
+    const ok = Boolean(
+      o && !this.done(id) && (!o.phrases || this.phrases) && (o.requires ?? []).every((r) => this.done(r)) && (!o.when || o.when(this)),
+    );
     this.availCache.set(id, ok);
     return ok;
   }
@@ -123,6 +133,11 @@ export class StoryEngine implements QuestView {
     return this.mainObjectives()[0]?.chapter ?? 'fin';
   }
 
+  /** Título de un objetivo como lo ve el jugador (sin frases, «Saludá a…» en vez de «Hablá con…»). */
+  objectiveTitle(o: ObjectiveDef): string {
+    return !this.phrases && o.silentTitle ? o.silentTitle : o.title;
+  }
+
   /** Conversación que abre un personaje ahora (null si no tiene nada que decir). */
   dialogueFor(npc: string): DialogueDef | null {
     for (const rule of TALK[npc] ?? []) {
@@ -149,13 +164,6 @@ export class StoryEngine implements QuestView {
   /** Lugares de la libreta ya descubiertos. */
   discovered(place: string): boolean {
     return this.s.places.includes(place);
-  }
-
-  bark(place: string): boolean {
-    if (this.s.barks.includes(place)) return false;
-    this.s.barks.push(place);
-    this.bump();
-    return true;
   }
 
   // ==================================================================== acciones
@@ -213,6 +221,29 @@ export class StoryEngine implements QuestView {
     }
     this.settle(out);
     return out;
+  }
+
+  /**
+   * Hablar sin frases: recorre la conversación que toca ahora con este
+   * personaje, elige lo que sigue la historia (`DialogueRunner.silentPick`) y
+   * aplica TODOS sus efectos —puertas, actividades, objetivos, sellos— sin
+   * mostrar una sola línea. Devuelve lo que pasó (vacío si la charla no
+   * cambiaba nada: un saludo y nada más) y el gesto con el que el personaje
+   * acompaña: el último que hace en esa charla que no sea hablar.
+   */
+  silentTalk(npc: string): { effects: Effect[]; anim: NpcAnim | null } {
+    const effects: Effect[] = [];
+    let anim: NpcAnim | null = null;
+    const def = this.dialogueFor(npc);
+    if (!def) return { effects, anim };
+    const runner = new DialogueRunner(def, this);
+    effects.push(...this.apply(runner.start()));
+    for (let guard = 0; guard < 64 && runner.node; guard++) {
+      const nd = runner.node;
+      if (nd.who === npc && nd.anim && nd.anim !== 'talk') anim = nd.anim;
+      effects.push(...this.apply(runner.step(runner.silentPick())));
+    }
+    return { effects, anim };
   }
 
   /** Terminó una actividad. Sólo el éxito cumple su objetivo; perfecto deja una marca. */
@@ -363,6 +394,39 @@ export class DialogueRunner {
     return list;
   }
 
+  /**
+   * La opción que sigue la historia sin frases: la primera, salvo que lleve a
+   * una entrevista (sus respuestas son frases y no hacen avanzar nada): ahí,
+   * la siguiente (la despedida). Con una sola o ninguna, da lo mismo.
+   */
+  silentPick(): number {
+    const list = this.choices();
+    const k = list.findIndex((c) => !c.effects?.some(isInterview) && !this.leadsTo(c.next ?? END, isInterview));
+    return k >= 0 ? k : Math.max(0, list.length - 1);
+  }
+
+  /** ¿Algún camino desde el nodo `start` pasa por un efecto que cumple `hit`? (Mismos saltos que `step`.) */
+  private leadsTo(start: string, hit: (e: Effect) => boolean): boolean {
+    const seen = new Set<string>();
+    const stack = [start];
+    while (stack.length > 0) {
+      const id = stack.pop()!;
+      if (id === END || seen.has(id)) continue;
+      seen.add(id);
+      const i = this.byId.get(id);
+      if (i === undefined) continue;
+      const nd = this.def.nodes[i];
+      if (nd.effects?.some(hit)) return true;
+      if (nd.choices && nd.choices.length > 0) {
+        for (const c of nd.choices) {
+          if (c.effects?.some(hit)) return true;
+          stack.push(c.next ?? END);
+        }
+      } else stack.push(nd.next ?? this.def.nodes[i + 1]?.id ?? END);
+    }
+    return false;
+  }
+
   /** Avanza (sin opciones) o elige la opción `index`. Devuelve los efectos que pasaron. */
   step(index = 0): Effect[] {
     const nd = this.node;
@@ -389,6 +453,10 @@ export class DialogueRunner {
     effects.push(...(this.node?.effects ?? []));
     return effects;
   }
+}
+
+function isInterview(e: Effect): boolean {
+  return e.do === 'interview';
 }
 
 /** Todos los objetos con los que se interactúa, para los tests de integridad. */

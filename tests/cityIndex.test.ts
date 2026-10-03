@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateCityPlan } from '../src/world/CityLayout';
+import { generateCityPlan, SIDEWALK_H } from '../src/world/CityLayout';
 import { CityIndex } from '../src/world/CityIndex';
 
 const plan = generateCityPlan(42);
@@ -56,10 +56,12 @@ describe('CityIndex.blockAt', () => {
 
 describe('CityIndex.isSolid', () => {
   it('fuera del terreno no camina nadie, pero el jugador puede volar', () => {
+    // Sobre el eje de una calle de la ciudad de fondo: libre de edificios.
+    const pitch = plan.blockSize + plan.streetWidth;
     const z = plan.extent + 30;
-    expect(index.blockAt(0, z)).toBeNull();
-    expect(index.isPedestrianBlocked(0, z)).toBe(true);
-    expect(index.isSolid(0, z)).toBe(false);
+    expect(index.blockAt(pitch / 2, z)).toBeNull();
+    expect(index.isPedestrianBlocked(pitch / 2, z)).toBe(true);
+    expect(index.isSolid(pitch / 2, z)).toBe(false);
   });
 
   it('la calle nunca bloquea', () => {
@@ -109,15 +111,88 @@ describe('CityIndex.isSolid', () => {
       }
     }
     expect(free).toBeGreaterThan(600);
-    // Fuera de la plataforma, la vereda a cota cero.
-    expect(index.groundHeight(market.cx + w / 2 + 1, market.cz)).toBe(0);
+    // Fuera de la plataforma, el solado de la manzana a la cota de la vereda.
+    expect(index.groundHeight(market.cx + w / 2 + 1, market.cz)).toBe(SIDEWALK_H);
   });
 });
 
 describe('CityIndex.groundHeight', () => {
-  it('fuera de la escuela el terreno está a cota cero', () => {
+  const pitch = plan.blockSize + plan.streetWidth;
+  const laneHalf = plan.streetWidth * 0.21;
+
+  it('las manzanas del barrio y sus veredas están a la cota de la vereda; la calzada, abajo', () => {
     const res = require_(plan.blocks.find((b) => b.kind === 'residential'), 'residential');
-    expect(index.groundHeight(res.cx, res.cz)).toBe(0);
+    expect(index.groundHeight(res.cx, res.cz)).toBe(SIDEWALK_H);
+    for (const b of plan.blocks.filter((k) => !k.landmark)) {
+      // Vereda: entre el borde de la manzana y el cordón, en los cuatro lados.
+      const off = b.width / 2 + 2;
+      for (const [dx, dz] of [
+        [0, -off],
+        [0, off],
+        [-off, 0],
+        [off, 0],
+      ]) {
+        expect(index.groundHeight(b.cx + dx, b.cz + dz), `manzana ${b.gx},${b.gz}`).toBe(SIDEWALK_H);
+        expect(index.surfaceHeight(b.cx + dx, b.cz + dz)).toBe(SIDEWALK_H);
+      }
+      // Calzada (sobre el eje de la calle de al lado): cota de calle.
+      expect(index.groundHeight(b.cx + pitch / 2, b.cz + 10)).toBe(0);
+      expect(index.surfaceHeight(b.cx + pitch / 2, b.cz + 10)).toBeCloseTo(0.08);
+    }
+  });
+
+  it('la vereda del lado de la escuela sigue a cota cero (la arma el frente de la escuela)', () => {
+    const site = plan.schoolSite!;
+    // Laprida, vereda norte, frente a la escuela.
+    const z = site.z1 + 2;
+    expect(index.blockAt(0, z)).toBeNull();
+    expect(index.groundHeight(0, z)).toBe(0);
+    expect(index.surfaceHeight(0, z)).toBe(0);
+    // Y el cordón de enfrente sí es vereda elevada.
+    const across = pitch / 2 + laneHalf + 0.32 + 1;
+    expect(index.groundHeight(0, across)).toBe(SIDEWALK_H);
+  });
+});
+
+describe('CityIndex — ciudad de fondo y equipamiento de vereda', () => {
+  const pitch = plan.blockSize + plan.streetWidth;
+
+  it('las manzanas de enfrente (capa 1) son macizas y sus veredas, elevadas', () => {
+    expect(plan.backdrop.blocks.length).toBe(18);
+    for (const k of plan.backdrop.blocks) {
+      expect(index.blockAt(k.cx, k.cz)).toBeNull();
+      expect(index.isSolid(k.cx, k.cz)).toBe(true);
+      expect(index.isSolid(k.cx + k.half - 0.5, k.cz)).toBe(true);
+      // La vereda alrededor no choca y está a la cota de vereda.
+      expect(index.isSolid(k.cx + k.half + 2, k.cz)).toBe(false);
+      expect(index.groundHeight(k.cx + k.half + 2, k.cz)).toBe(SIDEWALK_H);
+    }
+  });
+
+  it('cada volumen del horizonte (capa 2) bloquea su planta', () => {
+    const far = plan.backdrop.masses.filter((m) => m.layer === 2);
+    expect(far.length).toBeGreaterThan(40);
+    for (const m of far) expect(index.isSolid(m.x, m.z)).toBe(true);
+  });
+
+  it('las calles perimetrales se caminan de punta a punta', () => {
+    for (const z of [-1.5 * pitch, 1.5 * pitch]) {
+      for (let x = -2.5 * pitch; x <= 1.5 * pitch; x += 3) expect(index.isSolid(x, z), `(${x}, ${z})`).toBe(false);
+    }
+    for (const x of [-2.5 * pitch, 1.5 * pitch]) {
+      for (let z = -1.5 * pitch; z <= 1.5 * pitch; z += 3) expect(index.isSolid(x, z), `(${x}, ${z})`).toBe(false);
+    }
+  });
+
+  it('kiosco y refugios: macizos, sobre vereda elevada y fuera de la calzada', () => {
+    expect(plan.props.length).toBeGreaterThanOrEqual(3);
+    for (const p of plan.props) {
+      const back = p.kind === 'kiosk' ? 0 : -0.55;
+      expect(index.isSolid(p.x + p.nx * back, p.z + p.nz * back), p.kind).toBe(true);
+      expect(index.groundHeight(p.x, p.z)).toBe(SIDEWALK_H);
+      // Del lado de la calle queda vereda libre (bajo el techo del refugio se para).
+      expect(index.isSolid(p.x + p.nx * 1.4, p.z + p.nz * 1.4)).toBe(false);
+    }
   });
 });
 

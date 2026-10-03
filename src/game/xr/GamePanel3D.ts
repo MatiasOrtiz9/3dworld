@@ -21,7 +21,7 @@ import { drawGrid, drawIcon, drawSequence, roundRect, UI, wrapText } from '../..
  * puntero de WebXR genera eventos de puntero normales de la escena). Mientras
  * está abierto el director pausa la caminata: leer y moverse a la vez marea.
  *
- * Además: el cartel flotante de lo que se está apuntando ("Gatillo · Hablar")
+ * Además: el cartel flotante de lo que se está apuntando ("Gatillo o A · Saludar")
  * y avisos breves (sellos, lugares) que aparecen frente a la cara y se van.
  */
 

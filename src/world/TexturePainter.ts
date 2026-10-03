@@ -49,7 +49,9 @@ export type PaintedKind =
   // Piso de goma (bandas del hall, vinílico del Aula Maker).
   | 'rubber'
   // Árido fino sin juntas: asfalto, cemento alisado, tierra apisonada.
-  | 'aggregate';
+  | 'aggregate'
+  // Chapa semillada (diamantada) de la escalera del edificio de bloque.
+  | 'treadPlate';
 
 export const PAINTED_KINDS: readonly PaintedKind[] = [
   'concrete',
@@ -68,6 +70,7 @@ export const PAINTED_KINDS: readonly PaintedKind[] = [
   'fabric',
   'rubber',
   'aggregate',
+  'treadPlate',
 ];
 
 /**
@@ -94,6 +97,8 @@ export const PERIOD_M: Record<PaintedKind, number> = {
   fabric: 0.9,
   rubber: 0.5,
   aggregate: 2,
+  // 8 × 8 lágrimas a 3 cm.
+  treadPlate: 0.24,
 };
 
 /**
@@ -116,13 +121,19 @@ const RELIEF_GAIN: Record<PaintedKind, number> = {
   brick: 1.3,
   panels: 1.2,
   timber: 1.4,
-  plaster: 2.2,
+  // 1,3 y no 2,2: con el relieve repetido ×2,5 (ver Textures.relief) el
+  // grano fino ya se lee; más fuerte volvía a parecer granulado grueso.
+  plaster: 1.3,
   fabric: 1,
   rubber: 1.4,
   aggregate: 1.4,
+  treadPlate: 1,
 };
 
 type Shade = (x: number, y: number) => number | [number, number, number];
+
+/** Celdas de áridos del granito por lado de la textura (2 cm cada una). */
+const CHIP_CELLS = 80;
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const smooth = (e0: number, e1: number, x: number) => {
@@ -213,7 +224,9 @@ function painters(size: number, seed: number, out: { h: number }): Record<Painte
   // relieve parpadea con cada movimiento de cabeza (sobre todo en el visor).
   const fine = new TileableNoise(seed ^ 0x2c1b, size >> 1);
   const low = lowField(big, size);
-  // Áridos del granito: ruido de valor de alta frecuencia, umbralizado.
+  // Ruido de valor de alta frecuencia: piedritas del árido y polvo del cemento
+  // del granito (sus áridos grandes son granos, ver granite). Cada uso pasa
+  // su propio período.
   const chips = new TileableNoise(seed ^ 0x6a09, 96);
   const grain = (x: number, y: number) => fine.noise(x / 2, y / 2);
   const s = size;
@@ -267,18 +280,49 @@ function painters(size: number, seed: number, out: { h: number }): Record<Painte
       const tx = Math.floor(x / t);
       const ty = Math.floor(y / t);
       let val = 0.9 + (hash(tx, ty, seed) - 0.5) * 0.06;
-      // Áridos: manchas redondeadas de ruido umbralizado (~1-2 cm), de tres
-      // tonos. La versión anterior usaba celdas de hash de 4 × 4 px y se leían
-      // como píxeles cuadrados, no como piedra partida.
-      const cx = (x / s) * 96;
-      const cy = (y / s) * 96;
-      const a = chips.noise(cx, cy, 96);
-      const b = chips.noise(cx + 37.5, cy + 11.25, 96);
-      const c = chips.noise(cx * 2 + 5.5, cy * 2 + 3.5, 192);
-      if (a > 0.74) val = 0.5 + (a - 0.74) * 0.6;
-      else if (b > 0.76) val = 1.0 + (b - 0.76) * 0.2;
-      else if (c > 0.7) val -= 0.12;
-      else if (c < 0.22) val += 0.04;
+      // Áridos: un grano elíptico por celda de una retícula de 80 por lado
+      // (2 cm), corrido al azar dentro de su celda, girado y con su tamaño y
+      // su tono (oscuro, claro o medio). Antes eran ruido de valor
+      // umbralizado: las manchas seguían la retícula del ruido y a menos de
+      // 2 m el piso se leía como camuflaje de píxeles, no como piedra partida.
+      // El borde se suaviza un píxel (sin escalera al acercarse).
+      const cs = s / CHIP_CELLS;
+      const gx = x / cs;
+      const gy = y / cs;
+      const ix = Math.floor(gx);
+      const iy = Math.floor(gy);
+      let cover = 0;
+      let tone = 0;
+      for (let oy = -1; oy <= 1; oy++) {
+        for (let ox = -1; ox <= 1; ox++) {
+          // Celdas envueltas: el grano que cruza el borde reaparece del otro
+          // lado y la textura repite sin costura.
+          const kx = (((ix + ox) % CHIP_CELLS) + CHIP_CELLS) % CHIP_CELLS;
+          const ky = (((iy + oy) % CHIP_CELLS) + CHIP_CELLS) % CHIP_CELLS;
+          const h0 = hash(kx, ky, seed + 101);
+          if (h0 > 0.62) continue; // celda sin grano: cemento
+          const dx = gx - (ix + ox + 0.2 + hash(kx, ky, seed + 102) * 0.6);
+          const dy = gy - (iy + oy + 0.2 + hash(kx, ky, seed + 103) * 0.6);
+          if (Math.abs(dx) > 0.75 || Math.abs(dy) > 0.75) continue;
+          const ang = hash(kx, ky, seed + 104) * Math.PI;
+          const ca = Math.cos(ang);
+          const sn = Math.sin(ang);
+          const r = 0.2 + hash(kx, ky, seed + 105) * 0.34;
+          const asp = 0.55 + hash(kx, ky, seed + 106) * 0.45;
+          const px = dx * ca + dy * sn;
+          const py = (-dx * sn + dy * ca) / asp;
+          const cv = smooth(r + 0.5 / cs, r - 0.5 / cs, Math.hypot(px, py));
+          if (cv > cover) {
+            cover = cv;
+            tone = h0 / 0.62;
+          }
+        }
+      }
+      // Polvo de árido fino del cemento entre los granos.
+      const c = chips.noise((x / s) * 160 + 5.5, (y / s) * 160 + 3.5, 160);
+      if (c > 0.7) val -= 0.08;
+      else if (c < 0.22) val += 0.03;
+      val += ((tone < 0.45 ? 0.52 + tone * 0.25 : tone < 0.8 ? 1.0 : 0.72) - val) * cover;
       val += (hash(x, y, seed + 9) - 0.5) * 0.05;
       val += (low(x, y) - 0.5) * 0.08;
       const d = edgeDist(x - tx * t, y - ty * t, t, t);
@@ -550,6 +594,26 @@ function painters(size: number, seed: number, out: { h: number }): Record<Painte
       val += (hash(x, y, seed) - 0.5) * 0.06;
       return val;
     },
+
+    /**
+     * Chapa semillada (la escalera negra del edificio de bloque, 8:37-8:41):
+     * lágrimas de ~24 × 6 mm cada 3 cm, alternadas a ±45°, en relieve de
+     * 1,2 mm. El color lo pone el material (casi negro): la lágrima apenas
+     * más clara por el desgaste de la pisada.
+     */
+    treadPlate: (x, y) => {
+      const cell = s / 8;
+      const cx = Math.floor(x / cell);
+      const cy = Math.floor(y / cell);
+      const lx = (x + 0.5 - cx * cell) / cell - 0.5;
+      const ly = (y + 0.5 - cy * cell) / cell - 0.5;
+      const flip = (cx + cy) % 2 === 0;
+      const a = (flip ? lx + ly : lx - ly) * Math.SQRT1_2;
+      const b = (flip ? lx - ly : lx + ly) * Math.SQRT1_2;
+      const lug = smooth(1, 0.7, Math.hypot(a / 0.4, b / 0.1));
+      out.h = lug * 1.2 + (grain(x, y) - 0.5) * 0.1;
+      return 0.86 + lug * 0.1 + (low(x, y) - 0.5) * 0.06;
+    },
   };
 }
 
@@ -625,6 +689,7 @@ const ROUGH_PER_MM: Record<PaintedKind, number> = {
   fabric: 0,
   rubber: 0,
   aggregate: 0.1,
+  treadPlate: 0,
 };
 
 /**

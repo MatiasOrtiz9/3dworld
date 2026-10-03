@@ -39,6 +39,7 @@ import {
   type OpeningType,
   type Room,
 } from './SchoolLayout';
+import { SWITCHABLE_ROOMS } from './SchoolLights';
 import {
   DEFAULT_HOUR,
   PRESETS,
@@ -81,7 +82,29 @@ export type ShadowFilter = 'low' | 'medium';
  */
 const STATIC_SHADOW_MAX_RADIUS = 95;
 
+/**
+ * Fracción del plano lejano a la que la niebla tiene que llegar al 95 % si la
+ * cámara recorta antes de `fogReach`: en el corte mismo queda en ~97 %.
+ * Es la inversa de QualityManager.FAR_FLOOR_FACTOR.
+ */
+const FOG_BEFORE_FAR = 0.92;
+
 const toColor3 = (c: Rgb) => new Color3(c[0], c[1], c[2]);
+
+/**
+ * Gradación de la imagen. `SCREEN_GRADE` es la del escritorio (con bloom,
+ * nitidez y SSAO en post-proceso); `HEADSET_GRADE`, la del visor y el
+ * celular, que no tienen post-proceso. Exposición y halo multiplican;
+ * contraste suma; saturaciones son las de `ColorCurves` (−100…100).
+ *
+ * La del visor no es "más cine": compensa lo que el post-proceso pone en
+ * escritorio. Sin bloom el sol no derrama luz (el halo del cielo se ensancha
+ * para eso), sin SSAO ni nitidez los volúmenes se aplanan (algo más de
+ * contraste) y la lente del visor apaga un poco el color (más saturación,
+ * sobre todo en las sombras, que en el Quest se veían grises).
+ */
+const SCREEN_GRADE = { exposure: 1, contrast: 0, saturation: 6, shadowsSaturation: 6, halo: 1 } as const;
+const HEADSET_GRADE = { exposure: 1.05, contrast: 0.08, saturation: 17, shadowsSaturation: 12, halo: 1.6 } as const;
 
 /**
  * Cielo, sol y atmósfera.
@@ -119,9 +142,16 @@ export class Environment {
   private casterTop = 30;
   private toSun = { x: 0, y: 1, z: 0 };
   private fogDistance: number;
+  /** Plano lejano de la cámara activa con el que se calculó la densidad de la niebla. */
+  private farPlane = Infinity;
   /** Luz natural horneada de la escuela (ver `bakeSchoolDaylight`). */
   private daylight: DaylightState | null = null;
   private schoolOrigin = { ox: NaN, oz: NaN };
+  /** Aulas con las luces apagadas (pedido antes o después de hornear). */
+  private readonly roomLights = new Map<string, boolean>();
+  /** Gradación para mapeo tonal dentro de los materiales (ver `setInMaterialGrade`). */
+  private inMaterialGrade = false;
+  private preset: AtmospherePreset | null = null;
 
   constructor(
     private readonly scene: Scene,
@@ -160,18 +190,52 @@ export class Environment {
     // A la mitad de lo que era: con más, la imagen viraba a "película"
     // (sombras azuladas, rojos encendidos) en vez de verse como una foto.
     const curves = new ColorCurves();
-    curves.globalSaturation = 6;
+    curves.globalSaturation = SCREEN_GRADE.saturation;
     curves.highlightsHue = 38;
     curves.highlightsDensity = 5;
     curves.highlightsSaturation = 5;
     curves.shadowsHue = 215;
     curves.shadowsDensity = 5;
-    curves.shadowsSaturation = 6;
+    curves.shadowsSaturation = SCREEN_GRADE.shadowsSaturation;
     ip.colorCurves = curves;
     ip.colorCurvesEnabled = true;
 
     this.applyHour(DEFAULT_HOUR);
-    this.adaptObserver = scene.onBeforeRenderObservable.add(() => this.adaptExposure());
+    this.adaptObserver = scene.onBeforeRenderObservable.add(() => {
+      this.trackFarPlane();
+      this.adaptExposure();
+    });
+  }
+
+  /**
+   * Distancia a la que la niebla funde el suelo (95 %). QualityManager no
+   * deja que el plano lejano adaptativo baje de ahí (ver `setFogReach`).
+   */
+  get fogReach(): number {
+    return this.fogDistance;
+  }
+
+  /**
+   * La niebla tiene que cerrar ANTES del plano lejano de la cámara que dibuja.
+   * Si alguna cámara lo trae más corto que la niebla, el suelo y la ciudad de
+   * fondo se cortaban a medio fundir y debajo asomaba el cielo bajo el
+   * horizonte (marrón). Se espesa sólo lo justo para llegar al 95 % un poco
+   * antes del corte. Una comparación por cuadro; la densidad se recalcula
+   * sólo cuando cambia el plano (nivel adaptativo, entrar o salir del visor).
+   */
+  private trackFarPlane(): void {
+    const cam = this.scene.activeCamera;
+    if (!cam) return;
+    // maxZ 0 es plano lejano infinito en Babylon.
+    const far = cam.maxZ > 0 ? cam.maxZ : Infinity;
+    if (far === this.farPlane) return;
+    this.farPlane = far;
+    if (this.preset) this.applyFogDensity(this.preset);
+  }
+
+  private applyFogDensity(p: AtmospherePreset): void {
+    const reach = Math.min(this.fogDistance, this.farPlane * FOG_BEFORE_FAR);
+    this.scene.fogDensity = fogDensityFor(reach, p.fogThickness);
   }
 
   /**
@@ -184,6 +248,11 @@ export class Environment {
    */
   private adaptExposure(): void {
     const s = this.daylight;
+    // Un interruptor cambió el mapa: una subida, en este cuadro y no en cada uno.
+    if (s?.dirty) {
+      s.light.update(s.lightData);
+      s.dirty = false;
+    }
     const cam = this.scene.activeCamera;
     if (!s || !cam || !Number.isFinite(s.ox)) return;
     const p = cam.globalPosition;
@@ -209,6 +278,26 @@ export class Environment {
     const exposure = this.baseExposure * this.adaptation;
     const ip = this.scene.imageProcessingConfiguration;
     if (Math.abs(ip.exposure - exposure) > 0.002) ip.exposure = exposure;
+  }
+
+  /**
+   * Imagen sin post-proceso (visor y celular): el mapeo tonal va dentro de
+   * cada material y no hay bloom, nitidez ni oclusión en pantalla que le den
+   * cuerpo. Sin ellos la misma gradación se veía lavada y gris dentro del
+   * visor ("triste"): se compensa con un poco más de exposición, contraste
+   * y saturación, y el halo del sol más ancho hace de bloom. Se fija antes
+   * de congelar los materiales (cada perfil reconstruye la escuela).
+   */
+  setInMaterialGrade(on: boolean): void {
+    if (this.inMaterialGrade === on) return;
+    this.inMaterialGrade = on;
+    const g = on ? HEADSET_GRADE : SCREEN_GRADE;
+    const curves = this.scene.imageProcessingConfiguration.colorCurves;
+    if (curves) {
+      curves.globalSaturation = g.saturation;
+      curves.shadowsSaturation = g.shadowsSaturation;
+    }
+    if (this.preset) this.applyPreset(this.preset);
   }
 
   /** Hora continua del día, entre DAY_START y DAY_END. */
@@ -246,17 +335,40 @@ export class Environment {
     }
   }
 
+  /**
+   * Prende o apaga las luminarias de un aula (interruptor del juego o cambio
+   * de fase): baja la parte "luz artificial" de su mapa de luz. Una sola
+   * subida de la textura en el cuadro siguiente, sin costo por cuadro; sirve
+   * igual en el visor, donde no hay otra luz interior que este mapa.
+   */
+  setRoomLights(roomId: string, on: boolean): void {
+    if (on) this.roomLights.delete(roomId);
+    else this.roomLights.set(roomId, false);
+    if (this.daylight) this.writeRoomLights(this.daylight, roomId, on);
+  }
+
+  private writeRoomLights(s: DaylightState, roomId: string, on: boolean): void {
+    const room = s.bake.rooms.get(roomId);
+    if (!room) return;
+    const { idx, off } = room;
+    const src = s.bake.light;
+    for (let i = 0; i < idx.length; i++) s.lightData[idx[i]] = on ? src[idx[i]] : off[i];
+    s.dirty = true;
+  }
+
   /** Modo de sombras activo. */
   get shadowMode(): ShadowMode {
     return this.mode;
   }
 
   private applyPreset(p: AtmospherePreset): void {
+    this.preset = p;
+    const g = this.inMaterialGrade ? HEADSET_GRADE : SCREEN_GRADE;
     const d = sunDirection(p.elevation, p.azimuth);
     this.toSun = d;
     const toSun = new Vector3(d.x, d.y, d.z);
 
-    this.sky.set(p, d);
+    this.sky.set(g.halo === 1 ? p : { ...p, sunGlow: p.sunGlow * g.halo }, d);
 
     // La luz direccional apunta DESDE el sol hacia la escena.
     this.sun.direction = toSun.scale(-1);
@@ -272,13 +384,13 @@ export class Environment {
 
     const fog = toColor3(p.horizon);
     this.scene.fogColor = fog;
-    this.scene.fogDensity = fogDensityFor(this.fogDistance, p.fogThickness);
+    this.applyFogDensity(p);
     this.scene.clearColor = new Color4(fog.r, fog.g, fog.b, 1);
 
     const ip = this.scene.imageProcessingConfiguration;
-    this.baseExposure = p.exposure;
-    ip.exposure = p.exposure * this.adaptation;
-    ip.contrast = p.contrast;
+    this.baseExposure = p.exposure * g.exposure;
+    ip.exposure = this.baseExposure * this.adaptation;
+    ip.contrast = p.contrast + g.contrast;
 
     this.scene.environmentIntensity = p.envIntensity;
 
@@ -340,15 +452,21 @@ export class Environment {
       tex.wrapV = Texture.CLAMP_ADDRESSMODE;
       return tex;
     };
+    // Copia propia: el horneado se reutiliza entre reconstrucciones y los
+    // interruptores escriben sobre ésta.
+    const lightData = bake.light.slice();
     const state: DaylightState = {
-      light: make(bake.light, 'schoolDaylight'),
+      light: make(lightData, 'schoolDaylight'),
       cover: make(bake.cover, 'schoolCover'),
       dir: make(bake.dir, 'schoolLightDir'),
       indoor: bake.indoor,
-      lightData: bake.light,
+      lightData,
+      bake,
+      dirty: false,
       ox: this.schoolOrigin.ox,
       oz: this.schoolOrigin.oz,
     };
+    for (const [id, on] of this.roomLights) this.writeRoomLights(state, id, on);
     this.daylight = state;
     for (const mat of this.scene.materials) attachDaylight(mat, state);
     // La gente y las puertas del juego se crean después: se enganchan al
@@ -407,6 +525,14 @@ export class Environment {
 
     const gen =
       mode === 'cascaded' ? this.createCascaded(resolution) : new ShadowGenerator(resolution, this.sun);
+    // Sólo las caras de atrás proyectan: la profundidad guardada es la de la
+    // cara que NO mira al sol, así que la cara iluminada nunca se sombrea a
+    // sí misma. Sin esto la fachada de Laprida al sol salía con rayas
+    // verticales (fuertes con el mapa estático del visor y en las cascadas
+    // del nivel adaptativo 1) y las copas con puntitos. Exige que todo
+    // proyector sea cerrado o tenga un cielorraso con cara inferior debajo:
+    // una losa abierta sin cielorraso dejaría pasar el sol.
+    gen.forceBackFacesOnly = true;
     gen.usePercentageCloserFiltering = true;
     gen.filteringQuality =
       filter === 'medium' ? ShadowGenerator.QUALITY_MEDIUM : ShadowGenerator.QUALITY_LOW;
@@ -591,6 +717,12 @@ export const DAYLIGHT = {
   corner: 0.36,
   cover: 0.55,
   facing: 0.35,
+  /**
+   * Fracción de `base` que queda con las luminarias del aula apagadas: la
+   * luz prestada del pasillo y el rebote. Las ventanas no cambian, así que
+   * apagar se nota sobre todo en el fondo del aula (0,66 → ~0,41).
+   */
+  lightsOff: 0.55,
 } as const;
 
 /** Peso de cada tipo de vano como fuente de luz (vidrio, hoja ciega, paso libre). */
@@ -648,6 +780,11 @@ export interface DaylightBake {
   dir: Uint8Array;
   /** Por celda, un bit por nivel: 1 si está bajo techo (adaptación del ojo). */
   indoor: Uint8Array;
+  /**
+   * Aulas con interruptor: qué bytes de `light` son suyos (`celda·4 + nivel`)
+   * y cuánto valen con sus luminarias apagadas.
+   */
+  rooms: Map<string, { idx: Uint32Array; off: Uint8Array }>;
 }
 
 type V3 = readonly [number, number, number];
@@ -956,6 +1093,9 @@ export function bakeSchoolDaylight(): DaylightBake {
       owner[level][k] = below;
     }
   }
+  // Factor antes de los rincones: la parte de las luminarias se descuenta de
+  // él y los rincones se conservan en proporción (ver `rooms` más abajo).
+  const lit = factor.map((f) => f.slice());
 
   // Rincones: fracción de "no es este ambiente" (muro, o lo que hay del otro
   // lado) en un cuadrado de 1,3 m alrededor de la celda. Sobre la cara de
@@ -1054,6 +1194,31 @@ export function bakeSchoolDaylight(): DaylightBake {
     dir[k * 4 + 3] = encodeSigned(dirV[1][k]);
   }
 
+  // Aulas con interruptor: con las luminarias apagadas se descuenta su parte
+  // de la base (lo que no es ventana); el degradado desde las ventanas y los
+  // rincones quedan, escalados.
+  const lampShare = DAYLIGHT.base * (1 - DAYLIGHT.lightsOff);
+  const lists = new Map<string, { idx: number[]; off: number[] }>();
+  const listOf = ROOMS.map((r) => {
+    if (!SWITCHABLE_ROOMS.has(r.id)) return null;
+    let l = lists.get(r.id);
+    if (!l) lists.set(r.id, (l = { idx: [], off: [] }));
+    return l;
+  });
+  for (let level = 0; level <= 2; level++) {
+    const own = owner[level];
+    for (let k = 0; k < N; k++) {
+      const l = own[k] ? listOf[own[k] - 1] : null;
+      if (!l) continue;
+      const i = k * 4 + level;
+      const pre = lit[level][k];
+      l.idx.push(i);
+      l.off.push(Math.round((light[i] * Math.max(0, pre - lampShare)) / Math.max(1e-3, pre)));
+    }
+  }
+  const rooms = new Map<string, { idx: Uint32Array; off: Uint8Array }>();
+  for (const [id, l] of lists) rooms.set(id, { idx: Uint32Array.from(l.idx), off: Uint8Array.from(l.off) });
+
   // Lo que tapa el piso: tapas de mesas y escaleras con luz por debajo.
   const top = [new Float32Array(N), new Float32Array(N), new Float32Array(N)];
   const raise = (level: number, k: number, h: number) => {
@@ -1083,21 +1248,33 @@ export function bakeSchoolDaylight(): DaylightBake {
       }
     }
   }
-  /** Losa de un tramo o descanso a `yAbs`: tapa el piso del nivel de abajo. */
-  const slab = (yAbs: number, k: number) => {
+  /** Piso sobre el que apoya un tramo o descanso que arranca a `yRel` (relativo a planta baja). */
+  const baseOf = (yRel: number) => (yRel >= 2 * SCHOOL.storey - 0.2 ? 2 : yRel >= SCHOOL.storey - 0.2 ? 1 : 0);
+  /**
+   * Losa de un tramo o descanso a `yAbs`: tapa el piso del nivel de abajo.
+   * `base` es el piso donde apoya: un tramo que arranca sobre la losa del
+   * primer piso no tiene "abajo" en planta baja. Sin este tope, sus primeros
+   * escalones (yb < piso + 0,3) caían en el nivel 0 con una tapa de ~3,1 m y
+   * el piso del salón de los espejos (y el arranque de la escalera del
+   * jardín) salía con una mancha oscura de 1,2 × 1,7 m sin nada encima.
+   */
+  const slab = (yAbs: number, k: number, base: number) => {
     const yb = yAbs - 0.25;
     const level = yb >= LEVEL_Y[2] + 0.3 ? 2 : yb >= LEVEL_Y[1] + 0.3 ? 1 : 0;
+    if (level < base) return;
     if (level > 0 && !owner[level][k]) return;
     raise(level, k, Math.min(3.98, yb - LEVEL_Y[level]));
   };
   for (const s of STAIRS) {
     // Los tramos que arrancan del suelo son macizos: no hay "abajo".
     if (s.y0 < 0.5 && !s.hollow) continue;
-    eachCell(s.u0, s.v0, s.u1, s.v1, (k, u, v) => slab(stairY(s, u, v), k));
+    const base = baseOf(s.y0);
+    eachCell(s.u0, s.v0, s.u1, s.v1, (k, u, v) => slab(stairY(s, u, v), k, base));
   }
   for (const l of LANDINGS) {
     if (l.y < 3 && !l.hollow) continue;
-    eachCell(l.u0, l.v0, l.u1, l.v1, (k) => slab(SCHOOL.floorY + l.y, k));
+    const base = baseOf(l.y);
+    eachCell(l.u0, l.v0, l.u1, l.v1, (k) => slab(SCHOOL.floorY + l.y, k, base));
   }
   // Borde blando: la penumbra de una mesa se abre unos centímetros.
   for (let level = 0; level <= 2; level++) {
@@ -1108,7 +1285,7 @@ export function bakeSchoolDaylight(): DaylightBake {
   }
   for (let k = 0; k < N; k++) cover[k * 4 + 3] = 255;
 
-  return { width: W, height: H, light, cover, dir, indoor };
+  return { width: W, height: H, light, cover, dir, indoor, rooms };
 }
 
 /** La escuela es siempre la misma: el horneado se reutiliza entre reconstrucciones. */
@@ -1123,8 +1300,15 @@ interface DaylightState {
   cover: RawTexture;
   dir: RawTexture;
   indoor: Uint8Array;
-  /** Copia en CPU de la luz horneada (128 = 1,0), para la adaptación del ojo. */
+  /**
+   * Copia en CPU de la luz vigente (128 = 1,0): la horneada con las aulas
+   * apagadas descontadas. La lee la adaptación del ojo.
+   */
   lightData: Uint8Array;
+  /** El horneado original (compartido entre reconstrucciones: no se escribe). */
+  bake: DaylightBake;
+  /** `lightData` cambió y falta subirla a la textura. */
+  dirty: boolean;
   /** Origen local de la escuela en el mundo (x, z); NaN mientras no se conoce. */
   ox: number;
   oz: number;
@@ -1240,7 +1424,11 @@ float schoolDaylight(vec3 p, vec3 n) {
   if (uv.x <= 0.0 || uv.y <= 0.0 || uv.x >= 1.0 || uv.y >= 1.0) return 1.0;
   vec3 lv = p.y < sdLevels.x ? vec3(1.0, 0.0, 0.0) : (p.y < sdLevels.y ? vec3(0.0, 1.0, 0.0) : vec3(0.0, 0.0, 1.0));
   float f = dot(texture2D(sdLight, uv).rgb, lv) * 1.9921875;
-  float h = p.y - dot(sdFloors.xyz, lv);
+  // Topado en 0: el suelo de afuera (vereda, patios) está por debajo del
+  // piso de planta baja, y con h negativo la oclusión de contacto lo
+  // oscurecía (hasta ×0,56, sol incluido) en una franja recta hasta el
+  // borde de la grilla, a lo largo de la vereda de Laprida.
+  float h = max(p.y - dot(sdFloors.xyz, lv), 0.0);
   float top = dot(texture2D(sdCover, uv).rgb, lv) * 4.0;
   float occ = smoothstep(h + 0.02, h + 0.16, top) * (1.0 - 0.45 * clamp(h / 0.8, 0.0, 1.0));
   // La luz de las ventanas llega de un lado: lo que las mira (el muro de

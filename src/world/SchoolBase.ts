@@ -492,6 +492,20 @@ export const FURNITURE = {
   boardTop: 2.1,
   /** Fondo negro de los escenarios, sobre la tarima de 0,62 m. */
   backdrop: 2.3,
+  /**
+   * Sillas alrededor de mesas redondas y hexagonales: del borde de la tapa al
+   * centro de la silla, metida bajo la mesa. Con 0,30 el frente del asiento
+   * quedaba a 16–20 cm del borde y los chicos escribían con los brazos
+   * estirados. Lo usan el constructor y la gente (tienen que coincidir).
+   */
+  roundChair: 0.17,
+  /**
+   * Aulas de primaria (`PRIMARY_ROOMS`): pupitres y mesas de talle 4–5
+   * (0,64–0,71 m) y sillas de 0,40 m, no las de adulto. Con 0,74 y 0,46 los
+   * chicos de 2º a 6º grado escribían con los hombros levantados.
+   */
+  primaryDeskTop: 0.66,
+  primarySeat: 0.4,
 } as const;
 
 /**
@@ -504,6 +518,11 @@ export const CEILING_H: Readonly<Record<string, number>> = {
   pasilloNorteL1: 2.75,
   rellanoNorte: 2.75,
   pasilloOesteL1: 2.75,
+  // Las cajas de escalera del primer piso, a la altura de los pasillos que
+  // las rodean: con 3,1 m quedaba un escalón de cielorraso sin muro debajo
+  // y por la ranura se veía el cielo.
+  escaleraOeste: 2.75,
+  escaleraNorteL1: 2.75,
   pasilloTrofeos: 2.85,
   secretaria: 2.85,
   aulaS1: 2.85,
@@ -546,6 +565,14 @@ export const CEILING_H: Readonly<Record<string, number>> = {
  * del plano miden 36 cm). Lo usan el constructor y el QA del equipamiento.
  */
 export const KINDER_ROOMS: ReadonlySet<string> = new Set(['salaAmarilla', 'salaCeleste', 'salaRosa', 'salaRoja']);
+
+/**
+ * Aulas de primaria de 2º a 6º grado: pupitres, mesas y sillas de talle
+ * `FURNITURE.primaryDeskTop` / `primarySeat` (salvo la silla del docente).
+ * Primer grado (aula 1) usa las mesas redondas bajas. Lo usan el constructor,
+ * la gente (a qué altura se sienta y escribe) y el QA del equipamiento.
+ */
+export const PRIMARY_ROOMS: ReadonlySet<string> = new Set(['aula2', 'aula3', 'aula4', 'aula5', 'aula6AC', 'aula6BD']);
 
 /** Ambientes bajo una bóveda (polideportivo y aula de danzas): sin cielorraso plano. */
 export const VAULTED: ReadonlySet<string> = new Set(['gimnasio', 'aulaDanzas', 'hallDanzas']);

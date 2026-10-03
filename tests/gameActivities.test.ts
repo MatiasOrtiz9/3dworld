@@ -90,6 +90,33 @@ describe('cantina, reciclaje y trivia', () => {
     expect(m.score).toBe(m.maxScore);
   });
 
+  it('sin frases nadie habla en la cantina ni en el aula de danzas; con frases, como antes', () => {
+    const texts = (phrases: boolean): string => {
+      const m = new HealthyMenu(phrases);
+      const seen: string[] = [];
+      for (let k = 0; k < MENU_ROUNDS.length; k++) {
+        m.input(2);
+        seen.push(m.view().feedback?.text ?? '');
+        m.input(0);
+      }
+      seen.push(m.view().text);
+      const d = new DanceSequence(seeded(11), phrases);
+      for (let k = 0; k < 400 && d.phase !== 'input'; k++) d.update(0.05);
+      d.input((d.seq[0] + 1) % MOVES.length); // con un error, el cierre cita a la profe
+      for (let g = 0; g < 400 && !d.finished; g++) {
+        for (const i of d.solve()) d.input(i);
+        for (let k = 0; k < 20; k++) d.update(0.25);
+      }
+      seen.push(d.view().text);
+      return seen.join('\n');
+    };
+    expect(texts(false)).not.toMatch(/Graciela|«|dice /);
+    expect(texts(true)).toMatch(/Graciela: «/);
+    expect(texts(true)).toMatch(/dice la Profe Ana/);
+    // La actividad sigue enseñando: el comentario de cada elección queda.
+    expect(texts(false)).toContain(MENU_ROUNDS[0].options[2].comment);
+  });
+
   it('cada residuo tiene su cesto y un error no deja avanzar', () => {
     const r = new Recycling();
     const first = WASTE[0];
