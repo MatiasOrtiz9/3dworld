@@ -1004,7 +1004,7 @@ export class SchoolBuilder {
 
     // Puertas: marco rojo (o el de su color) y hojas abiertas contra el muro.
     const own = o.color ? m[o.color] : undefined;
-    const frameMat = type === 'exit' ? m.metalDark : own === m.frame || own === m.timberDark ? own : m.red;
+    const frameMat = type === 'exit' ? m.metalDark : own === m.frame || own === m.timberDark || own === m.metalDark ? own : m.red;
     this.piece(frameMat, a, along(0.07), t + 0.05, yb, ht);
     this.piece(frameMat, along(len - 0.07), b, t + 0.05, yb, ht);
     this.piece(frameMat, a, b, t + 0.05, ht, ht + 0.08);
@@ -1040,7 +1040,8 @@ export class SchoolBuilder {
         this.piece(m.red, q0, q1, 0.05, ht - 0.12, ht - 0.04);
         this.piece(m.red, q0, qa, 0.05, yb + 0.15, ht - 0.12);
         this.piece(m.red, qb, q1, 0.05, yb + 0.15, ht - 0.12);
-      } else if (type === 'entrance' || type === 'exit' || !own || !this.detailed) {
+      } else if (type === 'entrance' || type === 'exit' || !own || !this.detailed || o.grille === 'none') {
+        // Sin vidrio (`'none'`): hoja maciza (las rojas del vestuario, la de chapa negra).
         this.piece(leafMat, q0, q1, 0.045, yb + 0.03, ht - 0.04);
         // Picaporte cerca del borde libre (de los dos lados de la hoja).
         if (this.detailed && type !== 'entrance' && type !== 'exit') {

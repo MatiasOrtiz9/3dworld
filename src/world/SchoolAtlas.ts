@@ -19,6 +19,7 @@ import {
   drawBalletPoster,
   drawCorkBoard,
   drawCrestBanner,
+  drawKidsMural,
   drawEducabot,
   drawMakerWall,
   drawMarble,
@@ -68,6 +69,9 @@ export const R = {
   // Fachada del jardín: marquesina y banda vertical (10:38–10:41).
   inicial: [1024, 1776, 2048, 1904],
   cimdip: [904, 1648, 1000, 2040],
+  // Murales de los chicos del pasillo de Arte y Teatro (video 2026).
+  kidsA: [1024, 1540, 1536, 1772],
+  kidsB: [1808, 1428, 2048, 1564],
 } as const;
 
 export type Region = readonly [number, number, number, number];
@@ -139,6 +143,8 @@ export function drawAtlas(ctx: CanvasRenderingContext2D): void {
   drawCorkBoard(ctx, R.cork2, 2);
   drawInicial(ctx, R.inicial);
   drawCimdipBand(ctx, R.cimdip);
+  drawKidsMural(ctx, R.kidsA, 3);
+  drawKidsMural(ctx, R.kidsB, 8);
 }
 
 /** Marquesina roja del jardín con "Educación Inicial" en blanco. */

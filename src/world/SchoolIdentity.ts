@@ -129,6 +129,11 @@ export class SchoolIdentity {
     q.wall(planU(25.0), V.nBlockN - 0.115, 1.95, 3.7, 1.48, 0, N, R.mural);
     q.wall(planU(14.6), V.nBlockN - 0.115, 1.8, 0.9, 1.46, 0, N, R.maker);
 
+    // Pasillo de Arte y Teatro (video 2026, 1:13–1:22): murales de los chicos
+    // sobre el muro del polideportivo y, en el hall del jardín, sobre el de Teatro.
+    for (const u of [52.3, 55.75]) q.wall(planU(u), V.gymTop - 0.115, FY + 1.75, 3.6, 1.64, 0, N, R.kidsA);
+    q.wall(U.teaE + 0.115, planV(-25.8), FY + 1.7, 2.6, 1.48, 1, 0, R.kidsB);
+
     // Aula de danzas: afiches de las muestras en el testero norte.
     q.wall(planU(45.6), V.gymTop + 0.115, 2.35, 0.75, 1.12, 0, S, R.ballet1);
     q.wall(planU(46.55), V.gymTop + 0.115, 2.35, 0.75, 1.12, 0, S, R.ballet2);

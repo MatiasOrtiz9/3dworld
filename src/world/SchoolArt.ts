@@ -760,3 +760,105 @@ export function drawCorkBoard(ctx: Ctx, r: Region, seed: number): void {
     ctx.restore();
   }
 }
+
+/**
+ * Murales de los chicos del pasillo de Arte y Teatro (video 2026, 1:13–1:22):
+ * sobre blanco, nubes celestes, flores, peces, patos, un chancho y un auto,
+ * pintados con contorno negro grueso, como témpera de jardín.
+ */
+export function drawKidsMural(ctx: Ctx, r: Region, seed: number): void {
+  clip(ctx, r);
+  const [x0, y0, x1, y1] = r;
+  const w = x1 - x0;
+  const h = y1 - y0;
+  const rnd = seeded(seed);
+  ctx.fillStyle = '#f4f3ee';
+  ctx.fillRect(x0, y0, w, h);
+  ctx.lineWidth = Math.max(2, h / 90);
+  ctx.strokeStyle = '#1d1d1f';
+  const blob = (cx: number, cy: number, rx: number, ry: number, fill: string) => {
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.stroke();
+  };
+  // Nubes celestes arriba.
+  for (let i = 0; i < 4; i++) {
+    const cx = x0 + w * (0.1 + i * 0.27 + rnd() * 0.05);
+    const cy = y0 + h * (0.14 + rnd() * 0.06);
+    for (let k = 0; k < 3; k++) blob(cx + (k - 1) * h * 0.08, cy - (k === 1 ? h * 0.04 : 0), h * 0.07, h * 0.06, '#a9d3ea');
+  }
+  const colors = ['#e94b5c', '#f6c443', '#7a5bd6', '#3fa56b', '#ef8f3a', '#ea7fb6', '#3c8fd8'];
+  const pick = () => colors[Math.floor(rnd() * colors.length)];
+  // Fila de figuras: flor, pez, pato, chancho o auto, alternadas.
+  const n = Math.max(4, Math.round(w / h / 0.42));
+  for (let i = 0; i < n; i++) {
+    const cx = x0 + (w * (i + 0.5)) / n + (rnd() - 0.5) * w * 0.03;
+    const cy = y0 + h * (0.52 + (rnd() - 0.5) * 0.18);
+    const s = h * (0.13 + rnd() * 0.05);
+    const kind = (i + seed) % 5;
+    if (kind === 0) {
+      // Flor: tallo, cinco pétalos y centro.
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx, y1 - h * 0.08);
+      ctx.strokeStyle = '#2f7d3c';
+      ctx.stroke();
+      ctx.strokeStyle = '#1d1d1f';
+      const c = pick();
+      for (let k = 0; k < 5; k++) {
+        const a = (k / 5) * Math.PI * 2;
+        blob(cx + Math.cos(a) * s * 0.55, cy + Math.sin(a) * s * 0.55, s * 0.4, s * 0.4, c);
+      }
+      blob(cx, cy, s * 0.32, s * 0.32, '#f6c443');
+    } else if (kind === 1) {
+      // Pez: cuerpo, cola y ojo.
+      const c = pick();
+      ctx.beginPath();
+      ctx.moveTo(cx + s * 0.9, cy);
+      ctx.lineTo(cx + s * 1.5, cy - s * 0.5);
+      ctx.lineTo(cx + s * 1.5, cy + s * 0.5);
+      ctx.closePath();
+      ctx.fillStyle = c;
+      ctx.fill();
+      ctx.stroke();
+      blob(cx, cy, s, s * 0.55, c);
+      blob(cx - s * 0.5, cy - s * 0.12, s * 0.1, s * 0.1, '#ffffff');
+    } else if (kind === 2) {
+      // Pato amarillo.
+      blob(cx, cy + s * 0.2, s * 0.9, s * 0.55, '#f6d23f');
+      blob(cx - s * 0.7, cy - s * 0.45, s * 0.42, s * 0.42, '#f6d23f');
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 1.05, cy - s * 0.5);
+      ctx.lineTo(cx - s * 1.45, cy - s * 0.38);
+      ctx.lineTo(cx - s * 1.05, cy - s * 0.28);
+      ctx.closePath();
+      ctx.fillStyle = '#ef8f3a';
+      ctx.fill();
+      ctx.stroke();
+    } else if (kind === 3) {
+      // Chancho rosado.
+      blob(cx, cy, s * 1.05, s * 0.75, '#f2a0bf');
+      blob(cx - s * 0.95, cy - s * 0.05, s * 0.28, s * 0.22, '#e77fa6');
+      for (const dx of [-0.5, 0.5]) {
+        ctx.fillStyle = '#e77fa6';
+        ctx.fillRect(cx + dx * s - s * 0.12, cy + s * 0.6, s * 0.24, s * 0.4);
+        ctx.strokeRect(cx + dx * s - s * 0.12, cy + s * 0.6, s * 0.24, s * 0.4);
+      }
+    } else {
+      // Auto: carrocería, cabina y dos ruedas.
+      const c = pick();
+      ctx.fillStyle = c;
+      ctx.fillRect(cx - s * 1.2, cy - s * 0.1, s * 2.4, s * 0.7);
+      ctx.strokeRect(cx - s * 1.2, cy - s * 0.1, s * 2.4, s * 0.7);
+      ctx.fillRect(cx - s * 0.6, cy - s * 0.6, s * 1.2, s * 0.5);
+      ctx.strokeRect(cx - s * 0.6, cy - s * 0.6, s * 1.2, s * 0.5);
+      for (const dx of [-0.7, 0.7]) blob(cx + dx * s, cy + s * 0.65, s * 0.3, s * 0.3, '#2b2b2b');
+    }
+  }
+  // Pasto verde al pie.
+  ctx.fillStyle = '#5cae4f';
+  ctx.fillRect(x0, y1 - h * 0.08, w, h * 0.08);
+  ctx.restore();
+}

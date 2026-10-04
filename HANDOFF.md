@@ -1177,11 +1177,25 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
       marco oscuro y cámara sobre la puerta del cuartito, columna acolchada
       verde oscuro con cinta azul, mostrador corrido rojo de la recepción con
       vidriado blanco y las sillas de espera frente a él.
-    - Sin hacer (dudosos o de bajo impacto): murales infantiles del pasillo,
-      puerta negra al final del pasillo, bicicletero de pared y matafuego del
-      hall del jardín, piso verde del jardín, aro de básquet y acolchado rojo
-      corrido del gimnasio, Teatro como aula, cantero redondo de la esquina NE,
-      persianas rosadas sobre la escalera, juntas del piso del patio.
+    - Segunda pasada: murales de los chicos (`drawKidsMural`, regiones
+      `kidsA`/`kidsB` del atlas) sobre el muro del polideportivo del pasillo y
+      sobre el de Teatro en el hall del jardín; puerta de chapa negra al final
+      del pasillo (muro nuevo de 1,85 m en `U.teaE`); hojas rojas MACIZAS en
+      V. Damas y en la del fondo (grille `'none'` en una puerta = hoja sin
+      vidrio; marco negro con color `'black'`); puerta del patio al pasillo de
+      una hoja blanca; bicicletero de pared (dos caños blancos, soportes
+      azules), matafuego con chapa roja y hoja impresa en el muro este del hall
+      del jardín; acolchado rojo corrido en el lateral norte del gimnasio
+      (bajo las ventanas oscuras, sólo la fila baja) y aro de básquet de poste
+      rojo y tablero blanco con borde rojo contra el testero este.
+    - Sin hacer: bicicletas apoyadas (no hay modelo), piso verde del jardín,
+      Teatro como aula, cantero redondo escalonado de la esquina NE (no hay
+      primitiva de gradas redondas; con cilindros superpuestos falla el QA de
+      `schoolProps`), persianas rosadas sobre la escalera, juntas del piso del
+      patio, ventanas con reja y puerta vidriada de seis paños del salón hacia
+      el patio, ventanilla de vanos rojos del hall del jardín, piso gris pulido
+      de la cancha (la textura `court` del atlas sigue beige), malla de las
+      ventanas junto a la puerta negra.
 
 93. **No hay voces en el sonido** (lo pidió el usuario: "eliminá las voces o
     susurros"). `AMBIENT_VOICES = false` en `Soundscape`: no se generan las

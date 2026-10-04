@@ -462,7 +462,8 @@ const WALLS_PB: Wall[] = [
     ]),
     { patioEste: 'blockLight' },
   ),
-  wallFinish(vw(U.gymW, V.artB, V.gymTop, 'int', [[-22.5, -20.95, 'double']]), { patioEste: 'blockLight' }),
+  // Video 2026 (1:08): la puerta del patio al pasillo es de una sola hoja blanca.
+  wallFinish(vw(U.gymW, V.artB, V.gymTop, 'int', [[-22.25, -21.2, 'door', undefined, undefined, 'frame']]), { patioEste: 'blockLight' }),
   vw(U.artE, rearV(U.artE), V.artB),
   vw(U.teaE, rearV(U.teaE), V.artB),
   // Video 2026 (1:13–1:20): Arte y Teatro se ven desde el pasillo por paños
@@ -473,11 +474,14 @@ const WALLS_PB: Wall[] = [
     [54.1, 56.0, 'double', undefined, undefined, 'frame'],
     [56.25, 57.45, 'window', 0.9, 2.1, 'alu', 'none'],
   ]),
-  // Puertas de hoja roja con marco rojo (video 2026, 1:22–1:28).
+  // Puertas de hoja roja maciza con marco rojo (video 2026, 1:22–1:28).
   vw(U.vdW, rearV(U.vdW), V.gymTop, 'int', [
-    [-26.45, -25.45, 'door', undefined, undefined, 'red'],
-    [-22.15, -21.15, 'door', undefined, undefined, 'red'],
+    [-26.45, -25.45, 'door', undefined, undefined, 'red', 'none'],
+    [-22.15, -21.15, 'door', undefined, undefined, 'red', 'none'],
   ]),
+  // Fin del pasillo de Arte y Teatro (video 2026, 1:20–1:22): marco y hoja
+  // de chapa negra, abierta hacia el hall del jardín.
+  vw(U.teaE, V.artB, V.gymTop, 'int', [[-22.3, -21.25, 'door', undefined, undefined, 'black', 'none']]),
   hw(V.vdB, U.vdW, U.e),
   vw(66.0, -21.85, V.gymTop),
   hw(-21.85, 66.0, U.e),
@@ -1294,6 +1298,24 @@ const ITEMS_PB: Item[] = [
   // jardín está enmarcada en azul marino hasta 2,1 m, con dintel blanco.
   ...[62.78, 64.1].map((u) => ({ ...item('wallPanel', u, -20.71, 0.42, 0.02, 's', false), h: 2.1, color: 'navy' })),
   { ...item('wallPanel', 63.44, -20.71, 1.74, 0.02, 's', false), y: 2.1, h: 0.18, color: 'frame' },
+  // Video 2026 (1:36): acolchado rojo corrido en el lateral norte, entre
+  // las pilastras; bajo las ventanas oscuras del paño 4 sólo la fila baja.
+  ...(
+    [
+      [50.55, 52.9, 2.0],
+      [53.4, 55.75, 2.0],
+      [56.25, 58.6, 2.0],
+      [59.1, 61.45, 1.0],
+    ] as const
+  ).map(([a, b, h]) => ({ ...item('wallMat', (a + b) / 2, -20.65, b - a, 0.1, 's', false), color: 'red', h })),
+  // Aro de básquet (1:37): poste rojo acolchado contra el testero este, al
+  // norte del arco, tablero blanco con borde rojo y aro naranja a 3,05 m.
+  { ...item('wallPanel', 66.99, -15.5, 0.3, 0.3, 'w', false), h: 3.6, color: 'red' },
+  { ...item('wallPanel', 66.845, -15.5, 0.03, 1.15, 'w', false), y: 2.7, h: 1.0, color: 'red' },
+  { ...item('wallPanel', 66.82, -15.5, 0.04, 1.05, 'w', false), y: 2.75, h: 0.9, color: 'frame' },
+  { ...item('wallPanel', 66.72, -15.5, 0.16, 0.04, 'w', false), y: 3.02, h: 0.03, color: 'orange' },
+  ...[-15.3, -15.7].map((v) => ({ ...item('wallPanel', 66.47, v, 0.44, 0.02, 'w', false), y: 3.03, h: 0.02, color: 'orange' })),
+  ...[66.27, 66.67].map((u) => ({ ...item('wallPanel', u, -15.5, 0.02, 0.44, 'w', false), y: 3.03, h: 0.02, color: 'orange' })),
 
   // Arte y Teatro. Video 2026 (1:13–1:18): Arte tiene filas de mesas largas
   // de tapa roja con un banco a cada lado, de oeste a este (como el comedor).
@@ -1305,6 +1327,15 @@ const ITEMS_PB: Item[] = [
   item('stage', 55.8, -27.0, 3.5, 2.6, 's'),
   item('curtain', 55.8, -25.6, 3.5, 0.1, 's', false),
   item('seats', 56.2, -24.3, 2.0, 0.5, 'n'),
+
+  // Hall del jardín, muro este (video 2026, 1:24–1:27): bicicletero de pared
+  // de dos caños blancos con soportes encintados de azul, matafuego con su
+  // chapa roja y una hoja impresa a la altura de la vista.
+  ...[0.45, 0.85].map((y) => ({ ...item('wallPanel', 62.565, -24.0, 0.04, 2.4, 'w', false), y, h: 0.04, color: 'frame' })),
+  ...[-22.95, -24.0, -25.05].map((v) => ({ ...item('wallPanel', 62.605, v, 0.02, 0.06, 'w', false), y: 0.4, h: 0.52, color: 'blue' })),
+  item('extinguisher', U.vdW - 0.185, -26.95, 0.17, 0.17, 'w', false),
+  { ...item('wallPanel', U.vdW - 0.09, -26.95, 0.02, 0.3, 'w', false), y: 1.65, h: 0.3, color: 'red' },
+  { ...item('wallPanel', U.vdW - 0.09, -24.0, 0.02, 0.21, 'w', false), y: 1.6, h: 0.3, color: 'frame' },
 
   // V. Damas: cubículos.
   item('stall', 66.4, -25.84, 1.4, 1.2, 'w'),
