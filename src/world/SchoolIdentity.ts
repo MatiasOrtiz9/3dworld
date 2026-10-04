@@ -4,6 +4,7 @@ import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
+import { FresnelParameters } from '@babylonjs/core/Materials/fresnelParameters';
 import {
   FLAG,
   ITEMS,
@@ -70,8 +71,18 @@ export class SchoolIdentity {
     this.floorMaterial = new StandardMaterial('schoolIdentityFloor', scene);
     this.floorMaterial.diffuseTexture = this.texture;
     this.floorMaterial.diffuseColor = new Color3(0.42, 0.42, 0.42);
-    this.floorMaterial.specularColor = new Color3(0.06, 0.06, 0.06);
-    this.floorMaterial.emissiveColor = new Color3(0.72, 0.72, 0.7);
+    // Video 2026 (1:31–1:37): el piso del polideportivo está pulido. Brillo
+    // marcado y un reflejo tenue del cielo (la sonda de la escena) que sube en
+    // ángulo rasante; sólo este material, el resto sigue mate.
+    this.floorMaterial.specularColor = new Color3(0.3, 0.3, 0.3);
+    this.floorMaterial.specularPower = 90;
+    this.floorMaterial.emissiveColor = new Color3(0.66, 0.66, 0.64);
+    const sheen = new FresnelParameters();
+    sheen.bias = 0.06;
+    sheen.power = 2.5;
+    sheen.leftColor = new Color3(0.3, 0.3, 0.3);
+    sheen.rightColor = new Color3(0.03, 0.03, 0.03);
+    this.floorMaterial.reflectionFresnelParameters = sheen;
 
     const q = new QuadBatch(frame);
     const S = 1; // mira al sur (+v)
@@ -131,7 +142,9 @@ export class SchoolIdentity {
 
     // Pasillo de Arte y Teatro (video 2026, 1:13–1:22): murales de los chicos
     // sobre el muro del polideportivo y, en el hall del jardín, sobre el de Teatro.
-    for (const u of [52.3, 55.75]) q.wall(planU(u), V.gymTop - 0.115, FY + 1.75, 3.6, 1.64, 0, N, R.kidsA);
+    // El segundo termina antes de la ventanita de celosía junto a la puerta negra.
+    q.wall(planU(52.3), V.gymTop - 0.115, FY + 1.75, 3.6, 1.64, 0, N, R.kidsA);
+    q.wall(planU(55.3), V.gymTop - 0.115, FY + 1.75, 2.4, 1.64, 0, N, R.kidsA);
     q.wall(U.teaE + 0.115, planV(-25.8), FY + 1.7, 2.6, 1.48, 1, 0, R.kidsB);
 
     // Aula de danzas: afiches de las muestras en el testero norte.
@@ -144,6 +157,12 @@ export class SchoolIdentity {
     floor.floorAlongU(U.gymW + 0.1, V.gymTop + 0.1, U.e - 0.15, -0.15, FY + 0.006, R.court);
     this.floorMesh = floor.toMesh('schoolIdentityFloor', scene);
     this.floorMesh.material = this.floorMaterial;
+    // La sonda del cielo se crea (y se rehace al cambiar la hora) después de
+    // construir la escuela: se toma la vigente al dibujar el piso.
+    this.floorMesh.onBeforeRenderObservable.add(() => {
+      const env = scene.environmentTexture;
+      if (this.floorMaterial.reflectionTexture !== env) this.floorMaterial.reflectionTexture = env;
+    });
     this.floorMesh.isPickable = false;
     q.wall(U.e - 0.18, GYM_MID, 5.1, 2.2, 2.75, -1, 0, R.crestBanner);
 

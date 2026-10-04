@@ -160,9 +160,9 @@ const WALLS_PB: Wall[] = [
   // encimaban con las de ese muro.
   seg(rear(U.tecE), rear(NE_E), 'medianera'),
   seg(rear(NE_E), rear(41.5), 'medianera', [], 3.6),
-  // Al fondo del patio la medianera está pintada de azul francia, con los
-  // azulejos pintados por los chicos (9:52–9:58).
-  { ...seg(rear(41.5), rear(U.gymW), 'medianera', [], 3.6), ext: 'blue' },
+  // Al fondo del patio, detrás de las gradas, la medianera ya no es azul
+  // francia (2020): en el video de 2026 (0:58–1:06) es revoque liso claro.
+  seg(rear(41.5), rear(U.gymW), 'medianera', [], 3.6),
   seg(rear(U.gymW), rear(U.teaE), 'ext'),
   // Dentro del predio del jardín la medianera vieja es su muro sur, con puerta.
   // Vano de 1,29 m: puerta de dos hojas (una sola hoja de ese ancho no existe).
@@ -412,6 +412,8 @@ const WALLS_PB: Wall[] = [
       // Sólo los paños 4 y 5 tienen aberturas bajas: tres ventanas oscuras y la
       // puerta con el cartel de SALIDA (9:17, 9:24–9:26).
       // Video 2026 (1:20–1:24): marco oscuro y malla gris del lado del hall.
+      // Video 2026 (1:20): ventanita oscura de celosía junto a la puerta negra.
+      [56.7, 57.35, 'window', 1.2, 1.95, 'black', 'louvre'],
       [59.0, 59.7, 'window', 1.05, 2.2, 'black', 'mesh'],
       [60.4, 61.3, 'window', 1.05, 2.2, 'black', 'mesh'],
       // Termina antes del muro de V. Damas (antes se metía 10 cm en él).
@@ -1178,16 +1180,20 @@ const ITEMS_PB: Item[] = [
   // Contra el ventanal del hall: una mesa alta con damero y una maceta.
   { ...item('cafeTable', 39.4, V.hallTop - 0.5, 0.9, 0.5), h: 1.05, chess: true },
   item('pot', 40.15, V.hallTop - 0.4, 0.5, 0.5),
-  // Patio de las gradas, frente a Arte: gradas azules con los tres mástiles
-  // blancos detrás (bandera argentina y una azul), mesas dobles con damero.
-  item('amphi', 42.12, -23.08, 2.6, 2.6),
+  // Patio de las gradas, frente a Arte (video 2026, 0:58–1:06): gradas azules
+  // en medio anillo contra el muro del norte que se unen al cantero redondo
+  // del rincón NE en una sola curva en S (el centro va a 4,15 m del plano del
+  // cantero: 4,8 m reales, la suma de los radios, porque las medidas no se
+  // escalan). Los tres mástiles blancos quedan detrás del extremo oeste, junto
+  // al muro (bandera argentina y una azul); delante, mesas dobles con damero.
+  item('amphi', 44.3, -28.95, 6.4, 3.2),
   ...(
     [
-      [41.1, 'skyWall', 7],
-      [41.6, 'blue', 6.6],
-      [42.1, undefined, 6.2],
+      [40.2, 'skyWall', 7],
+      [40.7, 'blue', 6.6],
+      [41.2, undefined, 6.2],
     ] as const
-  ).map(([u, color, h]) => ({ ...item('flagpole', u, -24.35, 0.1, 0.1), h, color: color ?? 'frame' })),
+  ).map(([u, color, h]) => ({ ...item('flagpole', u, -32.75, 0.1, 0.1), h, color: color ?? 'frame' })),
   ...(
     [
       [44.75, -22.3],
@@ -1205,6 +1211,8 @@ const ITEMS_PB: Item[] = [
   // Rincón NE, entre el muro del fondo y la pilastra (1:04–1:06): cantero
   // redondo de tres anillos azules escalonados, con arbustos y un arbolito.
   item('roundPlanter', 48.45, -28.95, 3.2, 3.2),
+  // Bicicleta apoyada contra la pilastra, entre el cantero y la puerta blanca (1:05).
+  item('bike', 49.85, -27.2, 0.5, 1.5, 'w'),
   ...[-21.6, -22.9, -24.2].map((v) => ({ ...item('bunting', 45.42, v, 9.6, 0.05, 's', false), y: 3.6 })),
   // El patio de juegos de antes (bicicletero, torre de madera con toboganes,
   // aviarios, choza, hamacas, tobogán, domo trepador, arenero y cerco de
@@ -1316,7 +1324,8 @@ const ITEMS_PB: Item[] = [
     [
       [50.55, 52.9, 2.0],
       [53.4, 55.75, 2.0],
-      [56.25, 58.6, 2.0],
+      // Bajo la ventanita de celosía del pasillo (paño 3) también sólo la baja.
+      [56.25, 58.6, 1.0],
       [59.1, 61.45, 1.0],
     ] as const
   ).map(([a, b, h]) => ({ ...item('wallMat', (a + b) / 2, -20.65, b - a, 0.1, 's', false), color: 'red', h })),
@@ -1337,15 +1346,26 @@ const ITEMS_PB: Item[] = [
     { ...item('boxBench', 52.1, v, 2.2, 0.7, 'e'), color: 'red', h: 0.72 },
     { ...item('boxBench', 52.1, v - 0.6, 2.2, 0.35, 's'), color: 'red', h: 0.42 },
   ]),
-  item('stage', 55.8, -27.0, 3.5, 2.6, 's'),
-  item('curtain', 55.8, -25.6, 3.5, 0.1, 's', false),
-  item('seats', 56.2, -24.3, 2.0, 0.5, 'n'),
+  // Teatro es un aula más en 2026 (1:16–1:19): dos filas de mesas largas
+  // rojas con sus bancos, el mueble de cubos de madera contra el muro oeste,
+  // la pizarra blanca en el este y el escritorio blanco con la computadora.
+  ...[-25.3, -27.3].flatMap((v) => [
+    { ...item('boxBench', 55.85, v + 0.6, 2.0, 0.35, 'n'), color: 'red', h: 0.42 },
+    { ...item('boxBench', 55.85, v, 2.0, 0.7, 'e'), color: 'red', h: 0.72 },
+    { ...item('boxBench', 55.85, v - 0.6, 2.0, 0.35, 's'), color: 'red', h: 0.42 },
+  ]),
+  { ...item('shelf', U.artE + 0.34, -26.6, 0.45, 1.8, 'e'), color: 'timber' },
+  item('board', U.teaE - 0.135, -26.3, 0.04, 2.4, 'w', false),
+  { ...item('desk2', U.teaE - 0.45, -23.7, 0.6, 1.4, 'w'), color: 'frame' },
+  { ...item('chair', U.teaE - 1.1, -23.7, 0.5, 0.5, 'e', false), color: 'metalDark' },
 
   // Hall del jardín, muro este (video 2026, 1:24–1:27): bicicletero de pared
   // de dos caños blancos con soportes encintados de azul, matafuego con su
   // chapa roja y una hoja impresa a la altura de la vista.
   ...[0.45, 0.85].map((y) => ({ ...item('wallPanel', 62.565, -24.0, 0.04, 2.4, 'w', false), y, h: 0.04, color: 'frame' })),
   ...[-22.95, -24.0, -25.05].map((v) => ({ ...item('wallPanel', 62.605, v, 0.02, 0.06, 'w', false), y: 0.4, h: 0.52, color: 'blue' })),
+  // Dos bicicletas apoyadas en el bicicletero (1:25).
+  ...[-23.09, -24.43].map((v) => item('bike', 62.275, v, 0.5, 1.45, 'w')),
   item('extinguisher', U.vdW - 0.185, -26.95, 0.17, 0.17, 'w', false),
   { ...item('wallPanel', U.vdW - 0.09, -26.95, 0.02, 0.3, 'w', false), y: 1.65, h: 0.3, color: 'red' },
   { ...item('wallPanel', U.vdW - 0.09, -24.0, 0.02, 0.21, 'w', false), y: 1.6, h: 0.3, color: 'frame' },

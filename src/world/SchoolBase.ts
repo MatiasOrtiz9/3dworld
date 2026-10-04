@@ -561,12 +561,13 @@ export type ItemKind =
   | 'bareTree' // árbol sin hojas (el video es de invierno)
   | 'hedge' // mata de cañas/arbustos de un cerco vivo
   // Patio aire libre nuevo (video 2026, después de la pandemia).
-  | 'amphi' // gradas curvas azules en una esquina, con cantero arriba (centro del arco en la esquina u−w/2, v−d/2)
+  | 'amphi' // gradas curvas azules: medio anillo cóncavo hacia el sur, contra el muro del norte (centro del arco en u, v; radio exterior w/2)
   | 'cafeTable' // mesa de patio: pie rojo, tapa de madera con damero; sin `h`, cuatro sillas negras; con `h`, mesa alta de pie
   | 'boxBench' // banco/mesita de chapa plegada en U (con color; alto en `h`)
   | 'pot' // maceta redonda blanca con planta
   | 'slimTree' // arbolito de troncos finos en su cazuela (alto en `h`)
   | 'roundPlanter' // cantero redondo escalonado de tres anillos azules (diámetro exterior `w`), con plantas arriba
+  | 'bike' // bicicleta apoyada: cuadro, dos ruedas y manubrio (largo en `d` si mira al este/oeste)
   | 'bunting'; // guirnalda de banderines de colores (a lo largo de u, a la altura `y`)
 
 /** Hacia dónde mira el frente del objeto (o la cara útil de algo contra un muro). */
@@ -729,6 +730,29 @@ export const item = (kind: ItemKind, u: number, v: number, w: number, d: number,
   face,
   solid,
 });
+
+/** Radio interior de las gradas `amphi`, en fracción del exterior (el piso del medio queda libre). */
+export const AMPHI_INNER = 0.5;
+
+/**
+ * Franjas que cubren el medio anillo de las gradas `amphi` (centro u, v;
+ * radio exterior w/2; del lado norte), sin el hueco del medio: colisión y QA.
+ */
+export function amphiStrips(it: { u: number; v: number; w: number }, n = 12): Rect[] {
+  const r = it.w / 2;
+  const rIn = r * AMPHI_INNER;
+  const out: Rect[] = [];
+  for (let k = 0; k < n; k++) {
+    const a = -r + (k * 2 * r) / n;
+    const b = a + (2 * r) / n;
+    const dMin = a < 0 && b > 0 ? 0 : Math.min(Math.abs(a), Math.abs(b));
+    const dMax = Math.max(Math.abs(a), Math.abs(b));
+    const v0 = it.v - Math.sqrt(Math.max(0, r * r - dMin * dMin));
+    const v1 = dMax < rIn ? it.v - Math.sqrt(rIn * rIn - dMax * dMax) : it.v;
+    out.push({ u0: it.u + a, v0, u1: it.u + b, v1 });
+  }
+  return out;
+}
 
 export function inRect(r: Rect, u: number, v: number, margin = 0): boolean {
   return u > r.u0 - margin && u < r.u1 + margin && v > r.v0 - margin && v < r.v1 + margin;

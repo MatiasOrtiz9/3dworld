@@ -1205,12 +1205,36 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
       con marco negro y malla; textura `court` gris claro (#c9c9c4) con
       líneas azul oscuro; tablero del aro de 1,8 × 1,05 m. El piso del hall
       del jardín NO es verde en el video (cerámico claro): se dejó.
-    - Sin hacer: bicicletas apoyadas (no hay modelo), Teatro como aula, la
-      ventanita oscura con celosía del muro del gimnasio en el pasillo justo
-      antes de la puerta negra (chocaría con el acolchado de ese paño), el
-      cantero redondo unido a las gradas en curva S (las gradas siguen en
-      cuarto de círculo aparte), reflejos del piso pulido del gimnasio (sólo
-      cambió el color) y el interior rojo de las ventanas del salón.
+    - Cuarta pasada (lo que faltaba): gradas `amphi` rehechas como medio
+      anillo cóncavo de cuatro escalones contra la medianera del fondo, unido
+      al cantero redondo en una sola curva en S (centro y radio exterior w/2;
+      colisión y QA con `amphiStrips`, que deja libre el piso del medio; el
+      centro va a 4,15 m del plano del cantero = 4,8 m reales, la suma de los
+      radios, porque las medidas de los ítems no se escalan); baranda roja
+      inclinada en su extremo oeste y los tres mástiles detrás, junto al muro;
+      la medianera de ese tramo pasa de azul francia a revoque claro. Ítem
+      nuevo `bike` (cuadro de caño rojo, ruedas de cubierta negra y llanta
+      gris, asiento y manubrio, ~15 instancias de la granja sin malla ni
+      material nuevos): una contra la pilastra de Arte entre el cantero y la
+      puerta blanca, dos en el bicicletero del hall del jardín. Ventanita
+      oscura de celosía (`'black', 'louvre'`) en el muro del gimnasio del
+      pasillo junto a la puerta negra; el acolchado de ese paño baja a la fila
+      baja y el segundo mural del pasillo se acortó para no taparla. Piso del
+      polideportivo pulido: brillo especular marcado y reflejo tenue de la
+      sonda del cielo con fresnel (sólo `schoolIdentityFloor`). Ventanas del
+      salón (`'alu', 'louvre'`): marco interior rojo detrás del vidrio. La
+      ventanilla roja ya no tiene parante central. Teatro amueblado como aula
+      (dos filas de mesas largas rojas con bancos, mueble de cubos de madera,
+      pizarra blanca, escritorio blanco con computadora y silla); el punto de
+      la historia `teatro` mira el mueble.
+    - Sigue distinto: las gradas del video son más largas hacia el oeste y
+      terminan en una plataforma alta con escalera y baranda roja contra el
+      comedor (acá la baranda baja por el extremo del medio anillo); el
+      cantero del video asoma por encima de las gradas. El piso del gimnasio
+      no refleja las luminarias (no hay reflejos en tiempo real, sólo el
+      brillo y el cielo). Las mesas largas de Arte y Teatro son cajas rojas
+      macizas (en el video tienen patas de caño azul). El piso del hall del
+      jardín se dejó cerámico claro.
 
 93. **No hay voces en el sonido** (lo pidió el usuario: "eliminá las voces o
     susurros"). `AMBIENT_VOICES = false` en `Soundscape`: no se generan las

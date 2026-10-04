@@ -37,6 +37,7 @@ import {
   SCHOOL,
   STAIRS,
   SALON_COLUMNS,
+  AMPHI_INNER,
   makerWallAt,
   riserCount,
   roundChairAngles,
@@ -946,8 +947,10 @@ export class SchoolBuilder {
       this.piece(fm, a, b, 0.1, ht - 0.06, ht);
       this.piece(fm, a, along(0.06), 0.1, hb, ht);
       this.piece(fm, along(len - 0.06), b, 0.1, hb, ht);
-      if (this.detailed || len > 2.4) this.piece(fm, along(len / 2 - 0.025), along(len / 2 + 0.025), 0.08, hb, ht);
-      if (fm === m.red && o.grille === 'none') {
+      const redHatch = fm === m.red && o.grille === 'none';
+      // La ventanilla roja del hall del jardín es un vano abierto, sin parante.
+      if ((this.detailed || len > 2.4) && !redHatch) this.piece(fm, along(len / 2 - 0.025), along(len / 2 + 0.025), 0.08, hb, ht);
+      if (redHatch) {
         // Ventanilla de vanos rojos (hall del jardín): el revoque del vano,
         // de cara a cara del muro, pintado de rojo.
         this.piece(m.red, a, b, t + 0.01, hb - 0.01, hb + 0.005);
@@ -956,6 +959,15 @@ export class SchoolBuilder {
         this.piece(m.red, along(len - 0.005), along(len + 0.01), t + 0.01, hb, ht);
       }
       const grille = o.grille ?? (w.level > 0 ? 'whiteBars' : 'bars');
+      if (o.color === 'alu' && grille === 'louvre') {
+        // Salón de los espejos (video 2026, 0:07–0:25): por dentro el marco
+        // es rojo y se ve detrás del vidrio y de los barrotes.
+        const ins = -(extSign || 1) * (t / 2 - 0.03);
+        this.piece(m.red, a, along(0.1), 0.05, hb, ht, ins);
+        this.piece(m.red, along(len - 0.1), b, 0.05, hb, ht, ins);
+        this.piece(m.red, a, b, 0.05, hb, hb + 0.1, ins);
+        this.piece(m.red, a, b, 0.05, ht - 0.1, ht, ins);
+      }
       // Reja pedida a mano en un muro interior: del lado del patio (sin
       // techo) o, entre dos locales, del lado del pasillo.
       const gs = extSign !== 0 || o.grille === undefined ? extSign : grilleSide(roomPos, roomNeg);
@@ -2929,33 +2941,52 @@ export class SchoolBuilder {
         this.cyl(m.metalDark, u, v, w, 1.4, FY + (it.y ?? 0) + 0.3, true);
         break;
       case 'amphi': {
-        // Gradas curvas del patio nuevo (video 2026): tres escalones de
-        // hormigón pintado de azul en cuarto de círculo con centro en la
-        // esquina del ítem; el de arriba es un cantero. Cada escalón son
+        // Gradas del patio nuevo (video 2026, 0:58–1:03): cuatro escalones de
+        // hormigón pintado de azul en medio anillo contra el muro del norte,
+        // cóncavo hacia el patio; al este se une al cantero redondo (la curva
+        // en S) y al oeste baja la baranda de caño rojo. Cada escalón son
         // gajos rectos (cajas de la granja, sin malla propia).
         const mat = this.mat(it.color, m.navy);
-        const cu = u - w / 2;
-        const cv = v - d / 2;
-        const r = Math.min(w, d);
-        const n = this.detailed ? 9 : 6;
-        const half = Math.PI / 4 / n;
-        for (const [a0, a1, h] of [
-          [0.66, 1, 0.42],
-          [0.36, 0.66, 0.84],
-          [0, 0.36, 1.1],
-        ] as const) {
-          const rIn = a0 * r * Math.cos(half);
-          const rOut = a1 * r;
+        const r = w / 2;
+        const n = this.detailed ? 14 : 9;
+        const half = Math.PI / 2 / n;
+        const tiers = 4;
+        for (let s = 0; s < tiers; s++) {
+          const f0 = AMPHI_INNER + ((1 - AMPHI_INNER) * s) / tiers;
+          const f1 = AMPHI_INNER + ((1 - AMPHI_INNER) * (s + 1)) / tiers;
+          const h = 0.42 * (s + 1);
+          const rIn = f0 * r * Math.cos(half);
+          const rOut = f1 * r;
           for (let k = 0; k < n; k++) {
-            const t = ((k + 0.5) / n) * (Math.PI / 2);
+            const t = Math.PI + ((k + 0.5) / n) * Math.PI;
             const mid = (rIn + rOut) / 2;
-            const p = toWorld(this.f, cu + Math.cos(t) * mid, cv + Math.sin(t) * mid);
+            const p = toWorld(this.f, u + Math.cos(t) * mid, v + Math.sin(t) * mid);
             this.farm.add('box', mat, new Vector3(p.x, FY + h / 2, p.z), new Vector3(rOut - rIn, h, 2 * rOut * Math.sin(half) + 0.03), this.yaw(Math.cos(t), Math.sin(t)));
           }
         }
-        for (const t of [0.25, 0.75, 1.25]) {
-          const p = toWorld(this.f, cu + Math.cos(t) * r * 0.2, cv + Math.sin(t) * r * 0.2);
-          this.nature.shrub(p.x, p.z, this.rng.range(0.6, 0.85), FY + 1.1);
+        // Baranda roja del extremo oeste: pasamanos inclinado a 0,9 m de los
+        // escalones y tres parantes.
+        const lo = u - r * AMPHI_INNER - 0.05;
+        const hi = u - r + 0.08;
+        const yLo = FY + 0.42 + 0.9;
+        const yHi = FY + 0.42 * tiers + 0.9;
+        const pa = toWorld(this.f, lo, v - 0.05);
+        const pb = toWorld(this.f, hi, v - 0.05);
+        const run = Math.hypot(pb.x - pa.x, pb.z - pa.z);
+        this.farm.add(
+          'box',
+          m.red,
+          new Vector3((pa.x + pb.x) / 2, (yLo + yHi) / 2, (pa.z + pb.z) / 2),
+          new Vector3(Math.hypot(run, yHi - yLo), 0.045, 0.045),
+          this.yaw(hi - lo, 0),
+          0,
+          Math.atan2(yHi - yLo, run),
+        );
+        for (const f of [0, 0.5, 1]) {
+          const pu = lo + (hi - lo) * f;
+          const step = Math.min(tiers, 1 + Math.floor((f * (r - r * AMPHI_INNER)) / ((r * (1 - AMPHI_INNER)) / tiers)));
+          const y0 = FY + 0.42 * step;
+          this.box(m.red, pu, v - 0.05, 0.045, yLo + (yHi - yLo) * f - y0, 0.045, y0);
         }
         break;
       }
@@ -3003,6 +3034,9 @@ export class SchoolBuilder {
         }
         break;
       }
+      case 'bike':
+        this.bike(u, v, alongV, w, d);
+        break;
       case 'cafeTable': {
         // Mesa del patio nuevo: pie central rojo con cruz y tapa de madera
         // rojiza; con `chess`, un damero de azulejos (en 2026 lo tienen las
@@ -3147,6 +3181,53 @@ export class SchoolBuilder {
    * pizarrón del Aula 1). En las que miraban al oeste o al norte, además, el
    * paño quedaba detrás del marco y la pizarra se veía gris oscura.
    */
+  /**
+   * Bicicleta apoyada (video 2026, 1:05 y 1:25): cuadro de caño rojo, dos
+   * ruedas (cubierta negra y llanta gris), asiento y manubrio. Todo con la
+   * granja y los materiales que ya hay: unas quince instancias, sin malla propia.
+   */
+  private bike(u: number, v: number, alongV: boolean, w: number, d: number): void {
+    const m = this.m;
+    const len = Math.max(w, d);
+    const dia = Math.min(0.62, len * 0.4);
+    const base = len - dia;
+    const du = alongV ? 0 : 1;
+    const dv = alongV ? 1 : 0;
+    const yaw = this.yaw(du, dv);
+    const at = (s: number, y: number): Vector3 => {
+      const p = toWorld(this.f, u + du * s, v + dv * s);
+      return new Vector3(p.x, FY + y, p.z);
+    };
+    const tube = (a: Vector3, b: Vector3, mat: Material, t = 0.035): void => {
+      const run = Math.hypot(b.x - a.x, b.z - a.z);
+      const rise = b.y - a.y;
+      const yawT = run > 1e-3 ? Math.atan2(-(b.z - a.z), b.x - a.x) : yaw;
+      this.farm.add('box', mat, Vector3.Center(a, b), new Vector3(Math.hypot(run, rise), t, t), yawT, 0, Math.atan2(rise, Math.max(run, 1e-4)));
+    };
+    const r = dia / 2;
+    const rear = at(-base / 2, r);
+    const front = at(base / 2, r);
+    for (const c of [rear, front]) {
+      this.farm.add('cylinderHi', m.black, c, new Vector3(dia, 0.035, dia), yaw, Math.PI / 2);
+      this.farm.add('cylinderHi', m.metal, c, new Vector3(dia * 0.82, 0.045, dia * 0.82), yaw, Math.PI / 2);
+    }
+    const bb = at(-base * 0.05, r - 0.02);
+    const seat = at(-base * 0.2, r + 0.5);
+    const head = at(base * 0.33, r + 0.42);
+    const frame = m.red;
+    tube(bb, seat, frame);
+    tube(bb, head, frame, 0.042);
+    tube(seat, head, frame);
+    tube(rear, bb, frame, 0.028);
+    tube(rear, seat, frame, 0.028);
+    tube(head, front, m.metalDark, 0.03);
+    // Asiento y manubrio (perpendicular al cuadro).
+    this.farm.add('box', m.metalDark, at(-base * 0.2, r + 0.56), new Vector3(0.24, 0.05, 0.11), yaw);
+    const bar = at(base * 0.31, r + 0.58);
+    tube(head, bar, m.metalDark, 0.03);
+    this.farm.add('box', m.metalDark, bar, new Vector3(0.03, 0.03, 0.52), yaw);
+  }
+
   private wallBoard(it: Item, panel: Material, rim: Material, y0: number, hgt: number): void {
     const { u, v } = it;
     const alongV = it.face === 'e' || it.face === 'w';

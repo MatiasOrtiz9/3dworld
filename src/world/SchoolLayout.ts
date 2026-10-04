@@ -11,6 +11,7 @@ import {
   U as PLAN_U,
   V as PLAN_V,
   WALKABLE,
+  amphiStrips,
   inPoly,
   inRect,
   levelOf,
@@ -48,6 +49,7 @@ import {
   PLAN_WALLS,
   planMakerWallAt,
 } from './SchoolGround';
+export { AMPHI_INNER, amphiStrips } from './SchoolBase';
 import { S, scaleItems, scaleLanding, scaleLines, scalePoly, scaleRect, scaleStair, scaleVolume, scaleWall } from './SchoolScale';
 import { CREST as PLAN_CREST, PORTAL_WINDOWS as PLAN_PORTAL_WINDOWS, U1 as PLAN_U1, V1 as PLAN_V1 } from './SchoolUpper';
 
@@ -578,15 +580,9 @@ function obstacleRects(level: Level): Array<Rect & { m?: number }> {
   for (const it of ITEMS) {
     if (!it.solid || (it.level ?? 0) !== level) continue;
     if (it.kind === 'amphi') {
-      // Gradas en cuarto de círculo: franjas que siguen el arco (una sola
-      // caja dejaba una pared invisible en la diagonal).
-      const cu = it.u - it.w / 2;
-      const cv = it.v - it.d / 2;
-      const r = Math.min(it.w, it.d);
-      for (let k = 0; k < 6; k++) {
-        const ua = cu + (k * r) / 6;
-        out.push({ u0: ua, v0: cv, u1: ua + r / 6, v1: cv + Math.sqrt(r * r - (ua - cu) ** 2) });
-      }
+      // Gradas en medio anillo: franjas que siguen el arco (una sola caja
+      // dejaba una pared invisible en la diagonal); el piso del medio, libre.
+      out.push(...amphiStrips(it));
       continue;
     }
     const halfW = it.kind === 'tree' ? 0.35 : it.w / 2;
