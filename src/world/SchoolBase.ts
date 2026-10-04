@@ -395,7 +395,9 @@ export type Floor =
   | 'rubber'
   | 'terracotta'
   | 'hallStone'
-  | 'dance';
+  | 'dance'
+  // Losetas de cemento de 40 × 40 del patio aire libre (video 2026): gris beige, juntas finas.
+  | 'patioTile';
 
 export interface Room {
   id: string;
@@ -564,6 +566,7 @@ export type ItemKind =
   | 'boxBench' // banco/mesita de chapa plegada en U (con color; alto en `h`)
   | 'pot' // maceta redonda blanca con planta
   | 'slimTree' // arbolito de troncos finos en su cazuela (alto en `h`)
+  | 'roundPlanter' // cantero redondo escalonado de tres anillos azules (diámetro exterior `w`), con plantas arriba
   | 'bunting'; // guirnalda de banderines de colores (a lo largo de u, a la altura `y`)
 
 /** Hacia dónde mira el frente del objeto (o la cara útil de algo contra un muro). */

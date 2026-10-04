@@ -1188,14 +1188,29 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
       del jardín; acolchado rojo corrido en el lateral norte del gimnasio
       (bajo las ventanas oscuras, sólo la fila baja) y aro de básquet de poste
       rojo y tablero blanco con borde rojo contra el testero este.
-    - Sin hacer: bicicletas apoyadas (no hay modelo), piso verde del jardín,
-      Teatro como aula, cantero redondo escalonado de la esquina NE (no hay
-      primitiva de gradas redondas; con cilindros superpuestos falla el QA de
-      `schoolProps`), persianas rosadas sobre la escalera, juntas del piso del
-      patio, ventanas con reja y puerta vidriada de seis paños del salón hacia
-      el patio, ventanilla de vanos rojos del hall del jardín, piso gris pulido
-      de la cancha (la textura `court` del atlas sigue beige), malla de las
-      ventanas junto a la puerta negra.
+    - Tercera pasada: persianas de enrollar rosado salmón (`pinkWall`) bajas
+      tres cuartos en las dos ventanas del primer piso sobre la escalera
+      blanca; piso del patio aire libre en losetas de cemento de 40 cm gris
+      beige de juntas finas (`floorLook: 'patioTile'`, textura `granite`);
+      salón de los espejos hacia el patio: ventanas de marco gris con
+      barrotes horizontales oscuros (`'alu', 'louvre'`) y la puerta doble de
+      PVC blanco con tres paños por hoja sobre zócalo bajo (grille
+      `'whiteBars'` en una puerta vidriada = travesaños). Una reja pedida a
+      mano en un muro interior ahora se dibuja (del lado sin techo o del
+      pasillo, `grilleSide`). Ventanilla de vanos rojos al sanitario sobre el
+      bicicletero (ventana `'red', 'none'` = revoque del vano en rojo);
+      cantero redondo escalonado del rincón NE (ítem nuevo `roundPlanter`:
+      tres anillos de gajos de la granja, uno solo para el QA, con arbustos
+      y un arbolito de flor rosada); ventanas del gimnasio al hall del jardín
+      con marco negro y malla; textura `court` gris claro (#c9c9c4) con
+      líneas azul oscuro; tablero del aro de 1,8 × 1,05 m. El piso del hall
+      del jardín NO es verde en el video (cerámico claro): se dejó.
+    - Sin hacer: bicicletas apoyadas (no hay modelo), Teatro como aula, la
+      ventanita oscura con celosía del muro del gimnasio en el pasillo justo
+      antes de la puerta negra (chocaría con el acolchado de ese paño), el
+      cantero redondo unido a las gradas en curva S (las gradas siguen en
+      cuarto de círculo aparte), reflejos del piso pulido del gimnasio (sólo
+      cambió el color) y el interior rojo de las ventanas del salón.
 
 93. **No hay voces en el sonido** (lo pidió el usuario: "eliminá las voces o
     susurros"). `AMBIENT_VOICES = false` en `Soundscape`: no se generan las

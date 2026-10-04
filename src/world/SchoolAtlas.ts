@@ -509,10 +509,11 @@ function drawCourt(ctx: CanvasRenderingContext2D, r: Region): void {
   ctx.clip();
   ctx.translate(x0, y0);
   ctx.scale((x1 - x0) / L, (y1 - y0) / W);
-  // Cemento alisado claro con paños; líneas finas oscuras de handball.
-  ctx.fillStyle = '#d3cec4';
+  // Video 2026 (1:31–1:38): piso gris claro pulido (no el cemento beige),
+  // paños apenas marcados y líneas finas azul oscuro de handball.
+  ctx.fillStyle = '#c9c9c4';
   ctx.fillRect(0, 0, L, W);
-  ctx.strokeStyle = 'rgba(150,145,135,0.35)';
+  ctx.strokeStyle = 'rgba(140,140,138,0.22)';
   ctx.lineWidth = 0.03;
   for (let x = 0; x <= L; x += 1.5) {
     ctx.beginPath();
@@ -530,7 +531,7 @@ function drawCourt(ctx: CanvasRenderingContext2D, r: Region): void {
   const m = 0.7;
   const cw = W - 3.4;
   const cy0 = m;
-  const line = '#4d5054';
+  const line = '#252c40';
   ctx.strokeStyle = line;
   ctx.lineWidth = 0.06;
   ctx.strokeRect(m, cy0, L - m * 2, cw);

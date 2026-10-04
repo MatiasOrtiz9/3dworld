@@ -381,10 +381,13 @@ const WALLS_PB: Wall[] = [
   // del pasaje, "Acceso al Polideportivo" y la del salón (CAD), y del lado del
   // jardincito las ventanas enrejadas y la puerta doble (10:08–10:20).
   wallFinish(vw(U.salonW, V.gymTop, V.facade, 'int', [
-    [-19.3, -19.75, 'window', 1.2, 2.3],
-    [-17.8, -19.1, 'double', undefined, undefined, 'frame'],
-    [-15.7, -17.2, 'window', 1.2, 2.3],
-    [-13.45, -14.35, 'window', 1.2, 2.3],
+    // Video 2026 (0:07–0:25): ventanas de marco gris con barrotes
+    // horizontales oscuros y la puerta doble de PVC blanco, tres paños altos
+    // por hoja sobre el zócalo macizo.
+    [-19.3, -19.75, 'window', 1.2, 2.3, 'alu', 'louvre'],
+    [-17.8, -19.1, 'double', undefined, undefined, 'frame', 'whiteBars'],
+    [-15.7, -17.2, 'window', 1.2, 2.3, 'alu', 'louvre'],
+    [-13.45, -14.35, 'window', 1.2, 2.3, 'alu', 'louvre'],
     [-11.28, -12.42, 'double'],
     // "Acceso al Polideportivo": puerta doble de aluminio blanco.
     // Corrida al sur (hacia Laprida) respecto del CAD, lo justo para que la
@@ -408,10 +411,11 @@ const WALLS_PB: Wall[] = [
     [
       // Sólo los paños 4 y 5 tienen aberturas bajas: tres ventanas oscuras y la
       // puerta con el cartel de SALIDA (9:17, 9:24–9:26).
-      [59.0, 59.7, 'window', 1.05, 2.2],
-      [60.4, 61.3, 'window', 1.05, 2.2],
+      // Video 2026 (1:20–1:24): marco oscuro y malla gris del lado del hall.
+      [59.0, 59.7, 'window', 1.05, 2.2, 'black', 'mesh'],
+      [60.4, 61.3, 'window', 1.05, 2.2, 'black', 'mesh'],
       // Termina antes del muro de V. Damas (antes se metía 10 cm en él).
-      [61.75, 62.55, 'window', 1.05, 2.2],
+      [61.75, 62.55, 'window', 1.05, 2.2, 'black', 'mesh'],
       [63.05, 63.85, 'door'],
       ...GYM_CLERESTORY,
     ],
@@ -478,6 +482,8 @@ const WALLS_PB: Wall[] = [
   vw(U.vdW, rearV(U.vdW), V.gymTop, 'int', [
     [-26.45, -25.45, 'door', undefined, undefined, 'red', 'none'],
     [-22.15, -21.15, 'door', undefined, undefined, 'red', 'none'],
+    // Ventanilla de vanos rojos al sanitario, sobre el bicicletero (1:25–1:27).
+    [-22.35, -23.4, 'window', 1.9, 2.75, 'red', 'none'],
   ]),
   // Fin del pasillo de Arte y Teatro (video 2026, 1:20–1:22): marco y hoja
   // de chapa negra, abierta hacia el hall del jardín.
@@ -639,6 +645,9 @@ const ROOMS_PB: Room[] = [
       [U.tecE, V.nBlockN],
     ],
     floor: 'patio',
+    // Video 2026 (1:04–1:09): losetas de cemento gris beige de 40 cm con
+    // juntas finas, poco marcadas (las del 'patio' eran oscuras y muy vistas).
+    floorLook: 'patioTile',
     roofed: false,
   },
 ];
@@ -1193,6 +1202,9 @@ const ITEMS_PB: Item[] = [
   // Banco blanco de listones bajo la ventana de Arte y la pilastra blanca.
   { ...item('bench', 49.93, -24.0, 0.45, 1.9, 'w'), color: 'frame' },
   { ...item('wallPanel', 50.17, -27.15, 0.1, 0.8, 'w', false), h: 3.25, color: 'frame' },
+  // Rincón NE, entre el muro del fondo y la pilastra (1:04–1:06): cantero
+  // redondo de tres anillos azules escalonados, con arbustos y un arbolito.
+  item('roundPlanter', 48.45, -28.95, 3.2, 3.2),
   ...[-21.6, -22.9, -24.2].map((v) => ({ ...item('bunting', 45.42, v, 9.6, 0.05, 's', false), y: 3.6 })),
   // El patio de juegos de antes (bicicletero, torre de madera con toboganes,
   // aviarios, choza, hamacas, tobogán, domo trepador, arenero y cerco de
@@ -1311,8 +1323,9 @@ const ITEMS_PB: Item[] = [
   // Aro de básquet (1:37): poste rojo acolchado contra el testero este, al
   // norte del arco, tablero blanco con borde rojo y aro naranja a 3,05 m.
   { ...item('wallPanel', 66.99, -15.5, 0.3, 0.3, 'w', false), h: 3.6, color: 'red' },
-  { ...item('wallPanel', 66.845, -15.5, 0.03, 1.15, 'w', false), y: 2.7, h: 1.0, color: 'red' },
-  { ...item('wallPanel', 66.82, -15.5, 0.04, 1.05, 'w', false), y: 2.75, h: 0.9, color: 'frame' },
+  // Tablero blanco de 1,8 × 1,05 m con su borde rojo.
+  { ...item('wallPanel', 66.845, -15.5, 0.03, 1.9, 'w', false), y: 2.65, h: 1.15, color: 'red' },
+  { ...item('wallPanel', 66.82, -15.5, 0.04, 1.8, 'w', false), y: 2.7, h: 1.05, color: 'frame' },
   { ...item('wallPanel', 66.72, -15.5, 0.16, 0.04, 'w', false), y: 3.02, h: 0.03, color: 'orange' },
   ...[-15.3, -15.7].map((v) => ({ ...item('wallPanel', 66.47, v, 0.44, 0.02, 'w', false), y: 3.03, h: 0.02, color: 'orange' })),
   ...[66.27, 66.67].map((u) => ({ ...item('wallPanel', u, -15.5, 0.02, 0.44, 'w', false), y: 3.03, h: 0.02, color: 'orange' })),

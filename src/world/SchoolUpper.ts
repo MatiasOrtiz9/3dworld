@@ -999,6 +999,14 @@ const I1: Item[] = [
   ...desks({ u0: 42.0, v0: -20.4, u1: 45.5, v1: -18.0 }, 'n', 'timber', 'chairGreen', 2, 2, 'table'),
   ...bareRoom([U1.aulaTaller + 0.12, -19.2], 'e', 2.4, [46.85, -19.2]),
   item('extinguisher', U.salonW + 0.24, -17.15, 0.17, 0.17, 'e', false),
+  // Video 2026 (0:31–0:33): persianas de enrollar rosado salmón, bajas tres
+  // cuartos, en las ventanas que dan sobre la escalera blanca del patio.
+  ...(
+    [
+      [-15.4, -16.5],
+      [-17.5, -19.4],
+    ] as const
+  ).map(([a, b]) => ({ ...item('wallPanel', U.east1 - 0.19, (a + b) / 2, 0.03, a - b - 0.04, 'e', false), y: 1.35, h: 0.97, color: 'pinkWall' })),
 ];
 
 const I2: Item[] = [

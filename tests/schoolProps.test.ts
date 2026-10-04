@@ -287,6 +287,8 @@ function boxes(it: Item): Box[] {
     // Patio aire libre nuevo (video 2026).
     case 'amphi':
       return [all(0, 1.1)];
+    case 'roundPlanter':
+      return [all(0, 1.25), box(u, v, 0.5, 0.5, 1.25, 2.9, 'tree')];
     case 'cafeTable':
       return [all(0, h ?? FURNITURE.tableTop)];
     case 'boxBench':

@@ -107,6 +107,18 @@ const FRAMED: ReadonlySet<OpeningType> = new Set(['door', 'double', 'exit', 'ent
 const STRIPE: readonly [number, number] = [1.16, 1.24];
 
 /** Antepecho y dintel de un vano, con la altura propia si la tiene. */
+/**
+ * Lado de una reja pedida a mano en un muro interior: hacia el ambiente sin
+ * techo (patio) o, entre dos locales, hacia el pasillo; 0 si no hay cómo saberlo.
+ */
+function grilleSide(rp: Room | null, rn: Room | null): number {
+  const open = (r: Room | null) => !!r && !r.roofed;
+  const hall = (r: Room | null) => !!r && r.name === 'Pasillo';
+  if (open(rp) !== open(rn)) return open(rp) ? 1 : -1;
+  if (hall(rp) !== hall(rn)) return hall(rp) ? 1 : -1;
+  return 0;
+}
+
 function holeOf(o: Opening, wallH: number): [number, number] {
   const [hb, ht] = HOLE[o.type];
   return [o.hb ?? hb, Math.min(o.ht ?? ht, wallH - 0.15)];
@@ -339,6 +351,9 @@ export class SchoolBuilder {
       // enormes (pavementXL), sin juntas.
       lawn: mats.surface(hex('#6f8a55'), 0.95, 0, 'pavementXL'),
       patio: s('#aeaba4', 0.9, 0, 'pavement', 'floor'),
+      // Losetas de cemento de 40 cm del patio aire libre (video 2026): gris
+      // beige, granulado fino y juntas finas poco marcadas.
+      patioTile: s('#d8d3c8', 0.88, 0, 'granite', 'floor'),
       // Interior (con luz rebotada simulada). Látex mate sobre revoque.
       white: i('#efefeb', 'plaster', undefined, undefined, 'wall'),
       // La guarda es esmalte sintético: satinada, algo más lisa que el látex.
@@ -671,6 +686,7 @@ export class SchoolBuilder {
       terracotta: this.m.terracotta,
       hallStone: this.m.hallStone,
       dance: this.m.dance,
+      patioTile: this.m.patioTile,
     };
     for (const r of ROOMS) {
       const level = roomLevel(r);
@@ -931,8 +947,20 @@ export class SchoolBuilder {
       this.piece(fm, a, along(0.06), 0.1, hb, ht);
       this.piece(fm, along(len - 0.06), b, 0.1, hb, ht);
       if (this.detailed || len > 2.4) this.piece(fm, along(len / 2 - 0.025), along(len / 2 + 0.025), 0.08, hb, ht);
+      if (fm === m.red && o.grille === 'none') {
+        // Ventanilla de vanos rojos (hall del jardín): el revoque del vano,
+        // de cara a cara del muro, pintado de rojo.
+        this.piece(m.red, a, b, t + 0.01, hb - 0.01, hb + 0.005);
+        this.piece(m.red, a, b, t + 0.01, ht - 0.005, ht + 0.01);
+        this.piece(m.red, along(-0.01), along(0.005), t + 0.01, hb, ht);
+        this.piece(m.red, along(len - 0.005), along(len + 0.01), t + 0.01, hb, ht);
+      }
       const grille = o.grille ?? (w.level > 0 ? 'whiteBars' : 'bars');
-      if (extSign !== 0 && type === 'window' && grille !== 'none') {
+      // Reja pedida a mano en un muro interior: del lado del patio (sin
+      // techo) o, entre dos locales, del lado del pasillo.
+      const gs = extSign !== 0 || o.grille === undefined ? extSign : grilleSide(roomPos, roomNeg);
+      if (gs !== 0 && type === 'window' && grille !== 'none') {
+        const extSign = gs;
         const off = extSign * (t / 2 + 0.06);
         if (grille === 'bars' || grille === 'whiteBars') {
           // Rejas: negras en planta baja, blancas en los pisos altos (Street View).
@@ -1051,13 +1079,21 @@ export class SchoolBuilder {
         }
       } else {
         // Hoja con vidrio: tablero abajo (hasta 0,9 m), vidrio arriba en su marco.
-        this.piece(leafMat, q0, q1, 0.045, yb + 0.03, yb + 0.9);
-        this.piece(m.glass, q0, q1, 0.02, yb + 0.9, ht - 0.12);
+        // Con `whiteBars`: zócalo bajo y tres paños altos separados por
+        // travesaños (la puerta doble de PVC del salón, video 2026).
+        const panes = o.grille === 'whiteBars';
+        const kick = panes ? 0.55 : 0.9;
+        this.piece(leafMat, q0, q1, 0.045, yb + 0.03, yb + kick);
+        this.piece(m.glass, q0, q1, 0.02, yb + kick, ht - 0.12);
         this.piece(leafMat, q0, q1, 0.05, ht - 0.12, ht - 0.04);
         const qa: P = [q0[0] + (q1[0] - q0[0]) * 0.06, q0[1] + (q1[1] - q0[1]) * 0.06];
         const qb: P = [q1[0] - (q1[0] - q0[0]) * 0.06, q1[1] - (q1[1] - q0[1]) * 0.06];
-        this.piece(leafMat, q0, qa, 0.05, yb + 0.9, ht - 0.12);
-        this.piece(leafMat, qb, q1, 0.05, yb + 0.9, ht - 0.12);
+        this.piece(leafMat, q0, qa, 0.05, yb + kick, ht - 0.12);
+        this.piece(leafMat, qb, q1, 0.05, yb + kick, ht - 0.12);
+        if (panes) {
+          const pane = (ht - 0.12 - yb - kick) / 3;
+          for (const k of [1, 2]) this.piece(leafMat, q0, q1, 0.05, yb + kick + k * pane - 0.025, yb + kick + k * pane + 0.025);
+        }
       }
       if (type === 'entrance') {
         for (const y of [yb + 0.03, ht - 0.12]) this.piece(m.red, q0, q1, 0.06, y, y + 0.1);
@@ -2920,6 +2956,50 @@ export class SchoolBuilder {
         for (const t of [0.25, 0.75, 1.25]) {
           const p = toWorld(this.f, cu + Math.cos(t) * r * 0.2, cv + Math.sin(t) * r * 0.2);
           this.nature.shrub(p.x, p.z, this.rng.range(0.6, 0.85), FY + 1.1);
+        }
+        break;
+      }
+      case 'roundPlanter': {
+        // Cantero redondo escalonado del rincón NE (video 2026, 1:04–1:06):
+        // tres anillos concéntricos de hormigón pintado de azul marino, el de
+        // arriba lleno de tierra con arbustos y un arbolito. Cada anillo son
+        // gajos rectos de la granja (como las gradas), sin malla propia.
+        const mat = this.mat(it.color, m.navy);
+        const r = Math.min(w, d) / 2;
+        const n = this.detailed ? 16 : 10;
+        const half = Math.PI / n;
+        for (const [a0, a1, h] of [
+          [0.76, 1, 0.4],
+          [0.54, 0.76, 0.8],
+          [0, 0.54, 1.25],
+        ] as const) {
+          const rIn = a0 * r * Math.cos(half);
+          const rOut = a1 * r;
+          for (let k = 0; k < n; k++) {
+            const t = ((k + 0.5) / n) * Math.PI * 2;
+            const mid = (rIn + rOut) / 2;
+            const p = toWorld(this.f, u + Math.cos(t) * mid, v + Math.sin(t) * mid);
+            this.farm.add('box', mat, new Vector3(p.x, FY + h / 2, p.z), new Vector3(rOut - rIn, h, 2 * rOut * Math.sin(half) + 0.03), this.yaw(Math.cos(t), Math.sin(t)));
+          }
+        }
+        this.box(m.soil, u, v, r * 0.95, 0.02, r * 0.95, FY + 1.25);
+        for (let k = 0; k < 5; k++) {
+          const t = (k / 5) * Math.PI * 2 + 0.4;
+          const p = toWorld(this.f, u + Math.cos(t) * r * 0.36, v + Math.sin(t) * r * 0.36);
+          this.nature.shrub(p.x, p.z, this.rng.range(0.4, 0.55), FY + 1.25);
+        }
+        // Arbolito de flores rosadas, casi sin hojas: dos tallos finos y
+        // matas chicas de flor (la pintura rosa, sin material propio).
+        const bark = this.mats.surface(PALETTE.barkLight, 0.95, 0, 'timber');
+        this.cyl(bark, u + 0.03, v, 0.06, 1.5, FY + 1.25);
+        this.cyl(bark, u - 0.04, v + 0.02, 0.05, 1.3, FY + 1.25);
+        const top = toWorld(this.f, u, v);
+        for (const [dx, dy, dz] of [
+          [0.15, 2.55, 0.05],
+          [-0.2, 2.35, -0.1],
+          [0.05, 2.75, -0.15],
+        ] as const) {
+          this.farm.add('blob', m.pinkWall, new Vector3(top.x + dx, FY + dy, top.z + dz), new Vector3(0.45, 0.35, 0.45));
         }
         break;
       }
