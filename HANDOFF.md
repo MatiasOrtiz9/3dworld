@@ -1054,9 +1054,9 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     igual, sin tocar el audio). Salida del gimnasio a Laprida y portón del patio sobre
     Miguel Cané: el modelo sigue el video y el plano de S&O (2,1 m entre la
     esquina y la primera pilastra; el CAD de 3,4 m cortaba la pilastra).
-89. **Patio de juegos (patio este) como en el video de 2026.** El video de
+89. **Patio aire libre (patio este) como en el video de 2026.** El video de
     WhatsApp del 3/10/2026 (después de la pandemia; no se versiona) muestra el
-    PATIO DE JUEGOS (`patioEste`), no el central: el Espacio recreativo
+    PATIO NUEVO (`patioEste`, «Patio aire libre»), no el central: el Espacio recreativo
     (`patioOeste`) queda como estaba antes (cantero azul, ladrillo, árboles
     pelados, palmera con asientos, aro). En el tramo entre el hall, el comedor
     y el salón de los espejos: piso de baldosas claras (se fueron la franja
@@ -1068,9 +1068,16 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     damero y sillas negras (`cafeTable`; con `h`, mesas altas de pie contra el
     ventanal del hall), macetas blancas (`pot`), la palmera en su cazuela,
     banco blanco contra el salón y banderines (`bunting`, decal en
-    `schoolProps`; no pasan bajo el tramo de la pasarela). Los juegos del
-    norte (torre, aviarios, hamacas: anclas de la historia) siguen. Libres: la
-    puerta bajo la escalera blanca, su pie, la de la cantina y la del hall.
+    `schoolProps`; no pasan bajo el tramo de la pasarela). El patio de juegos
+    viejo NO EXISTE más (corrección del usuario: «el patio de juegos se
+    removió»): se sacaron bicicletero, torre de madera con toboganes,
+    aviarios, choza, hamacas, tobogán, domo trepador, arenero y cerco de
+    cañas; al norte de las gradas el piso queda libre (ahí corren los chicos,
+    `PLAY_KIDS`). Las fichas de la historia que apuntaban a la torre y a los
+    aviarios ahora son `gradasPatio` (`amphi`) y `damero` (`cafeTable`,
+    `nth: 5`, primera mesa del segundo par doble). Los tipos de ítem viejos
+    siguen en `SchoolBase`/`SchoolBuilder` sin uso. Libres: la puerta bajo la
+    escalera blanca, su pie, la de la cantina y la del hall.
 
 90. **Escuela a tamaño real (`SC = 78 / 67,4`).** El usuario pidió la escuela
     del tamaño real ("es casi una cuadra entera") para que entre todo lo del
@@ -1143,13 +1150,13 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     - Recorridos guardados (`steps_*.json` del QA): las coordenadas literales
       de `__t.go` van envueltas en `...__fromPlan(u, v)`.
 
-92. **Video de 2026 (hall + patio de juegos, pasillo al jardín y gimnasio).**
+92. **Video de 2026 (hall + patio aire libre, pasillo al jardín y gimnasio).**
     Lo que cambió respecto del de 2020, en los datos del plano:
     - Escaleras: la del hall con paños de chapa perforada clara en marco de
       caño rojo y escalones grises sin nariz amarilla; la blanca del comedor
       con baranda de caño rojo (pasamanos y dos travesaños), sin malla, y
       zancas blancas macizas (`Stair.guard`, manda sobre `meshGuard`).
-    - Patio de juegos (tramo): cantero rojo corrido en L desde el rincón de la
+    - Patio aire libre (tramo): cantero rojo corrido en L desde el rincón de la
       puerta del hall (puerta vidriada simple corrida al este, dos macetas),
       fila de juegos de chapa (mesa + dos bancos); detrás, piso verde con dos
       contenedores y el cajón bajo con baranda de caño y la palmera; contra
@@ -1233,9 +1240,8 @@ juego delante, mandos, colores, salir, sin errores).
 3. **Gente**: hacen fila superpuestos en las escaleras (sin evitación ahí); los
    chicos del patio corren entre puntos al azar; aparecen de golpe a ~12 m
    (VR) en pasos anchos entre ambientes.
-4. **Detalles de la escuela pendientes**: guardas de escaleras, torre de
-   juegos más detallada, matas de pasto en canteros, techos a dos aguas de
-   los aviarios, oficina bajo la escalera de chapa.
+4. **Detalles de la escuela pendientes**: guardas de escaleras, matas de
+   pasto en canteros, oficina bajo la escalera de chapa.
 5. **Limpiar código de la ciudad** que el barrio ya no usa
    (`BuildingBuilder`, canal, energía, parque, tranvías de `Life`).
 6. **Que visor y escritorio armen la misma ciudad** (ítem 42, heredado; la

@@ -160,7 +160,7 @@ const WALLS_PB: Wall[] = [
   // encimaban con las de ese muro.
   seg(rear(U.tecE), rear(NE_E), 'medianera'),
   seg(rear(NE_E), rear(41.5), 'medianera', [], 3.6),
-  // Detrás de las hamacas la medianera está pintada de azul francia, con los
+  // Al fondo del patio la medianera está pintada de azul francia, con los
   // azulejos pintados por los chicos (9:52–9:58).
   { ...seg(rear(41.5), rear(U.gymW), 'medianera', [], 3.6), ext: 'blue' },
   seg(rear(U.gymW), rear(U.teaE), 'ext'),
@@ -1082,8 +1082,6 @@ const ITEMS_PB: Item[] = [
   // que el piso alto): cierran el costado del tramo, que desde el patio se
   // veía colgando con su losa y su baranda por debajo de la pasarela.
   ...[-13.525, -14.925].map((v) => ({ ...item('wallPanel', U.kioskE + 0.75, v, 1.2, 0.15, 's', false), y: 2.13, h: 1.05, color: 'black' })),
-  // Arena bajo los juegos, desde el pie de la escalera exterior.
-  { ...item('floorPatch', 42.45, -28.0, 14.7, 4.8, 's', false), color: 'sand' },
   // Columnas del aula del primer piso sobre el patio (sus esquinas libres y
   // el medio del lado este).
   ...(
@@ -1094,7 +1092,7 @@ const ITEMS_PB: Item[] = [
     ] as const
   ).map(([u, v]) => ({ ...item('wallPanel', u, v, 0.25, 0.25), h: 3.25, color: 'facade' })),
 
-  // Patio este = patio de juegos. El tramo entre el hall, el comedor y el
+  // Patio este = patio aire libre (el patio nuevo). El tramo entre el hall, el comedor y el
   // salón de los espejos sigue el video de 2026 (HANDOFF 89 y 92): un pasillo
   // largo con el medio libre. Al oeste, el cantero rojo corrido desde el
   // rincón de la puerta del hall (en L, con dos macetas blancas) hasta el pie
@@ -1104,10 +1102,8 @@ const ITEMS_PB: Item[] = [
   // el salón, cazuelas de ripio con palmeras y arbolitos y mesitas lisas de
   // pie rojo. Más al norte, frente a Arte, el patio de las gradas: mesas
   // dobles con damero, gradas azules con los tres mástiles, banco blanco de
-  // listones y guirnaldas de papel picado. Al norte siguen los juegos (2020):
-  // bicicletero, torre de juegos de madera con dos toboganes, aviarios y la
-  // choza de paja contra la medianera azul, hamacas, tobogán, domo trepador
-  // y el cerco de cañas. Deja libres la puerta bajo la escalera
+  // listones y guirnaldas de papel picado. El patio de juegos de 2020 ya no
+  // existe: al norte el piso queda libre. Deja libres la puerta bajo la escalera
   // (v −15,25…−16,15) y su paso, el pie de la escalera, la puerta de la
   // cantina y la del hall.
   // Cantero rojo contra la torre y su brazo en L que cierra el rincón.
@@ -1194,20 +1190,10 @@ const ITEMS_PB: Item[] = [
   { ...item('bench', 49.93, -24.0, 0.45, 1.9, 'w'), color: 'frame' },
   { ...item('wallPanel', 50.17, -27.15, 0.1, 0.8, 'w', false), h: 3.25, color: 'frame' },
   ...[-21.6, -22.9, -24.2].map((v) => ({ ...item('bunting', 45.42, v, 9.6, 0.05, 's', false), y: 3.6 })),
-  item('bikeRack', 34.8, -25.0, 1.8, 0.5, 'e'),
-  // Al este del tramo largo de la escalera exterior: el tobogán oeste quedaba encima.
-  item('playTower', 36.6, -28.7, 2.6, 2.2, 's'),
-  { ...item('aviary', 36.1, -32.5, 2.4, 1.2, 's'), color: 'red' },
-  { ...item('aviary', 38.6, -31.8, 1.9, 1.2, 's'), color: 'chairGreen' },
-  item('hut', 41.0, -31.3, 2.4, 1.8, 's'),
-  item('swing', 45.0, -28.6, 2.6, 1.4, 's'),
-  { ...item('slide', 47.4, -30.1, 2.0, 1.2, 's'), color: 'lime' },
-  item('climber', 43.5, -25.4, 1.8, 1.8),
-  // Cerco de cañas delante del muro norte del edificio de bloque.
-  // Macizo, y el follaje del tamaño del ítem (SchoolBuilder): los chicos
-  // caminaban a través del cerco.
-  // El tramo este (frente a Arte) ya no está en 2026: ahí van las mesas.
-  ...[37.9, 39.1, 40.3].map((u) => item('hedge', u, -23.8, 1.2, 0.6, 's')),
+  // El patio de juegos de antes (bicicletero, torre de madera con toboganes,
+  // aviarios, choza, hamacas, tobogán, domo trepador, arenero y cerco de
+  // cañas) se removió: el patio nuevo del video de 2026 termina en las
+  // mesas y las gradas, y al norte queda el piso libre.
 
   // Equipos de aire de la fachada sobre Laprida (0:04, Street View) y del
   // lado del patio oeste (2:02–2:07), sobre el techo del pasillo norte.

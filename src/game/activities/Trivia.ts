@@ -31,7 +31,7 @@ export const TRIVIA: readonly TriviaQuestion[] = [
   },
   {
     q: '¿Dónde está el punto de encuentro del plano de evacuación?',
-    options: ['En el patio de juegos', 'En el Polideportivo', 'En la esquina de Laprida y Miguel Cané'],
+    options: ['En el patio aire libre', 'En el Polideportivo', 'En la esquina de Laprida y Miguel Cané'],
     answer: 2,
     where: 'El plano del hall y el cartel verde de la esquina lo marcan.',
   },

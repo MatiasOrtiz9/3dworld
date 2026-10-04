@@ -2083,7 +2083,7 @@ export class SchoolBuilder {
         const ph = it.h ?? 0.6;
         this.box(this.mat(it.color, m.blue), u, v, w, ph, d, FY);
         this.box(m.soil, u, v, w - 0.12, 0.04, d - 0.12, FY + ph - 0.02);
-        // Los canteros rojos altos del patio de juegos (video 2026) llevan una
+        // Los canteros rojos altos del patio aire libre (video 2026) llevan una
         // hilera pareja de plantitas (cintas, agaves chicos), no matas grandes.
         const small = ph >= 0.95;
         // En el visor, la mitad de plantitas (presupuesto de triángulos).

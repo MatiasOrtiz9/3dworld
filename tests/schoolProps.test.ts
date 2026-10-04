@@ -458,7 +458,7 @@ function allowedPair(a: Item, b: Item): boolean {
   // El telón cuelga al borde del escenario.
   if (has('curtain', 'stage')) return true;
   // Barandas que se encuentran en una esquina (también las de caño hechas
-  // con paneles finos, como la del cajón del patio de juegos).
+  // con paneles finos, como la del cajón del patio aire libre).
   if (a.kind === 'gate' && b.kind === 'gate') return true;
   if (a.kind === 'wallPanel' && b.kind === 'wallPanel' && Math.min(a.w, a.d) <= 0.05 && Math.min(b.w, b.d) <= 0.05) return true;
   return false;

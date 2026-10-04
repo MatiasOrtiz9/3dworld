@@ -36,16 +36,20 @@ describe('teletransporte VR en la escuela', () => {
   });
 
   it('el aula NE del primer piso se puede recorrer a saltos (abajo hay muros)', () => {
+    // Sin los juegos viejos el piso de abajo quedó casi libre: lo que importa
+    // es que donde abajo hay un muro o un mueble, arriba igual se aterriza.
     let now = 0;
-    let before = 0;
+    let overBlocked = 0;
     for (let u = 33; u <= 38; u += 0.5) {
       for (let v = -34.5; v <= -25.5; v += 0.5) {
         const { x, z } = toWorld(f, ...fromPlan(u, v));
-        if (can(x, z, LEVEL_Y[1])) now++;
-        if ([[0, 0], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3]].every(([dx, dz]) => !index.isPedestrianBlocked(x + dx, z + dz))) before++;
+        const up = can(x, z, LEVEL_Y[1]);
+        if (up) now++;
+        const freeBelow = [[0, 0], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3]].every(([dx, dz]) => !index.isPedestrianBlocked(x + dx, z + dz));
+        if (up && !freeBelow) overBlocked++;
       }
     }
-    expect(now).toBeGreaterThan(before);
+    expect(overBlocked).toBeGreaterThan(0);
     expect(now).toBeGreaterThan(80);
   });
 

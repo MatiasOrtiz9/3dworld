@@ -240,7 +240,7 @@ function planRect(u0: number, v0: number, u1: number, v1: number): Rect {
 /** Rincón del patio este, al pie de la escalera exterior, donde charlan los de secundaria. */
 const PATIO_EXT_GROUPS: Rect = planRect(33.5, -26.5, 41.5, -20.5);
 
-/** Zonas de juego (local, planta baja). */
+/** Zonas de juego (local, planta baja). La de los chicos es el piso libre al norte del patio aire libre, donde estaban los juegos que se removieron. */
 const PLAY_KIDS: Rect = planRect(34.2, -31.5, 49.2, -23.9);
 // Dentro del patio central del CAD (u 14,83–27,36, v −8,53 a −20,96): con el
 // rectángulo viejo se jugaba en la punta del comedor y en el pasillo norte.
