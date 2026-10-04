@@ -478,7 +478,9 @@ const WALLS_PB: Wall[] = [
     [50.5, 51.3, 'window', 0.9, 2.1, 'alu', 'none'],
     [51.5, 53.2, 'double', undefined, undefined, 'frame'],
     [54.1, 56.0, 'double', undefined, undefined, 'frame'],
-    [56.25, 57.45, 'window', 0.9, 2.1, 'alu', 'none'],
+    // La ventana de Teatro junto a la puerta negra es oscura, con malla
+    // romboidal (1:21), como las del polideportivo al hall del jardín.
+    [56.25, 57.45, 'window', 0.9, 2.1, 'black', 'mesh'],
   ]),
   // Puertas de hoja roja maciza con marco rojo (video 2026, 1:22–1:28).
   vw(U.vdW, rearV(U.vdW), V.gymTop, 'int', [

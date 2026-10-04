@@ -20,6 +20,7 @@ import {
   drawCorkBoard,
   drawCrestBanner,
   drawKidsMural,
+  drawKidsTree,
   drawEducabot,
   drawMakerWall,
   drawMarble,
@@ -27,6 +28,7 @@ import {
   drawProFood,
   drawSalida,
   drawSanMartin,
+  drawSeaMural,
   emblem,
 } from './SchoolArt';
 
@@ -72,6 +74,14 @@ export const R = {
   // Murales de los chicos del pasillo de Arte y Teatro (video 2026).
   kidsA: [1024, 1540, 1536, 1772],
   kidsB: [1808, 1428, 2048, 1564],
+  // Túnel del pasillo (video 2026, 1:11–1:22): el mural del muro del
+  // polideportivo nace del piso (kidsA + kidsC, 2,05 m de alto); el árbol
+  // entre Arte y Teatro y el mar bajo sus ventanas. Huecos libres del atlas
+  // entre el mural de Tecnología y los carteles, y bajo el escudo.
+  kidsC: [768, 832, 1024, 1028],
+  kidsTree: [0, 868, 92, 1028],
+  sea1: [100, 868, 330, 1028],
+  sea2: [340, 868, 564, 1028],
 } as const;
 
 export type Region = readonly [number, number, number, number];
@@ -143,7 +153,11 @@ export function drawAtlas(ctx: CanvasRenderingContext2D): void {
   drawCorkBoard(ctx, R.cork2, 2);
   drawInicial(ctx, R.inicial);
   drawCimdipBand(ctx, R.cimdip);
-  drawKidsMural(ctx, R.kidsA, 3);
+  drawKidsMural(ctx, R.kidsA, 3, 0.2);
+  drawKidsMural(ctx, R.kidsC, 5, 0.2);
+  drawKidsTree(ctx, R.kidsTree, 4);
+  drawSeaMural(ctx, R.sea1, 6);
+  drawSeaMural(ctx, R.sea2, 9);
   drawKidsMural(ctx, R.kidsB, 8);
 }
 

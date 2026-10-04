@@ -764,9 +764,11 @@ export function drawCorkBoard(ctx: Ctx, r: Region, seed: number): void {
 /**
  * Murales de los chicos del pasillo de Arte y Teatro (video 2026, 1:13–1:22):
  * sobre blanco, nubes celestes, flores, peces, patos, un chancho y un auto,
- * pintados con contorno negro grueso, como témpera de jardín.
+ * pintados con contorno negro grueso, como témpera de jardín. `grass` es la
+ * fracción de alto del pasto: en el túnel del pasillo el mural nace del piso
+ * con una franja verde ondulada de ~40 cm y flores altas (1:11–1:20).
  */
-export function drawKidsMural(ctx: Ctx, r: Region, seed: number): void {
+export function drawKidsMural(ctx: Ctx, r: Region, seed: number, grass = 0.08): void {
   clip(ctx, r);
   const [x0, y0, x1, y1] = r;
   const w = x1 - x0;
@@ -857,8 +859,169 @@ export function drawKidsMural(ctx: Ctx, r: Region, seed: number): void {
       for (const dx of [-0.7, 0.7]) blob(cx + dx * s, cy + s * 0.65, s * 0.3, s * 0.3, '#2b2b2b');
     }
   }
-  // Pasto verde al pie.
-  ctx.fillStyle = '#5cae4f';
-  ctx.fillRect(x0, y1 - h * 0.08, w, h * 0.08);
+  if (grass > 0.1) {
+    // Flores altas que salen del pasto (tulipanes violetas y rojos,
+    // margaritas amarillas, hojas largas) entre las figuras, como en el video.
+    const m = Math.round(w / h / 0.3);
+    for (let i = 0; i < m; i++) {
+      const cx = x0 + (w * (i + 0.25 + rnd() * 0.5)) / m;
+      const top = y0 + h * (0.42 + rnd() * 0.2);
+      const s = h * (0.05 + rnd() * 0.025);
+      ctx.strokeStyle = '#2f7d3c';
+      ctx.lineWidth = Math.max(2, h / 70);
+      ctx.beginPath();
+      ctx.moveTo(cx, y1 - h * grass * 0.6);
+      ctx.quadraticCurveTo(cx + s * 0.6, (top + y1) / 2, cx, top);
+      ctx.stroke();
+      ctx.lineWidth = Math.max(2, h / 90);
+      ctx.strokeStyle = '#1d1d1f';
+      // Hoja larga a un costado del tallo.
+      ctx.beginPath();
+      ctx.ellipse(cx + s * 0.7, top + (y1 - top) * 0.45, s * 0.8, s * 0.25, -0.6, 0, Math.PI * 2);
+      ctx.fillStyle = '#4f9d4a';
+      ctx.fill();
+      ctx.stroke();
+      if (i % 2 === 0) {
+        // Tulipán: copa de tres puntas.
+        ctx.beginPath();
+        ctx.moveTo(cx - s, top - s * 1.3);
+        ctx.lineTo(cx - s * 0.35, top - s * 0.6);
+        ctx.lineTo(cx, top - s * 1.4);
+        ctx.lineTo(cx + s * 0.35, top - s * 0.6);
+        ctx.lineTo(cx + s, top - s * 1.3);
+        ctx.quadraticCurveTo(cx + s, top + s * 0.2, cx, top + s * 0.2);
+        ctx.quadraticCurveTo(cx - s, top + s * 0.2, cx - s, top - s * 1.3);
+        ctx.fillStyle = i % 4 === 0 ? '#6a3fb8' : '#e94b5c';
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        for (let k = 0; k < 6; k++) {
+          const a = (k / 6) * Math.PI * 2;
+          blob(cx + Math.cos(a) * s * 0.7, top - s * 0.4 + Math.sin(a) * s * 0.7, s * 0.42, s * 0.42, '#f6c443');
+        }
+        blob(cx, top - s * 0.4, s * 0.35, s * 0.35, '#ef8f3a');
+      }
+    }
+  }
+  // Pasto verde al pie: franja recta si es baja, ondulada si es la del túnel.
+  ctx.fillStyle = '#4fa64a';
+  if (grass > 0.1) {
+    const gy = y1 - h * grass;
+    ctx.beginPath();
+    ctx.moveTo(x0, y1);
+    ctx.lineTo(x0, gy);
+    const waves = Math.max(3, Math.round(w / (h * 0.35)));
+    for (let i = 0; i < waves; i++) {
+      const xa = x0 + (w * (i + 0.5)) / waves;
+      const xb = x0 + (w * (i + 1)) / waves;
+      ctx.quadraticCurveTo(xa, gy - h * grass * (0.35 + rnd() * 0.4), xb, gy + h * grass * (rnd() - 0.5) * 0.3);
+    }
+    ctx.lineTo(x1, y1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    ctx.fillRect(x0, y1 - h * grass, w, h * grass);
+  }
+  ctx.restore();
+}
+
+/**
+ * Paño pintado entre Arte y Teatro (video 2026, 1:19–1:20): árbol de copa
+ * de hojas verdes con tronco marrón sobre el pasto, y nubes celestes arriba.
+ */
+export function drawKidsTree(ctx: Ctx, r: Region, seed: number): void {
+  clip(ctx, r);
+  const [x0, y0, x1, y1] = r;
+  const w = x1 - x0;
+  const h = y1 - y0;
+  const rnd = seeded(seed);
+  ctx.fillStyle = '#f6f5f0';
+  ctx.fillRect(x0, y0, w, h);
+  ctx.lineWidth = Math.max(2, w / 60);
+  ctx.strokeStyle = '#1d1d1f';
+  const cx = x0 + w / 2;
+  // Nubes recortadas celestes (como las del frente de Arte, 1:15–1:16).
+  ctx.fillStyle = '#a9d3ea';
+  for (const [fx, fy] of [
+    [0.25, 0.07],
+    [0.75, 0.12],
+  ] as const) {
+    for (let k = 0; k < 3; k++) {
+      ctx.beginPath();
+      ctx.ellipse(x0 + w * fx + (k - 1) * w * 0.12, y0 + h * fy - (k === 1 ? h * 0.015 : 0), w * 0.13, h * 0.03, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.fillStyle = '#7a4a26';
+  ctx.beginPath();
+  ctx.moveTo(cx - w * 0.1, y1 - h * 0.12);
+  ctx.lineTo(cx - w * 0.06, y0 + h * 0.5);
+  ctx.lineTo(cx + w * 0.06, y0 + h * 0.5);
+  ctx.lineTo(cx + w * 0.12, y1 - h * 0.12);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // Copa: muchas hojas superpuestas en tres verdes.
+  const greens = ['#2f6b3a', '#3f8f4a', '#256045'];
+  for (let i = 0; i < 70; i++) {
+    const a = rnd() * Math.PI * 2;
+    const d = Math.sqrt(rnd());
+    ctx.beginPath();
+    ctx.ellipse(cx + Math.cos(a) * d * w * 0.42, y0 + h * 0.36 + Math.sin(a) * d * h * 0.17, w * 0.075, w * 0.04, rnd() * Math.PI, 0, Math.PI * 2);
+    ctx.fillStyle = greens[i % 3];
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#4fa64a';
+  ctx.fillRect(x0, y1 - h * 0.12, w, h * 0.12);
+  ctx.restore();
+}
+
+/**
+ * Bajo las ventanas de Arte y Teatro (video 2026, 1:13 y 1:20): estrellas de
+ * mar rosadas y naranjas y delfines azules sobre blanco.
+ */
+export function drawSeaMural(ctx: Ctx, r: Region, seed: number): void {
+  clip(ctx, r);
+  const [x0, y0, x1, y1] = r;
+  const w = x1 - x0;
+  const h = y1 - y0;
+  const rnd = seeded(seed);
+  ctx.fillStyle = '#f6f5f0';
+  ctx.fillRect(x0, y0, w, h);
+  ctx.lineWidth = Math.max(2, h / 70);
+  ctx.strokeStyle = '#1d1d1f';
+  const n = Math.max(3, Math.round(w / (h * 0.45)));
+  for (let i = 0; i < n; i++) {
+    const cx = x0 + (w * (i + 0.5)) / n;
+    const cy = y0 + h * (0.3 + rnd() * 0.45);
+    const s = h * (0.13 + rnd() * 0.05);
+    ctx.beginPath();
+    if (i % 2 === 0) {
+      // Estrella de mar de cinco puntas.
+      for (let k = 0; k < 10; k++) {
+        const a = -Math.PI / 2 + (k * Math.PI) / 5;
+        const rr = k % 2 === 0 ? s : s * 0.45;
+        ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+      }
+      ctx.closePath();
+      ctx.fillStyle = i % 4 === 0 ? '#f2a0bf' : '#ef8f3a';
+    } else {
+      // Delfín: cuerpo curvo, cola.
+      ctx.moveTo(cx - s * 1.4, cy);
+      ctx.quadraticCurveTo(cx - s * 0.2, cy - s * 0.9, cx + s * 1.1, cy - s * 0.1);
+      ctx.lineTo(cx + s * 1.5, cy - s * 0.45);
+      ctx.lineTo(cx + s * 1.4, cy + s * 0.15);
+      ctx.quadraticCurveTo(cx, cy + s * 0.5, cx - s * 1.4, cy);
+      ctx.closePath();
+      ctx.fillStyle = i % 3 === 0 ? '#3c8fd8' : '#2e5fb0';
+    }
+    ctx.fill();
+    ctx.stroke();
+  }
+  // Algas verdes al pie.
+  ctx.fillStyle = '#4fa64a';
+  ctx.fillRect(x0, y1 - h * 0.1, w, h * 0.1);
   ctx.restore();
 }

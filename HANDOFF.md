@@ -1246,6 +1246,26 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
       ventanita de celosía negra del pasillo. Mesas largas y bancos de Arte y
       Teatro: tapa roja sobre patas y largueros de caño azul (`boxBench` con
       `legs`).
+    - Sexta pasada, el "túnel" (lo pidió el usuario: "la parte izquierda, o lo
+      que sería el túnel, no te quedó muy bien"): es el pasillo de Arte y
+      Teatro (`hallJardin`, 2,1 m de ancho y 8,5 m reales) que entra del patio
+      por la puerta blanca a la derecha del banco (video 1:10) y sale por la
+      puerta de chapa negra al hall del jardín (1:22). Entrando, a la derecha
+      el muro del polideportivo está pintado de punta a punta DESDE EL PISO:
+      franja de pasto verde ondulada (~40 cm), tulipanes y margaritas de tallo
+      largo, figuras y nubes, hasta la ventanita de celosía (antes era un
+      cuadro gris de 1,64 m colgado a 0,9 m con pasto recto). A la izquierda
+      (Arte y Teatro): árbol pintado de copa de hojas con nubes en el paño
+      ciego entre las dos puertas, estrellas de mar y delfines bajo las dos
+      ventanas, y la ventana de Teatro junto a la puerta negra pasa a marco
+      negro con malla (1:21). Atlas: `kidsC`, `kidsTree`, `sea1`, `sea2` en
+      huecos libres; `drawKidsMural(…, grass)`, `drawKidsTree`,
+      `drawSeaMural`. Muros, vanos de paso y puertas sin cambios.
+      Sigue distinto en el túnel: las puertas de Arte y Teatro son las del
+      juego (hoja blanca con paño gris), en el video son vidriadas de aluminio
+      blanco; la malla se dibuja como reja de barrotes, no romboidal fina; el
+      mural se ve algo más gris que el muro (material compartido de la
+      cartelería) y sus figuras son más grandes y menos numerosas que en el video.
     - Sigue distinto: en el video el escalón más bajo dobla por el testero
       oeste de la plataforma y los anillos bajos del cantero se funden con las
       gradas en una sola curva (acá se tocan); los reflejos del gimnasio son

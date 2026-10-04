@@ -142,11 +142,20 @@ export class SchoolIdentity {
     q.wall(planU(25.0), V.nBlockN - 0.115, 1.95, 3.7, 1.48, 0, N, R.mural);
     q.wall(planU(14.6), V.nBlockN - 0.115, 1.8, 0.9, 1.46, 0, N, R.maker);
 
-    // Pasillo de Arte y Teatro (video 2026, 1:13–1:22): murales de los chicos
-    // sobre el muro del polideportivo y, en el hall del jardín, sobre el de Teatro.
-    // El segundo termina antes de la ventanita de celosía junto a la puerta negra.
-    q.wall(planU(52.3), V.gymTop - 0.115, FY + 1.75, 3.6, 1.64, 0, N, R.kidsA);
-    q.wall(planU(55.3), V.gymTop - 0.115, FY + 1.75, 2.4, 1.64, 0, N, R.kidsA);
+    // Pasillo de Arte y Teatro, el "túnel" del patio al hall del jardín (video
+    // 2026, 1:11–1:22): el muro del polideportivo (a la derecha entrando) está
+    // pintado de punta a punta desde el piso, con la franja de pasto ondulada
+    // abajo, flores altas y figuras, hasta la ventanita de celosía. Las
+    // proporciones de kidsA y kidsC son las de sus paños (2,05 m de alto).
+    const kidsY = FY + 0.012 + 1.025;
+    const kidsU0 = planU(50.35);
+    q.wall(kidsU0 + 2.262, V.gymTop - 0.115, kidsY, 4.524, 2.05, 0, N, R.kidsA);
+    q.wall(kidsU0 + 4.524 + 1.339, V.gymTop - 0.115, kidsY, 2.678, 2.05, 0, N, R.kidsC);
+    // A la izquierda (Arte y Teatro): árbol en el paño ciego entre las dos
+    // puertas y estrellas de mar y delfines bajo las dos ventanas.
+    q.wall(planU(53.65), V.artB + 0.115, FY + 0.012 + 0.87, 1.0, 1.74, 0, S, R.kidsTree);
+    q.wall(planU(50.9), V.artB + 0.115, FY + 0.012 + 0.31, 0.86, 0.62, 0, S, R.sea1);
+    q.wall(planU(56.85), V.artB + 0.115, FY + 0.012 + 0.42, 1.24, 0.84, 0, S, R.sea2);
     q.wall(U.teaE + 0.115, planV(-25.8), FY + 1.7, 2.6, 1.48, 1, 0, R.kidsB);
 
     // Aula de danzas: afiches de las muestras en el testero norte.
