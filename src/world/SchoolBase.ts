@@ -597,6 +597,8 @@ export interface Item {
   chess?: boolean;
   /** Mesa de patio (`cafeTable`) baja: cuántas sillas la rodean (4 si no se indica). */
   chairs?: number;
+  /** Mesa o banco de chapa (`boxBench`): tapa sobre patas de caño de este color, en vez de laterales macizos. */
+  legs?: string;
 }
 
 /**
@@ -733,23 +735,41 @@ export const item = (kind: ItemKind, u: number, v: number, w: number, d: number,
 
 /** Radio interior de las gradas `amphi`, en fracción del exterior (el piso del medio queda libre). */
 export const AMPHI_INNER = 0.5;
+/** Tramo recto de las gradas `amphi` al oeste del vértice del arco, plataforma alta incluida (m reales). */
+export const AMPHI_WEST = 6.6;
+/** Largo de la plataforma alta del extremo oeste de las gradas (m reales). */
+export const AMPHI_PLATFORM = 1.7;
+/** Separación entre la plataforma y el eje de la medianera del fondo (media pared y aire). */
+const AMPHI_REAR_GAP = 0.2;
+
+/** Cara norte de la plataforma de las gradas en u (real): sigue la medianera, que corre en diagonal. */
+export function amphiRear(u: number): number {
+  return SC * rearV(u / SC) + AMPHI_REAR_GAP;
+}
 
 /**
- * Franjas que cubren el medio anillo de las gradas `amphi` (centro u, v;
- * radio exterior w/2; del lado norte), sin el hueco del medio: colisión y QA.
+ * Franjas que cubren las gradas `amphi` (centro u, v; radio exterior w/2; del
+ * lado norte): el cuarto de anillo del este (del vértice al cantero), el tramo
+ * recto que sigue al oeste y, en su extremo, la plataforma alta que llega a la
+ * medianera, sin el piso del medio. Colisión, QA y el dibujo de la plataforma.
  */
-export function amphiStrips(it: { u: number; v: number; w: number }, n = 12): Rect[] {
+export function amphiStrips(it: { u: number; v: number; w: number }, n = 6): Rect[] {
   const r = it.w / 2;
   const rIn = r * AMPHI_INNER;
   const out: Rect[] = [];
   for (let k = 0; k < n; k++) {
-    const a = -r + (k * 2 * r) / n;
-    const b = a + (2 * r) / n;
-    const dMin = a < 0 && b > 0 ? 0 : Math.min(Math.abs(a), Math.abs(b));
-    const dMax = Math.max(Math.abs(a), Math.abs(b));
-    const v0 = it.v - Math.sqrt(Math.max(0, r * r - dMin * dMin));
-    const v1 = dMax < rIn ? it.v - Math.sqrt(rIn * rIn - dMax * dMax) : it.v;
+    const a = (k * r) / n;
+    const b = a + r / n;
+    const v0 = it.v - Math.sqrt(Math.max(0, r * r - a * a));
+    const v1 = b < rIn ? it.v - Math.sqrt(rIn * rIn - b * b) : it.v;
     out.push({ u0: it.u + a, v0, u1: it.u + b, v1 });
+  }
+  const uW = it.u - AMPHI_WEST;
+  out.push({ u0: uW + AMPHI_PLATFORM, v0: it.v - r, u1: it.u, v1: it.v - rIn });
+  for (let k = 0; k < 3; k++) {
+    const a = uW + (AMPHI_PLATFORM * k) / 3;
+    const b = a + AMPHI_PLATFORM / 3;
+    out.push({ u0: a, v0: amphiRear(b), u1: b, v1: it.v - rIn });
   }
   return out;
 }

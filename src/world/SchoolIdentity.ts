@@ -24,6 +24,7 @@ import {
   planV,
   type SchoolFrame,
 } from './SchoolLayout';
+import { createGymGlints } from './GymGlints';
 import { AH, AW, R, drawAtlas, plateRegion, type PlateName, type Region } from './SchoolAtlas';
 
 const FY = SCHOOL.floorY;
@@ -41,6 +42,7 @@ const FY = SCHOOL.floorY;
 export class SchoolIdentity {
   private readonly mesh: Mesh;
   private readonly floorMesh: Mesh;
+  private readonly glints: ReturnType<typeof createGymGlints>;
   private readonly material: StandardMaterial;
   private readonly floorMaterial: StandardMaterial;
   private readonly texture: DynamicTexture;
@@ -164,6 +166,8 @@ export class SchoolIdentity {
       if (this.floorMaterial.reflectionTexture !== env) this.floorMaterial.reflectionTexture = env;
     });
     this.floorMesh.isPickable = false;
+    // Reflejos de las luminarias en el piso pulido (ver GymGlints).
+    this.glints = createGymGlints(scene, frame);
     q.wall(U.e - 0.18, GYM_MID, 5.1, 2.2, 2.75, -1, 0, R.crestBanner);
 
     // Carteles de los ambientes sobre sus puertas.
@@ -228,6 +232,7 @@ export class SchoolIdentity {
   dispose(): void {
     this.mesh.dispose();
     this.floorMesh.dispose();
+    this.glints.dispose();
     this.material.dispose();
     this.floorMaterial.dispose();
     this.texture.dispose();

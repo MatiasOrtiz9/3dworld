@@ -1340,19 +1340,20 @@ const ITEMS_PB: Item[] = [
   ...[66.27, 66.67].map((u) => ({ ...item('wallPanel', u, -15.5, 0.02, 0.44, 'w', false), y: 3.03, h: 0.02, color: 'orange' })),
 
   // Arte y Teatro. Video 2026 (1:13–1:18): Arte tiene filas de mesas largas
-  // de tapa roja con un banco a cada lado, de oeste a este (como el comedor).
+  // de tapa roja con un banco a cada lado, de oeste a este (como el comedor),
+  // sobre patas de caño azul (también en Teatro).
   ...[-24.45, -27.3, -28.95].flatMap((v) => [
-    { ...item('boxBench', 52.1, v + 0.6, 2.2, 0.35, 'n'), color: 'red', h: 0.42 },
-    { ...item('boxBench', 52.1, v, 2.2, 0.7, 'e'), color: 'red', h: 0.72 },
-    { ...item('boxBench', 52.1, v - 0.6, 2.2, 0.35, 's'), color: 'red', h: 0.42 },
+    { ...item('boxBench', 52.1, v + 0.6, 2.2, 0.35, 'n'), color: 'red', legs: 'blue', h: 0.42 },
+    { ...item('boxBench', 52.1, v, 2.2, 0.7, 'e'), color: 'red', legs: 'blue', h: 0.72 },
+    { ...item('boxBench', 52.1, v - 0.6, 2.2, 0.35, 's'), color: 'red', legs: 'blue', h: 0.42 },
   ]),
   // Teatro es un aula más en 2026 (1:16–1:19): dos filas de mesas largas
   // rojas con sus bancos, el mueble de cubos de madera contra el muro oeste,
   // la pizarra blanca en el este y el escritorio blanco con la computadora.
   ...[-25.3, -27.3].flatMap((v) => [
-    { ...item('boxBench', 55.85, v + 0.6, 2.0, 0.35, 'n'), color: 'red', h: 0.42 },
-    { ...item('boxBench', 55.85, v, 2.0, 0.7, 'e'), color: 'red', h: 0.72 },
-    { ...item('boxBench', 55.85, v - 0.6, 2.0, 0.35, 's'), color: 'red', h: 0.42 },
+    { ...item('boxBench', 55.85, v + 0.6, 2.0, 0.35, 'n'), color: 'red', legs: 'blue', h: 0.42 },
+    { ...item('boxBench', 55.85, v, 2.0, 0.7, 'e'), color: 'red', legs: 'blue', h: 0.72 },
+    { ...item('boxBench', 55.85, v - 0.6, 2.0, 0.35, 's'), color: 'red', legs: 'blue', h: 0.42 },
   ]),
   { ...item('shelf', U.artE + 0.34, -26.6, 0.45, 1.8, 'e'), color: 'timber' },
   item('board', U.teaE - 0.135, -26.3, 0.04, 2.4, 'w', false),

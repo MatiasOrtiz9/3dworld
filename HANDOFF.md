@@ -1227,14 +1227,30 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
       (dos filas de mesas largas rojas con bancos, mueble de cubos de madera,
       pizarra blanca, escritorio blanco con computadora y silla); el punto de
       la historia `teatro` mira el mueble.
-    - Sigue distinto: las gradas del video son más largas hacia el oeste y
-      terminan en una plataforma alta con escalera y baranda roja contra el
-      comedor (acá la baranda baja por el extremo del medio anillo); el
-      cantero del video asoma por encima de las gradas. El piso del gimnasio
-      no refleja las luminarias (no hay reflejos en tiempo real, sólo el
-      brillo y el cielo). Las mesas largas de Arte y Teatro son cajas rojas
-      macizas (en el video tienen patas de caño azul). El piso del hall del
-      jardín se dejó cerámico claro.
+    - Quinta pasada: gradas `amphi` como en el video: cuarto de anillo al
+      este (del vértice al cantero, la S), tramo recto de 6,6 m reales al
+      oeste (`AMPHI_WEST`) y, en su extremo, la plataforma alta (1,68 m, 1,7 m
+      de largo, `AMPHI_PLATFORM`) que llega a la medianera en diagonal en tres
+      tajadas (`amphiRear`); baranda de caño rojo (pasamanos y dos travesaños)
+      que baja por el borde oeste de los escalones y sigue sobre la plataforma
+      hasta el muro. `amphiStrips` cubre las tres partes (colisión, QA y el
+      dibujo de la plataforma); el piso del medio, los mástiles, la columna
+      de la galería y los pasos al comedor quedan libres. Cantero redondo más
+      alto que las gradas (anillos de 0,62 / 1,24 / 2,08 m, el de arriba de
+      0,72 del diámetro). Reflejos de las luminarias en el piso del
+      polideportivo (`GymGlints`): un cuadradito aditivo por luminaria que el
+      shader (plugin del StandardMaterial, sirve en VR) lleva al punto donde
+      el piso espejaría esa luminaria vista desde el ojo, estirado hacia quien
+      mira y recortado a la cancha; un draw call, sin trabajo de CPU por
+      cuadro salvo el uniforme del ojo. Vidrio oscuro (`glassDark`) en la
+      ventanita de celosía negra del pasillo. Mesas largas y bancos de Arte y
+      Teatro: tapa roja sobre patas y largueros de caño azul (`boxBench` con
+      `legs`).
+    - Sigue distinto: en el video el escalón más bajo dobla por el testero
+      oeste de la plataforma y los anillos bajos del cantero se funden con las
+      gradas en una sola curva (acá se tocan); los reflejos del gimnasio son
+      manchas fijas por luminaria (no reflejan personas ni el resto de la
+      bóveda). El piso del hall del jardín se dejó cerámico claro.
 
 93. **No hay voces en el sonido** (lo pidió el usuario: "eliminá las voces o
     susurros"). `AMBIENT_VOICES = false` en `Soundscape`: no se generan las

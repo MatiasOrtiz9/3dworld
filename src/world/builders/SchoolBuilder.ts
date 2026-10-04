@@ -38,6 +38,10 @@ import {
   STAIRS,
   SALON_COLUMNS,
   AMPHI_INNER,
+  AMPHI_PLATFORM,
+  AMPHI_WEST,
+  amphiRear,
+  amphiStrips,
   makerWallAt,
   riserCount,
   roundChairAngles,
@@ -942,7 +946,9 @@ export class SchoolBuilder {
 
     if (type === 'window' || type === 'high' || type === 'band') {
       const fm = (o.color && m[o.color]) || m.frame;
-      this.piece(m.glass, along(0.03), along(len - 0.03), 0.02, hb + 0.03, ht - 0.03);
+      // La ventanita de celosía del pasillo del jardín (video 2026, 1:20) tiene vidrio oscuro.
+      const gm = o.color === 'black' && o.grille === 'louvre' ? m.glassDark : m.glass;
+      this.piece(gm, along(0.03), along(len - 0.03), 0.02, hb + 0.03, ht - 0.03);
       this.piece(fm, a, b, 0.1, hb, hb + 0.06);
       this.piece(fm, a, b, 0.1, ht - 0.06, ht);
       this.piece(fm, a, along(0.06), 0.1, hb, ht);
@@ -2942,51 +2948,64 @@ export class SchoolBuilder {
         break;
       case 'amphi': {
         // Gradas del patio nuevo (video 2026, 0:58–1:03): cuatro escalones de
-        // hormigón pintado de azul en medio anillo contra el muro del norte,
-        // cóncavo hacia el patio; al este se une al cantero redondo (la curva
-        // en S) y al oeste baja la baranda de caño rojo. Cada escalón son
-        // gajos rectos (cajas de la granja, sin malla propia).
+        // hormigón pintado de azul contra el muro del norte. Al este, un
+        // cuarto de anillo cóncavo hacia el patio que se une al cantero
+        // redondo (la curva en S); al oeste, un tramo recto que termina en la
+        // plataforma alta del lado del comedor, con la baranda de caño rojo
+        // que baja por los escalones y la de la plataforma. Todo cajas de la
+        // granja, sin malla propia.
         const mat = this.mat(it.color, m.navy);
         const r = w / 2;
-        const n = this.detailed ? 14 : 9;
-        const half = Math.PI / 2 / n;
+        const n = this.detailed ? 7 : 5;
+        const half = Math.PI / 4 / n;
         const tiers = 4;
+        const rise = 0.42;
+        const uW = u - AMPHI_WEST;
+        const uP = uW + AMPHI_PLATFORM;
+        const fr = (s: number) => AMPHI_INNER + ((1 - AMPHI_INNER) * s) / tiers;
         for (let s = 0; s < tiers; s++) {
-          const f0 = AMPHI_INNER + ((1 - AMPHI_INNER) * s) / tiers;
-          const f1 = AMPHI_INNER + ((1 - AMPHI_INNER) * (s + 1)) / tiers;
-          const h = 0.42 * (s + 1);
+          const f0 = fr(s);
+          const f1 = fr(s + 1);
+          const h = rise * (s + 1);
           const rIn = f0 * r * Math.cos(half);
           const rOut = f1 * r;
           for (let k = 0; k < n; k++) {
-            const t = Math.PI + ((k + 0.5) / n) * Math.PI;
+            const t = 1.5 * Math.PI + ((k + 0.5) / n) * (Math.PI / 2);
             const mid = (rIn + rOut) / 2;
             const p = toWorld(this.f, u + Math.cos(t) * mid, v + Math.sin(t) * mid);
             this.farm.add('box', mat, new Vector3(p.x, FY + h / 2, p.z), new Vector3(rOut - rIn, h, 2 * rOut * Math.sin(half) + 0.03), this.yaw(Math.cos(t), Math.sin(t)));
           }
+          // Tramo recto (el escalón de arriba lo reemplaza la plataforma en el extremo).
+          const a = s === tiers - 1 ? uP : uW;
+          this.box(mat, (a + u + 0.02) / 2, v - ((f0 + f1) / 2) * r, u + 0.02 - a, h, (f1 - f0) * r, FY);
         }
-        // Baranda roja del extremo oeste: pasamanos inclinado a 0,9 m de los
-        // escalones y tres parantes.
-        const lo = u - r * AMPHI_INNER - 0.05;
-        const hi = u - r + 0.08;
-        const yLo = FY + 0.42 + 0.9;
-        const yHi = FY + 0.42 * tiers + 0.9;
-        const pa = toWorld(this.f, lo, v - 0.05);
-        const pb = toWorld(this.f, hi, v - 0.05);
-        const run = Math.hypot(pb.x - pa.x, pb.z - pa.z);
-        this.farm.add(
-          'box',
-          m.red,
-          new Vector3((pa.x + pb.x) / 2, (yLo + yHi) / 2, (pa.z + pb.z) / 2),
-          new Vector3(Math.hypot(run, yHi - yLo), 0.045, 0.045),
-          this.yaw(hi - lo, 0),
-          0,
-          Math.atan2(yHi - yLo, run),
-        );
-        for (const f of [0, 0.5, 1]) {
-          const pu = lo + (hi - lo) * f;
-          const step = Math.min(tiers, 1 + Math.floor((f * (r - r * AMPHI_INNER)) / ((r * (1 - AMPHI_INNER)) / tiers)));
-          const y0 = FY + 0.42 * step;
-          this.box(m.red, pu, v - 0.05, 0.045, yLo + (yHi - yLo) * f - y0, 0.045, y0);
+        // Plataforma alta: del frente del último escalón a la medianera, en
+        // tres tajadas que siguen el muro en diagonal (las franjas de colisión).
+        const top = FY + rise * tiers;
+        const front = v - fr(tiers - 1) * r;
+        for (const st of amphiStrips(it).slice(-3)) this.box(mat, (st.u0 + st.u1) / 2, (st.v0 + front) / 2, st.u1 - st.u0, top - FY, front - st.v0, FY);
+        // Barandas de caño rojo: pasamanos y dos travesaños que bajan por el
+        // borde oeste de los escalones, y la baranda de la plataforma hasta el muro.
+        const rail = (ua: number, va: number, ya: number, ub: number, vb: number, yb: number) => {
+          const pa = toWorld(this.f, ua, va);
+          const pb = toWorld(this.f, ub, vb);
+          const run = Math.hypot(pb.x - pa.x, pb.z - pa.z);
+          this.farm.add('box', m.red, new Vector3((pa.x + pb.x) / 2, (ya + yb) / 2, (pa.z + pb.z) / 2), new Vector3(Math.hypot(run, yb - ya), 0.045, 0.045), this.yaw(ub - ua, vb - va), 0, Math.atan2(yb - ya, run));
+        };
+        const ur = uW + 0.05;
+        const vLo = v - r * AMPHI_INNER + 0.25;
+        const back = amphiRear(uW) + 0.1;
+        for (const dy of [0.95, 0.62, 0.3]) rail(ur, vLo, FY + dy, ur, front, top + dy);
+        for (const dy of [1.0, 0.67, 0.34]) rail(ur, front, top + dy, ur, back, top + dy);
+        for (const [pv, y0] of [
+          [vLo, FY],
+          [v - fr(2) * r + 0.2, FY + rise * 2],
+          [front, top],
+          [(front + back) / 2, top],
+          [back, top],
+        ] as const) {
+          const yTop = pv === vLo ? FY + 0.95 : pv <= front ? top + 1.0 : FY + 0.95 + ((top - FY) * (vLo - pv)) / (vLo - front);
+          this.box(m.red, ur, pv, 0.045, yTop - y0, 0.045, y0);
         }
         break;
       }
@@ -2994,15 +3013,17 @@ export class SchoolBuilder {
         // Cantero redondo escalonado del rincón NE (video 2026, 1:04–1:06):
         // tres anillos concéntricos de hormigón pintado de azul marino, el de
         // arriba lleno de tierra con arbustos y un arbolito. Cada anillo son
-        // gajos rectos de la granja (como las gradas), sin malla propia.
+        // gajos rectos de la granja (como las gradas), sin malla propia. El de
+        // arriba asoma por encima de las gradas (1,68 m), como en el video.
+        const PLANTER_TOP = 2.08;
         const mat = this.mat(it.color, m.navy);
         const r = Math.min(w, d) / 2;
         const n = this.detailed ? 16 : 10;
         const half = Math.PI / n;
         for (const [a0, a1, h] of [
-          [0.76, 1, 0.4],
-          [0.54, 0.76, 0.8],
-          [0, 0.54, 1.25],
+          [0.86, 1, 0.62],
+          [0.72, 0.86, 1.24],
+          [0, 0.72, 2.08],
         ] as const) {
           const rIn = a0 * r * Math.cos(half);
           const rOut = a1 * r;
@@ -3013,22 +3034,22 @@ export class SchoolBuilder {
             this.farm.add('box', mat, new Vector3(p.x, FY + h / 2, p.z), new Vector3(rOut - rIn, h, 2 * rOut * Math.sin(half) + 0.03), this.yaw(Math.cos(t), Math.sin(t)));
           }
         }
-        this.box(m.soil, u, v, r * 0.95, 0.02, r * 0.95, FY + 1.25);
+        this.box(m.soil, u, v, r * 0.95, 0.02, r * 0.95, FY + PLANTER_TOP);
         for (let k = 0; k < 5; k++) {
           const t = (k / 5) * Math.PI * 2 + 0.4;
-          const p = toWorld(this.f, u + Math.cos(t) * r * 0.36, v + Math.sin(t) * r * 0.36);
-          this.nature.shrub(p.x, p.z, this.rng.range(0.4, 0.55), FY + 1.25);
+          const p = toWorld(this.f, u + Math.cos(t) * r * 0.45, v + Math.sin(t) * r * 0.45);
+          this.nature.shrub(p.x, p.z, this.rng.range(0.4, 0.55), FY + PLANTER_TOP);
         }
         // Arbolito de flores rosadas, casi sin hojas: dos tallos finos y
         // matas chicas de flor (la pintura rosa, sin material propio).
         const bark = this.mats.surface(PALETTE.barkLight, 0.95, 0, 'timber');
-        this.cyl(bark, u + 0.03, v, 0.06, 1.5, FY + 1.25);
-        this.cyl(bark, u - 0.04, v + 0.02, 0.05, 1.3, FY + 1.25);
+        this.cyl(bark, u + 0.03, v, 0.06, 1.5, FY + PLANTER_TOP);
+        this.cyl(bark, u - 0.04, v + 0.02, 0.05, 1.3, FY + PLANTER_TOP);
         const top = toWorld(this.f, u, v);
         for (const [dx, dy, dz] of [
-          [0.15, 2.55, 0.05],
-          [-0.2, 2.35, -0.1],
-          [0.05, 2.75, -0.15],
+          [0.15, 3.38, 0.05],
+          [-0.2, 3.18, -0.1],
+          [0.05, 3.58, -0.15],
         ] as const) {
           this.farm.add('blob', m.pinkWall, new Vector3(top.x + dx, FY + dy, top.z + dz), new Vector3(0.45, 0.35, 0.45));
         }
@@ -3067,6 +3088,26 @@ export class SchoolBuilder {
         // Chapa plegada en U, pintada (rojo o azul): tapa y dos laterales.
         const mat = this.mat(it.color, m.red);
         const h = it.h ?? 0.46;
+        if (it.legs) {
+          // Arte y Teatro (video 2026, 1:13–1:19): tapa roja sobre patas y
+          // largueros de caño azul (cajas finas de la granja).
+          const lm = this.mat(it.legs, m.blue);
+          const long = w >= d;
+          const L = long ? w : d;
+          const S = long ? d : w;
+          this.box(mat, u, v, w, 0.035, d, FY + h - 0.035);
+          for (const a of [-1, 1]) {
+            for (const b of [-1, 1]) {
+              const da = a * (L / 2 - 0.1);
+              const db = b * (S / 2 - 0.05);
+              this.box(lm, u + (long ? da : db), v + (long ? db : da), 0.03, h - 0.035, 0.03, FY);
+            }
+            // Larguero bajo la tapa en cada lado largo.
+            const db = a * (S / 2 - 0.05);
+            this.box(lm, u + (long ? 0 : db), v + (long ? db : 0), long ? L - 0.2 : 0.03, 0.03, long ? 0.03 : L - 0.2, FY + h - 0.07);
+          }
+          break;
+        }
         this.box(mat, u, v, w, 0.04, d, FY + h - 0.04);
         for (const s of [-1, 1]) {
           if (w >= d) this.box(mat, u + s * (w / 2 - 0.02), v, 0.04, h - 0.04, d, FY);

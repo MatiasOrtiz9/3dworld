@@ -49,7 +49,7 @@ import {
   PLAN_WALLS,
   planMakerWallAt,
 } from './SchoolGround';
-export { AMPHI_INNER, amphiStrips } from './SchoolBase';
+export { AMPHI_INNER, AMPHI_PLATFORM, AMPHI_WEST, amphiRear, amphiStrips } from './SchoolBase';
 import { S, scaleItems, scaleLanding, scaleLines, scalePoly, scaleRect, scaleStair, scaleVolume, scaleWall } from './SchoolScale';
 import { CREST as PLAN_CREST, PORTAL_WINDOWS as PLAN_PORTAL_WINDOWS, U1 as PLAN_U1, V1 as PLAN_V1 } from './SchoolUpper';
 

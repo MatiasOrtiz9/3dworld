@@ -290,7 +290,7 @@ function boxes(it: Item): Box[] {
       return amphiStrips(it).map((r) => box((r.u0 + r.u1) / 2, (r.v0 + r.v1) / 2, r.u1 - r.u0, r.v1 - r.v0, 0, 1.68));
     case 'roundPlanter':
       // Redondo: dos rectángulos en cruz lo cubren sin las esquinas del cuadrado.
-      return [box(u, v, w, w * 0.72, 0, 1.25), box(u, v, w * 0.72, w, 0, 1.25), box(u, v, 0.5, 0.5, 1.25, 2.9, 'tree')];
+      return [box(u, v, w, w * 0.72, 0, 2.08), box(u, v, w * 0.72, w, 0, 2.08), box(u, v, 0.5, 0.5, 2.08, 3.75, 'tree')];
     case 'bike':
       return [all(0, 1.0)];
     case 'cafeTable':
