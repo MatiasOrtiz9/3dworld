@@ -9,6 +9,11 @@ import type { Block } from './CityLayout';
  *
  * Coordenadas LOCALES en metros: u → este (a lo largo de Laprida), v → sur.
  * Laprida queda en v = 0. Ver `SchoolLayout` para el detalle.
+ *
+ * `U`/`V`, `APEX`, `miguelCaneU`, `rearV`, `SCHOOL.width/depth/front` y todo
+ * literal de los módulos de datos están en METROS DEL PLANO CAD. Los
+ * consumidores usan `SchoolLayout`, que entrega lo mismo en metros reales
+ * (ver `SC`): fuera de los módulos de datos nadie importa coordenadas de acá.
  */
 
 export type P = readonly [number, number];
@@ -56,6 +61,34 @@ export const SCHOOL = {
   wallT: 0.2,
   extT: 0.3,
 } as const;
+
+/**
+ * Escala del plano CAD a metros reales. El frente real sobre Laprida mide
+ * ~78 m (OpenStreetMap), pero el plano de evacuación se había registrado con
+ * 67,4: todo quedaba un 15,7 % achicado y no entraban las cosas del plano.
+ * Los módulos de datos (`SchoolGround`, `SchoolUpper`, `SchoolJardin`) siguen
+ * escritos en METROS DEL PLANO; `SchoolLayout` los pasa a reales con esta
+ * escala (en planta; las alturas ya eran reales). Con `SC = 1` la pasada es
+ * la identidad: sirve para aislar fallas.
+ */
+export const SC: number = 78 / 67.4;
+
+/** Frente y franja del plano, antes de escalar (las fórmulas de abajo los necesitan fijos). */
+const PLAN_E = 67.4;
+const PLAN_FRONT = 2;
+
+/**
+ * u leída en el plano → u real. Al este del muro del gimnasio (vereda, Gral.
+ * Acha) se conserva la distancia real al muro: la vereda no se agranda.
+ */
+export const planU = (u: number): number => (u <= PLAN_E ? u * SC : PLAN_E * SC + (u - PLAN_E));
+/**
+ * v leída en el plano → v real. Más allá de la línea municipal (vereda y
+ * calzada de Laprida) se conserva la distancia: la calle no se ensancha.
+ */
+export const planV = (v: number): number => (v <= PLAN_FRONT ? v * SC : PLAN_FRONT * SC + (v - PLAN_FRONT));
+/** Punto leído en el plano → punto real. */
+export const fromPlan = (u: number, v: number): P => [planU(u), planV(v)];
 
 /** Niveles del edificio: planta baja, primer piso y segundo piso. */
 export type Level = 0 | 1 | 2;

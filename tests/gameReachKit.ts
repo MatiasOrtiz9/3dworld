@@ -1,6 +1,8 @@
 import {
   LEVEL_Y,
   levelOf,
+  planU,
+  planV,
   schoolFloorLocal,
   schoolSolidLocal,
   type Level,
@@ -14,10 +16,11 @@ import {
  */
 
 export const CELL = 0.1;
-const U0 = -12;
-const V0 = -44;
-const U1 = 72;
-const V1 = 8;
+// Marco leído en el plano y pasado a metros reales (la escuela es más grande).
+const U0 = planU(-12);
+const V0 = planV(-44);
+const U1 = planU(72);
+const V1 = planV(8);
 export const GW = Math.ceil((U1 - U0) / CELL);
 export const GH = Math.ceil((V1 - V0) / CELL);
 

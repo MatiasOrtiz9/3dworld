@@ -235,7 +235,11 @@ const GRID = 5;
 
 export function generateCityPlan(seed: number, options: LayoutOptions = {}): CityPlan {
   const rng = new Rng(seed);
-  const blockSize = options.blockSize ?? 42;
+  // 49 y no 42: la escuela a tamaño real (78 m de frente y 47,6 de fondo con
+  // su franja, ver `SC` en `SchoolBase`) no entra en la manzana de 42. Todo el
+  // barrio (calles, veredas, tránsito, gente) sale de este paso uniforme, así
+  // que se agranda la grilla entera y no sólo la fila de Lafinur.
+  const blockSize = options.blockSize ?? 49;
   const streetWidth = options.streetWidth ?? 15;
   const pitch = blockSize + streetWidth;
   const half = (GRID - 1) / 2;
@@ -339,7 +343,7 @@ export function generateCityPlan(seed: number, options: LayoutOptions = {}): Cit
     // Azar propio también: los bancos no mueven nada de lo que ya se sorteaba.
     benches: generateBenches(new Rng((seed ^ 0x0be4c5) >>> 0), blocks, props, blockSize, streetWidth),
     cafeTables: [],
-    periphery: generatePeriphery(new Rng((seed ^ 0x0b7a5e11) >>> 0), xs, zs, streetWidth),
+    periphery: generatePeriphery(new Rng((seed ^ 0x0b7a5e11) >>> 0), xs, zs, streetWidth, pitch / 57),
   };
 }
 
@@ -347,21 +351,24 @@ export function generateCityPlan(seed: number, options: LayoutOptions = {}): Cit
  * El cerco va 1 m afuera de la vereda exterior de las calles perimetrales (la
  * calle y su vereda siguen enteras). Azar propio: no corre nada del barrio.
  */
-function generatePeriphery(rng: Rng, xs: [number, number], zs: [number, number], streetWidth: number): Periphery {
+function generatePeriphery(rng: Rng, xs: [number, number], zs: [number, number], streetWidth: number, k: number): Periphery {
+  // Los rangos de portones y obras se eligieron con la grilla de paso 57: se
+  // escalan con el paso (`k`) y se sacan los MISMOS números del azar, así la
+  // obra queda en el mismo lugar relativo del borde.
   const m = streetWidth / 2 + 1;
   const x0 = xs[0] - m;
   const x1 = xs[1] + m;
   const z0 = zs[0] - m;
   const z1 = zs[1] + m;
   const gates: Periphery['gates'] = [
-    { side: 'zn', at: rng.range(-60, -20) },
-    { side: 'zp', at: rng.range(-110, -80) },
-    { side: 'xn', at: rng.range(-30, 30) },
-    { side: 'xp', at: rng.range(-30, 30) },
+    { side: 'zn', at: rng.range(-60 * k, -20 * k) },
+    { side: 'zp', at: rng.range(-110 * k, -80 * k) },
+    { side: 'xn', at: rng.range(-30 * k, 30 * k) },
+    { side: 'xp', at: rng.range(-30 * k, 30 * k) },
   ];
   const sites: Periphery['sites'] = [
-    { x: rng.range(-50, -30), z: z0 - 16, w: 26, d: 14, floors: rng.int(4, 6) },
-    { x: rng.range(-110, -90), z: z1 + 17, w: 22, d: 16, floors: rng.int(3, 5) },
+    { x: rng.range(-50 * k, -30 * k), z: z0 - 16, w: 26, d: 14, floors: rng.int(4, 6) },
+    { x: rng.range(-110 * k, -90 * k), z: z1 + 17, w: 22, d: 16, floors: rng.int(3, 5) },
   ];
   return {
     x0,

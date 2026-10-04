@@ -118,12 +118,17 @@ export class BuildingBuilder {
       this.nature.lawn(cx, cz, courtW * 0.94, courtD * 0.94, SIDEWALK_H + 0.06);
       const trees = this.rng.int(2, 5);
       for (let i = 0; i < trees; i++) {
-        this.nature.broadleaf(
-          cx + this.rng.range(-courtW / 2 + 2, courtW / 2 - 2),
-          cz + this.rng.range(-courtD / 2 + 2, courtD / 2 - 2),
-          this.rng.range(0.8, 1.15),
-          SIDEWALK_H,
-        );
+        const x = cx + this.rng.range(-courtW / 2 + 2, courtW / 2 - 2);
+        const z = cz + this.rng.range(-courtD / 2 + 2, courtD / 2 - 2);
+        const scale = this.rng.range(0.8, 1.15);
+        // En el visor no se plantan: el patio queda encerrado por las cuatro
+        // barras y desde la calle o la escuela no se ve, pero las instancias
+        // de la granja no se recortan por oclusión ni por distancia y, con la
+        // manzana de 49 m (escuela a tamaño real), esas copas sumaban ~20 mil
+        // triángulos a cada vista de la escuela. Se consume el mismo azar que
+        // un árbol plantado: el resto del barrio no cambia.
+        if (this.street.fullDetail) this.nature.broadleaf(x, z, scale, SIDEWALK_H);
+        else this.nature.skipBroadleaf(scale);
       }
     }
   }
@@ -774,7 +779,7 @@ export class BuildingBuilder {
     const { cx, cz } = block;
     const rng = this.street.deco(cx, cz, 67);
     const names = ['BIBLIOTECA DEL BARRIO', 'CENTRO DE SALUD', 'CENTRO CULTURAL', 'CLUB DE BARRIO'];
-    const name = names[Math.abs(Math.round(cx / 57 + cz / 19)) % names.length];
+    const name = names[Math.abs(Math.round((cx + 3 * cz) / 64)) % names.length];
     const style = { text: name, bg: '#24423a', fg: '#f3ead2', font: 'sans' as const };
     const g = SIDEWALK_H;
     // El cartel sobre la losa del primer piso, en las dos caras largas.

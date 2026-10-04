@@ -5,7 +5,10 @@ import {
   ROOMS,
   SCHOOL,
   STAIRS,
+  fromPlan,
   levelOf,
+  planU,
+  planV,
   roomAt,
   roomLevel,
   schoolFloorLocal,
@@ -24,9 +27,13 @@ import {
 
 const FY = SCHOOL.floorY;
 
-/** Camina en línea recta dejando que los pies sigan el piso, como el jugador. */
-function climb(path: Array<[number, number]>, feet0: number): number {
+/**
+ * Camina en línea recta dejando que los pies sigan el piso, como el jugador.
+ * Los vértices se leen en el plano (`fromPlan`) y se caminan en metros reales.
+ */
+function climb(planPath: Array<[number, number]>, feet0: number): number {
   let feet = feet0;
+  const path = planPath.map(([u, v]) => fromPlan(u, v));
   for (let i = 0; i < path.length - 1; i++) {
     const [u0, v0] = path[i];
     const [u1, v1] = path[i + 1];
@@ -60,8 +67,8 @@ describe('niveles de la escuela', () => {
   it('los ambientes de un mismo nivel no se superponen', () => {
     for (const lv of [0, 1, 2] as const) {
       const rooms = ROOMS.filter((r) => roomLevel(r) === lv);
-      for (let u = -2; u < 68; u += 0.7) {
-        for (let v = -39; v < 0; v += 0.7) {
+      for (let u = planU(-2); u < planU(68); u += 0.7) {
+        for (let v = planV(-39); v < 0; v += 0.7) {
           let hits = 0;
           for (const r of rooms) {
             let inside = false;
@@ -101,39 +108,39 @@ describe('escaleras', () => {
   it('el costado de un tramo es macizo para quien está abajo', () => {
     // A mitad del primer tramo del hall (sube al norte contra el muro oeste)
     // los escalones están a la altura de la cadera.
-    expect(schoolSolidLocal(33.5, -11.4, FY)).toBe(true);
+    expect(schoolSolidLocal(...fromPlan(33.5, -11.4), FY)).toBe(true);
     // Pero el arranque se pisa.
-    expect(schoolSolidLocal(33.24, -9.0, FY)).toBe(false);
+    expect(schoolSolidLocal(...fromPlan(33.24, -9.0), FY)).toBe(false);
   });
 
   it('en el núcleo del bloque norte no hay escalera (CAD): baños, pozo y depósito', () => {
     // Donde estaba la escalera principal hay un baño de alumnos y el pozo de
     // luz cerrado; ningún tramo arranca en el bloque norte.
-    expect(roomAt(24.0, -26.5)?.id).toBe('salaNorte');
-    expect(roomAt(23.0, -27.9)).toBeNull();
-    expect(STAIRS.some((s) => s.u0 < 26.76 && s.u1 > 19.5 && s.v0 < -23.25 && s.v1 > -30.4)).toBe(false);
+    expect(roomAt(...fromPlan(24.0, -26.5))?.id).toBe('salaNorte');
+    expect(roomAt(...fromPlan(23.0, -27.9))).toBeNull();
+    expect(STAIRS.some((s) => s.u0 < planU(26.76) && s.u1 > planU(19.5) && s.v0 < planV(-23.25) && s.v1 > planV(-30.4))).toBe(false);
   });
 
   it('el descanso del ala oeste termina contra el testero de la caja, no en el aire', () => {
     // Al oeste del descanso (2,2 m) estaba la cuña contra Miguel Cané, sin
     // muro: el que se caía quedaba encerrado en un rincón sin salida.
     const feet = FY + 2.2;
-    expect(schoolFloorLocal(6.4, -11.7, feet)).toBeCloseTo(feet, 5);
-    for (const v of [-9.0, -11.7, -12.6]) expect(schoolSolidLocal(5.3, v, feet), `v ${v}`).toBe(true);
+    expect(schoolFloorLocal(...fromPlan(6.4, -11.7), feet)).toBeCloseTo(feet, 5);
+    for (const v of [-9.0, -11.7, -12.6]) expect(schoolSolidLocal(planU(5.3), planV(v), feet), `v ${v}`).toBe(true);
     // La cuña, debajo de la Gerencia del primer piso, no es un ambiente.
-    expect(roomAt(4.0, -11.7)).toBeNull();
-    expect(roomAt(6.0, -11.7)?.id).toBe('hallOeste');
+    expect(roomAt(...fromPlan(4.0, -11.7))).toBeNull();
+    expect(roomAt(...fromPlan(6.0, -11.7))?.id).toBe('hallOeste');
   });
 
   it('el paso de la torre a la pasarela es muro para quien está abajo', () => {
     // El vano arranca a la altura del descanso (2,45 m): desde el jardincito
     // se atravesaba la parte llena del muro y se entraba al cuartito.
     let blocked = false;
-    for (let u = 36.3; u >= 34.5; u -= 0.05) if (schoolSolidLocal(u, -14.2, FY)) blocked = true;
+    for (let u = planU(36.3); u >= planU(34.5); u -= 0.05) if (schoolSolidLocal(u, planV(-14.2), FY)) blocked = true;
     expect(blocked).toBe(true);
-    expect(schoolSolidLocal(35.31, -14.2, FY, true)).toBe(true);
+    expect(schoolSolidLocal(...fromPlan(35.31, -14.2), FY, true)).toBe(true);
     // Desde el descanso sí se pasa (la caminata de la pasarela lo recorre entero).
-    expect(schoolSolidLocal(35.31, -14.2, FY + 2.45)).toBe(false);
+    expect(schoolSolidLocal(...fromPlan(35.31, -14.2), FY + 2.45)).toBe(false);
     // Del cuartito se sale por su puerta al hall.
     expect(climb([[34.6, -13.6], [34.6, -11.8]], FY)).toBeCloseTo(FY, 5);
   });
@@ -166,7 +173,7 @@ describe('plantas altas del recorrido', () => {
       FY,
     );
     expect(levelOf(top)).toBe(1);
-    expect(roomAt(34.0, -5.0, 1)?.id).toBe('pasilloTrofeos');
+    expect(roomAt(...fromPlan(34.0, -5.0), 1)?.id).toBe('pasilloTrofeos');
   });
 
   it('del descanso, por la pasarela vidriada, al edificio de bloque y al aula de danzas', () => {
@@ -197,7 +204,7 @@ describe('plantas altas del recorrido', () => {
       l1,
     );
     expect(levelOf(l2)).toBe(2);
-    expect(roomAt(45.6, -10.0, 2)?.id).toBe('aulaDanzas');
+    expect(roomAt(...fromPlan(45.6, -10.0), 2)?.id).toBe('aulaDanzas');
   });
 
   it('"Acceso a primer piso": la escalera del ala oeste sube en U', () => {
@@ -216,7 +223,7 @@ describe('plantas altas del recorrido', () => {
       FY,
     );
     expect(levelOf(top)).toBe(1);
-    expect(roomAt(8.0, -7.4, 1)?.id).toBe('pasilloL1');
+    expect(roomAt(...fromPlan(8.0, -7.4), 1)?.id).toBe('pasilloL1');
   });
 
   it('por la escalera exterior del patio este se sube al balcón y al aula nueva', () => {
@@ -232,7 +239,7 @@ describe('plantas altas del recorrido', () => {
       FY,
     );
     expect(levelOf(top)).toBe(1);
-    expect(roomAt(35.0, -33.75, 1)?.id).toBe('aulaNE');
+    expect(roomAt(...fromPlan(35.0, -33.75), 1)?.id).toBe('aulaNE');
   });
 
   it('el jardín sube sus tres plantas', () => {
@@ -259,7 +266,7 @@ describe('plantas altas del recorrido', () => {
       l1,
     );
     expect(levelOf(l2)).toBe(2);
-    expect(roomAt(61.3, -33.0, 2)?.id).toBe('sum');
+    expect(roomAt(...fromPlan(61.3, -33.0), 2)?.id).toBe('sum');
   });
 
   it('por la escalera exterior blanca del patio este se llega al descanso de la torre', () => {

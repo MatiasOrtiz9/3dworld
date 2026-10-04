@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { fromPlan } from '../src/world/SchoolLayout';
 import { crosses, doorways } from './schoolWalkKit';
 
 /**
@@ -13,7 +14,9 @@ import { crosses, doorways } from './schoolWalkKit';
 describe('vanos transitables de la escuela', () => {
   // Hall de danzas: entre la puerta y la baranda del hueco de la escalera hay
   // 0,9 m; el cuerpo entra y gira, pero no se puede adentrar más.
-  const NARROW: Record<string, number> = { '45.60,-13.60': 0.3 };
+  // El centro del vano se lee en el plano y se pasa a metros reales.
+  const narrowKey = (u: number, v: number) => fromPlan(u, v).map((x) => x.toFixed(2)).join(',');
+  const NARROW: Record<string, number> = { [narrowKey(45.6, -13.6)]: 0.3 };
   const MAX_DRIFT = 0.15;
 
   for (const d of doorways()) {

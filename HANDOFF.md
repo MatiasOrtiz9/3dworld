@@ -197,8 +197,8 @@ src/
 
 ### El barrio
 
-`CityLayout` arma una grilla de 5×5 con la escuela en el centro (y su anexo al
-este) y **una hilera de diez manzanas** alrededor con las tipologías de la
+`CityLayout` arma una grilla de 5×5 (manzanas de 49 m, paso 64: ver 24 y 90)
+con la escuela en el centro (y su anexo al este) y **una hilera de diez manzanas** alrededor con las tipologías de la
 ciudad 2050 que levanta `BuildingBuilder`: vivienda perimetral con terrazas y
 patio (enfrente del portal y del gimnasio), cívico, mercado de madera y **una
 torre de 62–76 m** en la esquina sureste, cruzando Laprida y Gral. Acha. El
@@ -378,7 +378,11 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     `SchoolIdentity` (incluido el plano colgado en el hall), `CityIndex`
     (colisión por grilla de 10 cm), la gente (`people/`), el juego (`game/`)
     y el audio (`schoolAcoustics`). No inventar ambientes que ningún plano
-    ni el video muestran.
+    ni el video muestran. El CAD se registró con 67,4 m de frente, pero el
+    edificio real mide ~78 m sobre Laprida (OpenStreetMap): los datos SIGUEN
+    en metros del plano y `SchoolLayout` los entrega en metros reales con
+    `SC` (ver 90). Todo número de coordenada citado en este documento y en
+    los comentarios de los módulos de datos es del PLANO.
 
 23. **Personas: un material, color = vértice × instancia.** Las piezas
     articuladas tienen el origen en su pivote para compartir matriz. Cada
@@ -388,7 +392,10 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
 
 24. **La escuela ocupa DOS manzanas** (`schoolSite`): la central y la de su
     oeste, sin la calle intermedia (`Street.gaps`). La planta real
-    (~67 × 39 m) no entra en una manzana de 42 m. `CityIndex.blockAt` devuelve
+    (78 × 47,6 m con su franja de frente, ver 90) no entra en una manzana:
+    las manzanas miden 49 m (paso de grilla 64) para que el vértice norte
+    quede a 1,35 m de la vereda de Lafinur y la plazoleta al oeste de Miguel
+    Cané mida ~12 m sobre Laprida. `CityIndex.blockAt` devuelve
     la escuela en todo el rectángulo, incluida la franja de la calle cortada;
     los EcoPods pegan la vuelta ahí y los peatones de vereda no entran.
 
@@ -431,14 +438,17 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     cámara al piso bajo los pies (escalón, descanso, primer piso) y si un
     movimiento mete los pies en un muro se vuelve a la posición anterior.
 
-30. **La escuela se escribe en cuatro módulos de datos.** `SchoolBase` tiene
-    las primitivas (tipos, líneas `U`/`V`, `seg/hw/vw`, `item`, `onLevel`…);
-    `SchoolLayout` la planta baja del plano, la colisión y lo que junta todo;
-    `SchoolUpper` las plantas altas del edificio principal y `SchoolJardin`
-    el jardín. Los dos últimos importan SÓLO de `SchoolBase`: si importaran
-    de `SchoolLayout` habría un ciclo y las constantes llegarían sin
-    inicializar. `SchoolLayout` reexporta todo, así que el resto del código
-    sigue importando de ahí.
+30. **La escuela se escribe en seis módulos.** `SchoolBase` tiene las
+    primitivas (tipos, líneas `U`/`V` del plano, `seg/hw/vw`, `item`,
+    `onLevel`, `SC`, `planU/planV/fromPlan`); `SchoolGround` la planta baja
+    del plano (y los agregados `PLAN_*` de los tres niveles); `SchoolUpper`
+    las plantas altas y `SchoolJardin` el jardín, los tres en METROS DEL
+    PLANO; `SchoolScale` la pasada pura plano → real; `SchoolLayout` la
+    fachada en metros REALES (mismos nombres de siempre), la colisión, las
+    escaleras y el marco. Los módulos de datos importan SÓLO de `SchoolBase`
+    (y `SchoolGround` de los otros dos): si importaran de `SchoolLayout`
+    habría un ciclo. Fuera de esos seis, todo importa de `SchoolLayout` y
+    nunca coordenadas de los módulos de datos.
 
 31. **La planta alta sale del CAD del primer piso y del plano de planta
     alta anotado a mano.** El CAD da muros, puertas, escaleras y baños; el
@@ -1062,6 +1072,77 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     norte (torre, aviarios, hamacas: anclas de la historia) siguen. Libres: la
     puerta bajo la escalera blanca, su pie, la de la cantina y la del hall.
 
+90. **Escuela a tamaño real (`SC = 78 / 67,4`).** El usuario pidió la escuela
+    del tamaño real ("es casi una cuadra entera") para que entre todo lo del
+    plano. Los datos siguen escritos en metros del plano; `SchoolLayout`
+    aplica una escala UNIFORME en planta con centro en la esquina de Laprida
+    y Miguel Cané (`SchoolScale`): muros, vanos (con su centro: el juego
+    encuentra puertas por cercanía), ambientes, escaleras, descansos, huecos,
+    volúmenes y techos quedan exactos, y la diagonal de Miguel Cané y la
+    medianera conservan su ángulo. Las alturas no se escalan. Reglas que no
+    hay que deshacer:
+    - **Los muebles no se escalan**: se mueve su posición, no su medida. Lo
+      que estaba a ≤ 0,35 m de un muro detrás (≤ 0,15 de costado) queda a la
+      MISMA distancia del muro real (también contra las diagonales, que se
+      vuelven a medir después de mover el grupo); lo que toca muros en los
+      dos extremos y cubre un paño (vigas, espejos, barras, mesadas: `STRETCH`)
+      se estira; rejas y cortinas siguen a su vano (largo × SC); pintura de
+      piso, banderines y cercos vivos se agrandan; los muebles que se tocan
+      (silla bajo el pupitre, fila de boxes) se mueven juntos. Excepciones
+      puntuales en `ITEM_OVERRIDES` / `KEEP_WIDTH`, cada una con su porqué.
+    - **Hojas de fábrica**: una puerta simple no pasa de 1,1 m, una doble de
+      2,6 y una salida de 2,2 (si ya eran más anchas en el plano, quedan).
+    - **Nunca escribir en un consumidor un número leído del plano** sin
+      `planU`/`planV`/`fromPlan` (más allá de la línea municipal y del muro
+      este, conservan la distancia real: la calle no se ensancha). Línea +
+      separación (`U.east1 + 0.15`) y medidas quedan como están.
+    - La grilla de colisión, la de luz natural (`DAYLIGHT_GRID`) y el plano
+      colgado en el hall se derivan de `SC`. En la grilla, una celda se abre
+      si el ambiente toca cualquier parte de ella y un hueco de losa marca
+      sólo celdas enteras: con los bordes fuera de la grilla de 10 cm, el
+      último escalón quedaba a 3 cm de una celda maciza y trababa al que bajaba.
+    - Con `SC = 1` la pasada es la identidad exacta: usarlo para aislar fallas.
+    - `tools/school-shots.mjs` acepta `"plan": true` por vista (convierte con
+      el gancho `__fromPlan`) para reusar las vistas viejas. Ojo: un ojo
+      viejo convertido puede caer dentro de un muro o de un ambiente vecino
+      (el hall tiene la oficina de la entrada metida en su planta); las
+      vistas de QA ya están en metros reales, con el ojo a ≥ 0,7 m de muros
+      y muebles altos.
+    - **Pintura de piso** (`floorPatch`) pasa por la escala uniforme entera
+      (centro y las dos medidas × SC, sin anclar ni agrupar; sólo se corre
+      si su cara trasera iba contra un muro): anclada de un lado, la pista
+      del Aula Maker quedaba 1,3 m corta en cada punta. Los **cercos vivos**
+      (`hedge`) son plantas: medida real, la fila junta por `GROUPABLE`.
+    - Una **cortina** se escala con su vano sólo si de verdad está en un vano;
+      un telón que cuelga del borde de un escenario toma el centro y el largo
+      reales del escenario (`followStage`): escalado por su cuenta, el del
+      SUM del jardín sobresalía 0,44 m de cada punta, con una pata en el aire.
+    - **Visor**: con la manzana de 49 m el barrio sumaba ~50 mil triángulos
+      por vista (las instancias de la granja no se recortan por distancia ni
+      por oclusión). En el visor no se plantan los árboles de los patios
+      cerrados de las manzanas de vivienda (no se ven desde la calle; se
+      consume el mismo azar con `NatureBuilder.skipBroadleaf`, así el resto
+      del barrio no cambia) y el cerco de la obra va sin zócalo verde ni
+      filete amarillo; las balizas y faroles de la obra son icosaedros (20
+      triángulos en vez de ~400). Quedó en 272–304 mil triángulos y ≤ 229
+      draw calls por vista (el pico es el hall con ~55 personas a la vista).
+
+91. **Gente a tamaño real: dos arreglos de comportamiento (no deshacer).**
+    No son cambios de coordenadas; aparecieron como fallas reales al escalar:
+    - `Places.lastMile`: cuando la búsqueda termina en la PRIMERA celda (su
+      centro ya es grilla gruesa pero el punto de parada no), se agrega el
+      punto de parada en vez de reemplazar el centro de la celda. Si no, el
+      tramo arrancaba fuera de la grilla gruesa y quien venía caminando no
+      tenía dónde engancharse (se quedaba trabado antes del asiento).
+    - `Sim.spreadAtFoot`: los que esperan al pie de una escalera (primer
+      punto del tramo, quietos) se abren un poco entre sí. En el tramo no hay
+      esquive, y con los pasillos más largos llegaban más a la vez y quedaban
+      todos parados en el mismo punto del pie, fundidos en un solo bulto.
+    - `GOAL_MOUTH_U` sale del arco este de `ITEMS`: los penales siguen al arco
+      aunque las reglas de escala lo muevan.
+    - Recorridos guardados (`steps_*.json` del QA): las coordenadas literales
+      de `__t.go` van envueltas en `...__fromPlan(u, v)`.
+
 ---
 
 ## 6. Estado actual
@@ -1075,7 +1156,7 @@ los imprime por vista.
 | Perfil | Draw calls | Triángulos activos | Gente | Geometría total |
 |---|---|---|---|---|
 | Alta | ~810–940 (3 cascadas de sombra + SSAO) | 1,4–2,0 M (con pasadas de sombra) | 190 | ~250k |
-| VR | 139–181 | 192–223k | 100 (25–50 dibujadas) | ~178k |
+| VR | 179–229 | 272–304k (escuela a tamaño real) | 110 (15–56 dibujadas) | ~237k |
 
 ### Qué ya funciona
 

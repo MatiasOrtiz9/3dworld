@@ -66,8 +66,12 @@ import {
   type Volume,
   type Wall,
   CREST,
+  SC,
   U1,
   V1,
+  fromPlan,
+  planU,
+  planV,
 } from '../SchoolLayout';
 import { isInteractiveDoor } from '../SchoolDoors';
 import { SWITCHABLE_ROOMS, type Fixture } from '../SchoolLights';
@@ -549,7 +553,10 @@ export class SchoolBuilder {
   private grounds(plan: CityPlan): void {
     const f = this.f;
     const top = f.site.z0 - f.oz;
-    const west = f.site.x0 - f.ox;
+    // Borde oeste del predio en u (u = ox − x: el oeste, +x, es site.x1).
+    // Antes era `site.x0 − ox`, con el signo cambiado: el césped llegaba por
+    // debajo de la calle oeste y de la manzana cívica.
+    const west = f.ox - f.site.x1;
     const front = SCHOOL.front;
     // Franja de frente y ochavo de Miguel Cané: solado exterior.
     this.prisms.plan(
@@ -585,10 +592,10 @@ export class SchoolBuilder {
     // Donde no hay aulas del primer piso contra la medianera: detrás de las
     // del Aula Maker y del patio este las copas entraban en ellas.
     for (const [u, v] of [
-      [43.5, -37.8],
-      [54.5, -37.0],
-      [49, -34.4],
-    ] as const) {
+      fromPlan(43.5, -37.8),
+      fromPlan(54.5, -37.0),
+      fromPlan(49, -34.4),
+    ]) {
       const p = toWorld(f, u, v);
       this.nature.broadleaf(p.x, p.z, 0.9 + this.rng.range(0, 0.3), 0.05);
     }
@@ -1405,7 +1412,7 @@ export class SchoolBuilder {
       // Franjas de policarbonato traslúcido de alero a alero (9:22–9:28).
       // 2 cm más angostas que la chapa: en los aleros sus testas quedaban en
       // el plano de las de la chapa y titilaban.
-      for (const us of [54.58, 60.28, 65.98]) {
+      for (const us of [54.58, 60.28, 65.98].map(planU)) {
         const sp = toWorld(this.f, us, arcV(pm, r + 0.03));
         this.farm.add('box', m.light, new Vector3(sp.x, arcY(pm, r + 0.03), sp.z), new Vector3(1.0, 0.1, w - 0.02), 0, pm);
         const ip = toWorld(this.f, us, arcV(pm, r - 0.1));
@@ -1451,7 +1458,7 @@ export class SchoolBuilder {
       [-11.0, -9.5, 7.52, 8.57],
       [-7.9, -6.4, 7.52, 8.57],
       [-4.8, -3.3, 7.52, 8.57],
-    ];
+    ].map(([v0, v1, y0, y1]): [number, number, number, number] => [planV(v0), planV(v1), y0, y1]);
     this.gable(m.blueSheet, U.gymW, U.gymW + 0.12, wallTop, archY, danceWin);
     this.gable(m.white, U.gymW - 0.12, U.gymW, wallTop, archY, danceWin);
     for (const [v0, v1, y0, y1] of danceWin) {
@@ -1465,10 +1472,12 @@ export class SchoolBuilder {
     // (que son cuerdas planas, por debajo del arco) y el cielorraso cortaba
     // la esquina del vidrio.
     const mirrorWin: Array<[number, number, number, number]> = [
-      [-5.45, -4.55, 8.85, 9.1],
-      [-7.65, -6.75, 8.85, 9.35],
-      [-9.85, -8.95, 8.85, 9.45],
-      [-12.05, -11.15, 8.85, 9.45],
+      ...([
+        [-5.45, -4.55, 8.85, 9.1],
+        [-7.65, -6.75, 8.85, 9.35],
+        [-9.85, -8.95, 8.85, 9.45],
+        [-12.05, -11.15, 8.85, 9.45],
+      ] as const).map(([v0, v1, y0, y1]): [number, number, number, number] => [planV(v0), planV(v1), y0, y1]),
       // Paso del hall del segundo piso, bajo la bóveda.
       [V1.blockA, V1.blockHall, 2 * H, 8.75],
     ];
@@ -1511,7 +1520,7 @@ export class SchoolBuilder {
       }
     }
     // Zócalo gris oscuro y portón de chapa de la salida a Laprida.
-    this.box(m.metalDark, 51.8, 0.05, 2.2, 0.16, 0.1, 2.5);
+    this.box(m.metalDark, planU(51.8), 0.05, 2.2, 0.16, 0.1, 2.5);
   }
 
   /**
@@ -1591,7 +1600,7 @@ export class SchoolBuilder {
     // Huellas de chapa semilla de melón (relieve también en VR, 8:37–8:41).
     const tread = chequer ? m.metalTread : m.stair;
     // La del jardín tiene pasamanos negro (11:49–13:06).
-    const rail = chequer || s.u0 >= 57.65 ? m.metalDark : s.hollow ? m.frame : m.red;
+    const rail = chequer || s.u0 >= U.teaE - 0.01 ? m.metalDark : s.hollow ? m.frame : m.red;
     for (let i = 0; i < n; i++) {
       const c = from + run * (i + 0.5);
       const top = FY + s.y0 + ((i + 1) * (s.y1 - s.y0)) / n;
@@ -1801,9 +1810,9 @@ export class SchoolBuilder {
       // Normal hacia adentro (este) de la línea de Miguel Cané.
       return [u + off * MC_COS, v + off * MC_SLOPE * MC_COS];
     };
-    this.piece(m.metalDark, mcIn(-34.2, 0.17), mcIn(-35.7, 0.17), 0.05, FY + 0.88, FY + 2.12);
-    this.piece(m.board, mcIn(-34.25, 0.2), mcIn(-35.65, 0.2), 0.02, FY + 0.92, FY + 2.08);
-    for (const [v0, v1] of [[-36.4, -37.1]] as const) {
+    this.piece(m.metalDark, mcIn(planV(-34.2), 0.17), mcIn(planV(-35.7), 0.17), 0.05, FY + 0.88, FY + 2.12);
+    this.piece(m.board, mcIn(planV(-34.25), 0.2), mcIn(planV(-35.65), 0.2), 0.02, FY + 0.92, FY + 2.08);
+    for (const [v0, v1] of [[planV(-36.4), planV(-37.1)]] as const) {
       this.piece(m.timber, mcIn(v0, 0.35), mcIn(v1, 0.35), 0.4, FY, FY + 1.8);
       this.piece(m.blue, mcIn(v0, 0.35), mcIn(v1, 0.35), 0.36, FY + 1.8, FY + 2.0);
     }
@@ -3197,13 +3206,16 @@ export class SchoolBuilder {
     // mira desde la calle), marquesina roja saliente con su cielorraso gris,
     // pilar rojo entre las ventanas del primer piso, antepecho rojo del
     // segundo, pretil gris y columna de borde gris al este.
-    this.box(m.navy, 58.525, v, 1.75, 8.9, 0.1, 0);
-    this.box(m.red, 63.3, V.top - 0.55, 8.2, 0.9, 0.8, 2.75);
-    this.box(m.slab, 63.3, V.top - 0.55, 8.2, 0.04, 0.8, 2.71);
-    this.box(m.red, 62.3, v + 0.15, 0.4, 1.3, 0.08, H + 0.95);
-    this.box(m.jardinRed, 63.2, V.top - 0.2, 7.6, 1.9, 0.1, 5.6);
-    this.box(m.facade, 62.525, V.top - 0.18, 9.75, 1.0, 0.06, 8.9);
-    this.box(m.facade, 67.2, v, 0.4, 9.9, 0.12, 0);
+    // Posiciones del plano (`planU`); los paños que van de muro a muro
+    // (marquesina, antepecho, pretil) se agrandan con la fachada, las
+    // piezas de medida (banda, pilar, columna de borde) no.
+    this.box(m.navy, planU(58.525), v, 1.75, 8.9, 0.1, 0);
+    this.box(m.red, planU(63.3), V.top - 0.55, 8.2 * SC, 0.9, 0.8, 2.75);
+    this.box(m.slab, planU(63.3), V.top - 0.55, 8.2 * SC, 0.04, 0.8, 2.71);
+    this.box(m.red, planU(62.3), v + 0.15, 0.4, 1.3, 0.08, H + 0.95);
+    this.box(m.jardinRed, planU(63.2), V.top - 0.2, 7.6 * SC, 1.9, 0.1, 5.6);
+    this.box(m.facade, planU(62.525), V.top - 0.18, 9.75 * SC, 1.0, 0.06, 8.9);
+    this.box(m.facade, U.e - 0.2, v, 0.4, 9.9, 0.12, 0);
   }
 
   /**
@@ -3223,10 +3235,10 @@ export class SchoolBuilder {
         this.box(k % 2 === 0 ? m.navy : m.red, (a + b) / 2, vc, b - a - 0.04, 0.5, r.v1 - r.v0, 0.06);
       }
       this.box(m.soil, uc, vc, r.u1 - r.u0 - 0.2, 0.03, r.v1 - r.v0 - 0.2, 0.55);
-      if (r.u0 > 42 && r.u0 < 43) {
+      if (r.u0 > planU(42) && r.u0 < planU(43)) {
         // Cantero del edificio de bloque: matas de pasto ornamental seco, no
         // arbustos (0:09–0:16). Hojas finas abiertas en abanico.
-        for (const u of [43.2, 44.6, 46.0, 47.4, 48.8]) {
+        for (const u of [43.2, 44.6, 46.0, 47.4, 48.8].map(planU)) {
           const p = toWorld(this.f, u, vc);
           const n = this.detailed ? 8 : 5;
           for (let k = 0; k < n; k++) {
@@ -3257,10 +3269,10 @@ export class SchoolBuilder {
       [7.5, 2.6, 6.2],
       [17.0, 2.6, 6.0],
     ] as const) {
-      this.palm(u, v, h);
+      this.palm(planU(u), planV(v), h);
     }
     // Árbol de hoja ancha frente al edificio de bloque (0:12).
-    const tree = toWorld(this.f, 47.0, 3.0);
+    const tree = toWorld(this.f, planU(47.0), planV(3.0));
     this.nature.broadleaf(tree.x, tree.z, 0.8, 0.06);
     // Cartel de salida de emergencia sobre la salida del ochavo, en el
     // testero del pasillo sur y 5 mm afuera de su cara.
@@ -3268,7 +3280,7 @@ export class SchoolBuilder {
     this.piece(m.exitSign, [U.jog, exitMid + 0.2], [U.jog, exitMid - 0.2], 0.05, 2.45, 2.67, -(SCHOOL.extT / 2 + 0.03));
     // Poste de los carteles de calle (Laprida y Miguel Cané) y del punto de
     // encuentro; las chapas las pinta SchoolIdentity.
-    this.cyl(m.metalDark, -6.3, 3.3, 0.07, 3.35, 0);
+    this.cyl(m.metalDark, planU(-6.3), planV(3.3), 0.07, 3.35, 0);
     this.cyl(m.metalDark, MEETING_POINT[0], MEETING_POINT[1] - 0.02, 0.06, 2.35, 0);
 
     // Remate de sierra: las puntas de las chapas onduladas del techo asoman
@@ -3339,7 +3351,7 @@ export class SchoolBuilder {
     const m = this.m;
     const poleV = SCHOOL.front + 3.2;
     // Postes de hormigón con su cruceta (Street View).
-    const poles = [-4, 12.1, 20, 44, 66];
+    const poles = [-4, 12.1, 20, 44, 66].map(planU);
     // La cruceta va de través a la línea (antes era paralela a los cables).
     for (const u of poles) {
       this.cyl(m.slab, u, poleV, 0.22, 9.6, 0);

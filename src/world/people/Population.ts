@@ -11,7 +11,7 @@ import type { CharacterLook, NpcAnim, NpcHandle, PopulationApi, SchoolPhase, Sch
 import type { CityPlan } from '../CityLayout';
 import type { CityIndex } from '../CityIndex';
 import { STANDARD_SUN_COMP } from '../Materials';
-import { LEVEL_Y, PORTAL, ROOMS, V, inLot, inPoly, levelOf, roomLevel, toLocal, toWorld, type Level, type SchoolFrame } from '../SchoolLayout';
+import { LEVEL_Y, PORTAL, ROOMS, V, inLot, inPoly, levelOf, planV, roomLevel, toLocal, toWorld, type Level, type SchoolFrame } from '../SchoolLayout';
 import { POSE_N, SIT, evalPose } from './Anim';
 import { SCHOOL_DEEP, hiddenBySchool } from './Culling';
 import { HUMAN_PARTS, buildHumanParts, type HumanPart } from './HumanGeometry';
@@ -548,7 +548,7 @@ export class Population implements PopulationApi {
           if (camRoom !== 0 || room !== 0 ? d2 > other2 * 0.5 : d2 > outIn2) continue;
         } else if (room !== camRoom) {
           if (camRoom === 0 ? d2 > inOut2 : room === 0 ? d2 > outIn2 : d2 > other2) continue;
-        } else if (camOut && room === 0 && d2 > inOut2 && a.v < -1.5 && inLot(a.u, a.v)) continue;
+        } else if (camOut && room === 0 && d2 > inOut2 && a.v < planV(-1.5) && inLot(a.u, a.v)) continue;
       }
       if (gate && !a.named) {
         this.gateIdx[gc] = i;

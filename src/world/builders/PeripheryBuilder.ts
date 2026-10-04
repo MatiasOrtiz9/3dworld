@@ -123,12 +123,17 @@ export class PeripheryBuilder {
           this.box('concrete', p.x, 0.15, p.z, step, 0.3, 0.3, rot);
         } else {
           this.box('panel', p.x, h / 2, p.z, step - 0.08, h, 0.05, rot + lean);
-          this.box('green', p.x, 0.25, p.z, step, 0.5, 0.07, rot);
+          // En el visor el cerco se ve siempre de lejos (a 60–120 m desde la
+          // escuela): sin el zócalo verde ni el filete amarillo, que a esa
+          // distancia ocupan uno o dos píxeles. Son ~5 mil triángulos que se
+          // dibujaban en cada vista (la granja no recorta por distancia). El
+          // azar del cerco es propio y no se toca: los tramos son los mismos.
+          if (this.street.fullDetail) this.box('green', p.x, 0.25, p.z, step, 0.5, 0.07, rot);
           if (kind === 0) {
             // Banda impresa azul con filete amarillo: la gráfica de la constructora.
             const b = at(t, 0.035);
             this.box('navy', b.x, h - 0.45, b.z, step, 0.6, 0.02, rot);
-            this.box('yellow', b.x, h - 0.82, b.z, step, 0.08, 0.02, rot);
+            if (this.street.fullDetail) this.box('yellow', b.x, h - 0.82, b.z, step, 0.08, 0.02, rot);
           }
         }
         this.farm.add('post', this.m.post, new Vector3(q.x, H / 2 + 0.1, q.z), new Vector3(0.1, H + 0.2, 0.1));
@@ -200,7 +205,10 @@ export class PeripheryBuilder {
         this.box('concrete', b.x, 0.25, b.z, 2, 0.5, 0.6, rot);
         this.box('concrete', b.x, 0.62, b.z, 2, 0.3, 0.25, rot);
         this.box(j ? 'red' : 'white', b.x, 0.62, b.z, 0.6, 0.31, 0.27, rot);
-        if (j === 0) this.farm.add('sphere', this.m.orange, new Vector3(b.x, 0.85, b.z), new Vector3(0.16, 0.18, 0.16));
+        // Baliza de 16 cm: un icosaedro (20 triángulos) se ve igual que la esfera
+        // UV (~400), y con el borde de la obra agrandado (escuela a tamaño
+        // real) las balizas y faroles sumaban casi 5 mil triángulos por vista.
+        if (j === 0) this.farm.add('blob', this.m.orange, new Vector3(b.x, 0.85, b.z), new Vector3(0.16, 0.18, 0.16));
       }
     }
     const cs = at(gate + 3.6, 1.2);
@@ -329,7 +337,7 @@ export class PeripheryBuilder {
         const iz = Math.sign(-z);
         this.box('concrete', x, 1.6, z, 0.7, 3.2, 0.7);
         this.box('red', x, 3.0, z, 0.72, 0.2, 0.72);
-        this.farm.add('sphere', this.m.orange, new Vector3(x, 3.35, z), new Vector3(0.24, 0.3, 0.24));
+        this.farm.add('blob', this.m.orange, new Vector3(x, 3.35, z), new Vector3(0.24, 0.3, 0.24));
         this.cone(x + ix * 1.3, z + iz * 1.3, 2);
         this.floodlight(x - ix * 3, z - iz * 3, ix, iz);
       }

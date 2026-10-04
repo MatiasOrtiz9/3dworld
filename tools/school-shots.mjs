@@ -1,6 +1,8 @@
 // Capturas de la escuela en coordenadas LOCALES del plano: u (este), v (sur), y.
 // Uso: node school-shots.mjs <url> <outdir> <views.json> [sw]
-// views: [{name, eye:[u,y,v], look:[u,y,v], fly?:bool, wait?:ms}]
+// views: [{name, eye:[u,y,v], look:[u,y,v], fly?:bool, wait?:ms, plan?:bool}]
+// plan: true → eye/look están en metros del plano CAD (las vistas viejas) y se
+// pasan a reales con __fromPlan (la escuela se escaló a su tamaño real).
 import puppeteer from 'puppeteer-core';
 import { readFileSync, mkdirSync } from 'node:fs';
 const [url, outDir, viewsFile, mode] = process.argv.slice(2);
@@ -33,7 +35,14 @@ let flying = false;
 for (const v of views) {
   if (v.fly && !flying) { await page.keyboard.press('KeyF'); flying = true; }
   await page.evaluate(
-    ([e, l]) => {
+    ([e0, l0, plan]) => {
+      const conv = (p) => {
+        if (!plan || !window.__fromPlan) return p;
+        const [u, v] = window.__fromPlan(p[0], p[2]);
+        return [u, p[1], v];
+      };
+      const e = conv(e0);
+      const l = conv(l0);
       const f = window.__schoolFrame();
       const scene = window.__scene;
       const cam = scene.activeCamera;
@@ -41,7 +50,7 @@ for (const v of views) {
       cam.position = new V3(f.ox - e[0], e[1], f.oz + e[2]);
       cam.setTarget(new V3(f.ox - l[0], l[1], f.oz + l[2]));
     },
-    [v.eye, v.look],
+    [v.eye, v.look, !!v.plan],
   );
   await new Promise((r) => setTimeout(r, v.wait ?? 1500));
   await page.screenshot({ path: `${outDir}/${v.name}.png` });

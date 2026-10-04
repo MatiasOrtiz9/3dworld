@@ -1,4 +1,4 @@
-import { GYM_MID, LEVEL_Y, MEETING_POINT, STAIRS, U, U1, V, makerWallAt, miguelCaneU, rearV, riserCount, type Level, type Stair } from '../../world/SchoolLayout';
+import { GYM_MID, LEVEL_Y, MEETING_POINT, STAIRS, U, U1, V, fromPlan, makerWallAt, miguelCaneU, planU, planV, rearV, riserCount, type Level, type Stair } from '../../world/SchoolLayout';
 import { DOORS, type DoorDef } from '../../world/SchoolDoors';
 import { openingNear, openingsOnLine, stairAt, stairFoot } from './anchors';
 import type { Anchor, InteractableDef, LockDef, PlaceDef, Spot, ZoneId } from './types';
@@ -69,7 +69,7 @@ export function placeForRoom(roomId: string): PlaceDef | undefined {
  */
 export function outsideRoom(u: number, v: number): string {
   if (Math.hypot(u - MEETING_POINT[0], v - MEETING_POINT[1]) < 4.5) return '__encuentro';
-  if (v > 0.4 && v < 9 && u > -8 && u < U.e + 4) return '__laprida';
+  if (v > planV(0.4) && v < planV(9) && u > planU(-8) && u < U.e + 4) return '__laprida';
   return '';
 }
 
@@ -79,25 +79,25 @@ const FY = LEVEL_Y[0];
 /** Punto del Aula Maker frente al mural, a 0,3 m de la pared. */
 const MAKER_MURAL = makerWallAt(6.4, 0.3);
 /** Centro de la entrada vidriada del hall (CAD: a la izquierda de la recepción). */
-export const ENTRANCE_U = 35.24;
+export const ENTRANCE_U = planU(35.24);
 /**
  * Mural de San Martín: centro del paño sobre el muro oeste del vestíbulo
  * (el del aula 5), como lo cuelga `SchoolIdentity`.
  */
-const MURAL_V = -4.25;
+const MURAL_V = planV(-4.25);
 /** Plano de evacuación: en el frente norte de la oficina de recepción (`SchoolIdentity`). */
-const PLANO_U = 37.6;
+const PLANO_U = planU(37.6);
 /**
  * La campana cuelga de una columna de la galería roja (las de planta baja
  * están 0,2 m dentro de su borde): la del medio del patio, del lado del patio.
  */
-const BELL: readonly [number, number] = [U1.gallery + 0.02, -13.4];
+const BELL: readonly [number, number] = [U1.gallery + 0.02, planV(-13.4)];
 /**
  * Punto limpio: contra el muro del pasillo sur, entre las ventanas y el paso
  * al patio. Donde estaba (frente al cantero norte) quedaba encima del banco
  * nuevo y tapaba la puerta doble roja del pasillo norte.
  */
-const BINS: readonly [number, number] = [20.9, -9.05];
+const BINS: readonly [number, number] = fromPlan(20.9, -9.05);
 
 export const INTERACTABLES: readonly InteractableDef[] = [
   // --- Recepción -----------------------------------------------------------
@@ -402,7 +402,7 @@ export const INTERACTABLES: readonly InteractableDef[] = [
     kind: 'ball',
     label: 'Pelota de handball',
     verb: 'Lanzar',
-    anchor: { room: 'gimnasio', at: [57.2, -7.4] },
+    anchor: { room: 'gimnasio', at: fromPlan(57.2, -7.4) },
     y: 0.12,
     size: [0.5, 0.5, 0.5],
     range: 2.2,
@@ -671,31 +671,31 @@ const ENTRADA = 'Rubén, el portero, abre la escuela: hablá con él en el porta
 const ENTRADA_SILENT = 'Rubén, el portero, abre la escuela: saludalo en el portal.';
 
 /** Salida de emergencia del nicho del pasillo norte sobre Miguel Cané (CAD): su centro en v. */
-const NORTE_EXIT_V = -27.44;
+const NORTE_EXIT_V = planV(-27.44);
 
 export const LOCKS: readonly LockDef[] = [
   // Antes de hablar con Rubén la escuela está cerrada: las puertas del portal
   // y también las salidas de emergencia, que de afuera no se abren.
   doorLock('lock-entrada', 'entrada', 0, ENTRANCE_U, V.hallDoors, ENTRADA),
-  doorLock('lock-salidaGimnasio', 'entrada', 0, 51.8, V.facade, ENTRADA),
-  doorLock('lock-puertaGimnasio', 'entrada', 0, 66.75, V.facade, ENTRADA),
+  doorLock('lock-salidaGimnasio', 'entrada', 0, planU(51.8), V.facade, ENTRADA),
+  doorLock('lock-puertaGimnasio', 'entrada', 0, planU(66.75), V.facade, ENTRADA),
   doorLock('lock-salidaNorte', 'entrada', 0, miguelCaneU(NORTE_EXIT_V), NORTE_EXIT_V, ENTRADA),
   // La del testero del pasillo sur, frente al ochavo (CAD).
-  doorLock('lock-salidaOchavo', 'entrada', 0, U.jog, -7.23, ENTRADA),
+  doorLock('lock-salidaOchavo', 'entrada', 0, U.jog, planV(-7.23), ENTRADA),
   // Acceso al Nivel Secundario: primer tramo de la escalera del hall y la escalera blanca del patio este.
-  stairLock('lock-hall', 'primerPiso', 33.24, -11.0, FIRST),
-  stairLock('lock-blanca', 'primerPiso', 33.13, -17.0, FIRST),
+  stairLock('lock-hall', 'primerPiso', ...fromPlan(33.24, -11.0), FIRST),
+  stairLock('lock-blanca', 'primerPiso', ...fromPlan(33.13, -17.0), FIRST),
   // "Acceso a primer piso" del ala oeste: el primer tramo, desde la caja de la escalera.
-  stairLock('lock-oeste', 'primerPiso', 8.6, -11.7, FIRST),
+  stairLock('lock-oeste', 'primerPiso', ...fromPlan(8.6, -11.7), FIRST),
   // Escalera exterior del patio este (CAD): el tramo corto que arranca del
   // patio. Más arriba, el descanso de la esquina y el tramo largo quedan
   // fuera del alcance del pie desde el suelo. (El bloque norte ya no tiene
   // escalera propia: ni el CAD ni el recorrido la muestran.)
-  stairLock('lock-exterior', 'primerPiso', 34.45, -26.2, FIRST),
+  stairLock('lock-exterior', 'primerPiso', ...fromPlan(34.45, -26.2), FIRST),
   // "Acceso a segundo piso": escalera de chapa del edificio de bloque.
-  stairLock('lock-chapa', 'segundoPiso', 46.0, -15.3, SECOND),
+  stairLock('lock-chapa', 'segundoPiso', ...fromPlan(46.0, -15.3), SECOND),
   // Jardín: la puerta de la medianera vieja y las dos puertas sobre la calle.
-  doorLock('lock-jardin', 'jardin', 0, 61.4, rearV(61.4), JARDIN),
+  doorLock('lock-jardin', 'jardin', 0, planU(61.4), rearV(planU(61.4)), JARDIN),
   // Las puertas de la fachada del jardín sobre la calle del norte: todas las que tenga.
   ...openingsOnLine(0, (a, b) => Math.abs(a[1] - V.top) < 0.05 && Math.abs(b[1] - V.top) < 0.05 && a[0] > U.teaE - 0.1).map(
     (o, k): LockDef => ({
@@ -738,7 +738,7 @@ function gameDoorNear(level: Level, u: number, v: number): DoorDef | undefined {
  * pasaba de la vereda al hall por adentro de la portería sin hablar con
  * Rubén. Su puerta al atrio queda cerrada hasta que él abre la escuela.
  */
-const PORTERIA_DOOR = gameDoorNear(0, 37.87, V.hallDoors);
+const PORTERIA_DOOR = gameDoorNear(0, planU(37.87), V.hallDoors);
 
 export const DOOR_LOCKS: readonly DoorLockDef[] = PORTERIA_DOOR
   ? [{ id: 'lock-porteria', zone: 'entrada', door: PORTERIA_DOOR, reason: ENTRADA, silentReason: ENTRADA_SILENT }]
@@ -767,13 +767,13 @@ export const STAIR_GUIDES: readonly StairGuide[] = [
     // descanso, del lado este, y llega al pasillo de los trofeos.
     id: 'hall',
     zone: 'primerPiso',
-    low: { u: 33.24, v: -8.3, level: 0 },
-    high: { u: 34.7, v: -11.4, level: 1 },
+    low: { u: planU(33.24), v: planV(-8.3), level: 0 },
+    high: { u: planU(34.7), v: planV(-11.4), level: 1 },
     path: [
-      [33.24, -8.3],
-      [33.24, -14.3],
-      [34.7, -14.3],
-      [34.7, -11.4],
+      fromPlan(33.24, -8.3),
+      fromPlan(33.24, -14.3),
+      fromPlan(34.7, -14.3),
+      fromPlan(34.7, -11.4),
     ],
   },
   {
@@ -782,51 +782,51 @@ export const STAIR_GUIDES: readonly StairGuide[] = [
     // segundo llega a la caja de arriba, junto a la Preceptoría.
     id: 'oeste',
     zone: 'primerPiso',
-    low: { u: 10.6, v: -11.7, level: 0 },
-    high: { u: 10.0, v: -9.5, level: 1 },
+    low: { u: planU(10.6), v: planV(-11.7), level: 0 },
+    high: { u: planU(10.0), v: planV(-9.5), level: 1 },
     path: [
-      [10.6, -11.7],
-      [6.4, -11.7],
-      [6.4, -9.5],
-      [10.0, -9.5],
+      fromPlan(10.6, -11.7),
+      fromPlan(6.4, -11.7),
+      fromPlan(6.4, -9.5),
+      fromPlan(10.0, -9.5),
     ],
   },
   {
     id: 'chapa',
     zone: 'segundoPiso',
-    low: { u: 43.95, v: -15.3, level: 1 },
-    high: { u: 43.95, v: -16.9, level: 2 },
+    low: { u: planU(43.95), v: planV(-15.3), level: 1 },
+    high: { u: planU(43.95), v: planV(-16.9), level: 2 },
     path: [
-      [43.95, -15.3],
-      [48.25, -15.3],
-      [48.25, -16.9],
-      [43.95, -16.9],
+      fromPlan(43.95, -15.3),
+      fromPlan(48.25, -15.3),
+      fromPlan(48.25, -16.9),
+      fromPlan(43.95, -16.9),
     ],
   },
   {
     id: 'jardin01',
     zone: 'jardin',
     jardin: true,
-    low: { u: 58.4, v: -36.0, level: 0 },
-    high: { u: 59.8, v: -36.0, level: 1 },
+    low: { u: planU(58.4), v: planV(-36.0), level: 0 },
+    high: { u: planU(59.8), v: planV(-36.0), level: 1 },
     path: [
-      [58.4, -36.0],
-      [58.4, -31.6],
-      [59.8, -31.6],
-      [59.8, -36.0],
+      fromPlan(58.4, -36.0),
+      fromPlan(58.4, -31.6),
+      fromPlan(59.8, -31.6),
+      fromPlan(59.8, -36.0),
     ],
   },
   {
     id: 'jardin12',
     zone: 'jardin',
     jardin: true,
-    low: { u: 58.4, v: -36.0, level: 1 },
-    high: { u: 59.8, v: -36.0, level: 2 },
+    low: { u: planU(58.4), v: planV(-36.0), level: 1 },
+    high: { u: planU(59.8), v: planV(-36.0), level: 2 },
     path: [
-      [58.4, -36.0],
-      [58.4, -31.6],
-      [59.8, -31.6],
-      [59.8, -36.0],
+      fromPlan(58.4, -36.0),
+      fromPlan(58.4, -31.6),
+      fromPlan(59.8, -31.6),
+      fromPlan(59.8, -36.0),
     ],
   },
 ];
@@ -849,18 +849,18 @@ const CORR_SUR_V = (V.classTop + V.corrS) / 2;
  */
 export const EVAC_ROUTE: ReadonlyArray<readonly [number, number]> = [
   // Desde adentro del aula 4, por su puerta doble (u 24,2–25,8).
-  [25.0, -5.4],
-  [25.0, CORR_SUR_V],
-  [31.6, CORR_SUR_V],
+  fromPlan(25.0, -5.4),
+  [planU(25.0), CORR_SUR_V],
+  [planU(31.6), CORR_SUR_V],
   // El hall, el vestíbulo (a la izquierda de la recepción) y la entrada, por
   // la mitad este del portón: en su medio está la columna azul.
-  [36.0, -7.0],
-  [ENTRANCE_U + 0.6, -3.6],
-  [ENTRANCE_U + 0.6, 0.2],
-  [ENTRANCE_U + 0.6, 3.0],
-  [20.0, 3.0],
-  [2.0, 3.0],
-  [-2.4, 2.4],
+  fromPlan(36.0, -7.0),
+  [ENTRANCE_U + 0.6, planV(-3.6)],
+  [ENTRANCE_U + 0.6, planV(0.2)],
+  [ENTRANCE_U + 0.6, planV(3.0)],
+  fromPlan(20.0, 3.0),
+  fromPlan(2.0, 3.0),
+  fromPlan(-2.4, 2.4),
   [MEETING_POINT[0], MEETING_POINT[1]],
 ];
 
@@ -868,26 +868,26 @@ export const EVAC_ROUTE: ReadonlyArray<readonly [number, number]> = [
 
 /** Dónde se para cada uno en el acto final (polideportivo, mirando a la bandera). */
 export const ACT = {
-  player: { u: 60.2, v: GYM_MID, level: 0 as Level },
-  stage: { u: 64.4, v: GYM_MID, level: 0 as Level },
+  player: { u: planU(60.2), v: GYM_MID, level: 0 as Level },
+  stage: { u: planU(64.4), v: GYM_MID, level: 0 as Level },
   crew: [
-    [63.4, GYM_MID - 3.0],
-    [63.4, GYM_MID + 3.0],
-    [62.2, GYM_MID - 4.6],
-    [62.2, GYM_MID + 4.6],
-    [61.0, GYM_MID - 5.8],
-    [61.0, GYM_MID + 5.8],
-    [59.6, GYM_MID - 2.2],
-    [59.6, GYM_MID + 2.2],
-    [58.4, GYM_MID - 4.2],
-    [58.4, GYM_MID + 4.2],
+    [planU(63.4), GYM_MID - 3.0],
+    [planU(63.4), GYM_MID + 3.0],
+    [planU(62.2), GYM_MID - 4.6],
+    [planU(62.2), GYM_MID + 4.6],
+    [planU(61.0), GYM_MID - 5.8],
+    [planU(61.0), GYM_MID + 5.8],
+    [planU(59.6), GYM_MID - 2.2],
+    [planU(59.6), GYM_MID + 2.2],
+    [planU(58.4), GYM_MID - 4.2],
+    [planU(58.4), GYM_MID + 4.2],
   ] as ReadonlyArray<readonly [number, number]>,
 } as const;
 
 /** Inicio de la historia: vereda de Laprida, frente al portal. */
 export const START = {
-  feet: { u: 35.6, v: 8.4 },
-  look: { u: ENTRANCE_U, v: -1.0, y: FY + 2.6 },
+  feet: { u: planU(35.6), v: planV(8.4) },
+  look: { u: ENTRANCE_U, v: planV(-1.0), y: FY + 2.6 },
 };
 
 /** Las anclas del acto, como `Anchor` para los datos de personajes. */

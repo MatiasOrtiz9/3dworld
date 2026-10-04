@@ -1,4 +1,4 @@
-import { GYM_MID, MEETING_POINT, V } from '../../world/SchoolLayout';
+import { GYM_MID, MEETING_POINT, V, fromPlan, planU, planV } from '../../world/SchoolLayout';
 import type { CharacterDef, Cond } from './types';
 import { ACT, ENTRANCE_U, actSpot } from './world';
 
@@ -25,7 +25,7 @@ export const CHARACTERS: readonly CharacterDef[] = [
     voice: { pitch: 1.3, rate: 1.08 },
     stations: [
       // En la vereda, a la derecha de la entrada vidriada (CAD), mientras Rubén abre.
-      { when: (q) => !q.done('p.portero'), at: { room: '', at: [ENTRANCE_U + 1.75, 3.6] }, face: 'n', anim: 'wave' },
+      { when: (q) => !q.done('p.portero'), at: { room: '', at: [ENTRANCE_U + 1.75, planV(3.6)] }, face: 'n', anim: 'wave' },
       { when: (q) => q.available('c5.palabras') || q.done('c5.palabras'), at: { room: 'gimnasio', at: [ACT.player.u, ACT.player.v - 1.1] }, face: 'e', anim: 'clap' },
       { at: { room: 'hall' }, follow: true },
     ],
@@ -45,7 +45,7 @@ export const CHARACTERS: readonly CharacterDef[] = [
       // la fachada y la portería queda a la derecha, CAD), corrido a un lado de
       // la columna azul del medio del portón: justo detrás, desde la vereda no
       // se lo veía.
-      { at: { room: 'hall', at: [ENTRANCE_U + 0.85, -1.1] }, face: 's' },
+      { at: { room: 'hall', at: [ENTRANCE_U + 0.85, planV(-1.1)] }, face: 's' },
     ],
     idle: ['De acá se ve toda Laprida.', 'Buen día, buen día…', 'Cualquier cosa, estoy en el portal.'],
   },
@@ -63,7 +63,7 @@ export const CHARACTERS: readonly CharacterDef[] = [
       // Dirección primaria del CAD mide 4,5 × 1,9 m y la hoja abierta de su
       // puerta la parte en dos: adentro quedaba tapada por la hoja o parada en
       // el paso. Y la historia la busca en Recepción: es su lugar de charla.)
-      { at: { room: 'hall', at: [36.7, -7.3] }, face: { room: 'hall', at: [ENTRANCE_U, V.hallDoors] } },
+      { at: { room: 'hall', at: fromPlan(36.7, -7.3) }, face: { room: 'hall', at: [ENTRANCE_U, V.hallDoors] } },
     ],
     idle: ['La escuela se cuenta mejor caminándola.', 'Cuarenta años… ¡y seguimos aprendiendo!'],
   },
@@ -106,7 +106,7 @@ export const CHARACTERS: readonly CharacterDef[] = [
       // Detrás del mostrador, en la punta de la vitrina: entre la línea y las
       // heladeras el pasillo de servicio mide 1,1 m y ahí atienden los dos de
       // la cantina que derivan de la línea (`Places.cantina`).
-      { at: { room: 'buffet', at: [31.85, -19.6] }, face: 's' },
+      { at: { room: 'buffet', at: fromPlan(31.85, -19.6) }, face: 's' },
     ],
     idle: ['¡Hoy hay milanesas al horno!', 'Agua fresca para todos.'],
   },
@@ -119,11 +119,11 @@ export const CHARACTERS: readonly CharacterDef[] = [
     voice: { pitch: 0.9 },
     stations: [
       { when: ACTO, at: actSpot(0), face: 'e', anim: 'clap' },
-      { when: (q) => q.done('c1.campana') && !q.done('c1.martin'), at: { room: 'hall', at: [34.7, -7.8] }, face: 's', anim: 'wave' },
+      { when: (q) => q.done('c1.campana') && !q.done('c1.martin'), at: { room: 'hall', at: fromPlan(34.7, -7.8) }, face: 's', anim: 'wave' },
       // En la puerta de la Preceptoría (la caja PR junto a la escalera del ala
       // oeste, CAD): adentro, entre el escritorio y el estante, no hay lugar
       // para estar parado.
-      { at: { room: 'pasilloOesteL1', at: [11.05, -11.15] }, face: 's' },
+      { at: { room: 'pasilloOesteL1', at: fromPlan(11.05, -11.15) }, face: 's' },
     ],
     idle: ['¿Tenés el Pasaporte 40 a mano?', 'La pasarela vidriada es lo más lindo del piso.'],
   },
@@ -136,8 +136,8 @@ export const CHARACTERS: readonly CharacterDef[] = [
     voice: { pitch: 1.2 },
     stations: [
       { when: ACTO, at: actSpot(2), face: 'e', anim: 'clap' },
-      { when: (q) => q.done('c2.martin'), at: { room: 'aulaDanzas', at: [47.0, -8.2] }, face: 'w' },
-      { at: { room: 'salon', at: [46.0, -16.4] }, face: 'e' },
+      { when: (q) => q.done('c2.martin'), at: { room: 'aulaDanzas', at: fromPlan(47.0, -8.2) }, face: 'w' },
+      { at: { room: 'salon', at: fromPlan(46.0, -16.4) }, face: 'e' },
     ],
     idle: ['Cinco, seis, siete, ocho…', 'El espejo no miente: ¡hombros abajo!'],
   },
@@ -150,7 +150,7 @@ export const CHARACTERS: readonly CharacterDef[] = [
     voice: { pitch: 1.28, rate: 1.05 },
     stations: [
       { when: ACTO, at: actSpot(7), face: 'e', anim: 'clap' },
-      { at: { room: 'jardinRecepcion', at: [63.2, -37.0] }, face: 's' },
+      { at: { room: 'jardinRecepcion', at: fromPlan(63.2, -37.0) }, face: 's' },
     ],
     idle: ['¡Despacito por la escalera!', 'Las salas tienen nombre de color: así nadie se pierde.'],
   },
@@ -163,7 +163,7 @@ export const CHARACTERS: readonly CharacterDef[] = [
     voice: { pitch: 1.08, rate: 1.06 },
     stations: [
       { when: (q) => q.done('c5.juli'), at: actSpot(6), face: 'e', anim: 'clap' },
-      { at: { room: 'gimnasio', at: [57.6, GYM_MID - 2.4] }, face: 'e' },
+      { at: { room: 'gimnasio', at: [planU(57.6), GYM_MID - 2.4] }, face: 'e' },
     ],
     idle: ['¡Hidratación, equipo!', 'En handball nadie gana solo.'],
   },

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { NavGrid, climb, polyLength, stairLinks, type NavPath } from '../src/world/people/NavGrid';
-import { LEVEL_Y, levelOf, roomAt, schoolSolidLocal, setDynamicSolid, type Level } from '../src/world/SchoolLayout';
+import { LEVEL_Y, fromPlan, levelOf, planU, planV, roomAt, schoolSolidLocal, setDynamicSolid, type Level } from '../src/world/SchoolLayout';
 
 /**
  * Navegación de la gente: la grilla sale de la misma colisión que el jugador,
@@ -39,6 +39,8 @@ function insideWall(u: number, v: number, level: Level): boolean {
 }
 
 const P = (u: number, v: number, level: Level = 0) => ({ u, v, level });
+/** Vano del pasaje al polideportivo, leído en el plano (el vano se escala con su centro). */
+const GYM_DOOR = { u0: planU(49.8), v0: planV(-11.2), u1: planU(50.8), v1: planV(-9.1), level: 0 as Level };
 
 describe('gente — grilla de navegación', () => {
   it('se arma rápido y la planta baja es una sola pieza grande', () => {
@@ -51,15 +53,15 @@ describe('gente — grilla de navegación', () => {
     expect(biggest).toBeGreaterThan(12000);
   });
 
-  const routes: Array<[string, [number, number], [number, number]]> = [
-    ['hall → patio este', [37.5, -6.0], [45.0, -22.0]],
-    ['hall → polideportivo', [37.5, -6.0], [58.0, -10.0]],
-    ['pasillo sur → patio oeste', [20.0, -8.2], [22.0, -18.0]],
-    ['vereda → hall (por el portón)', [37.0, 4.0], [37.5, -6.0]],
-    ['vereda → aula 4', [37.0, 4.0], [24.5, -6.5]],
-    ['patio oeste → comedor', [22.0, -18.0], [32.25, -19.0]],
-    ['hall → jardín (sala amarilla)', [37.5, -6.0], [62.9, -32.0]],
-    ['pasillo sur → aula maker', [20.0, -8.2], [24.0, -31.0]],
+  const routes: Array<[string, readonly [number, number], readonly [number, number]]> = [
+    ['hall → patio este', fromPlan(37.5, -6.0), fromPlan(45.0, -22.0)],
+    ['hall → polideportivo', fromPlan(37.5, -6.0), fromPlan(58.0, -10.0)],
+    ['pasillo sur → patio oeste', fromPlan(20.0, -8.2), fromPlan(22.0, -18.0)],
+    ['vereda → hall (por el portón)', fromPlan(37.0, 4.0), fromPlan(37.5, -6.0)],
+    ['vereda → aula 4', fromPlan(37.0, 4.0), fromPlan(24.5, -6.5)],
+    ['patio oeste → comedor', fromPlan(22.0, -18.0), fromPlan(32.25, -19.0)],
+    ['hall → jardín (sala amarilla)', fromPlan(37.5, -6.0), fromPlan(62.9, -32.0)],
+    ['pasillo sur → aula maker', fromPlan(20.0, -8.2), fromPlan(24.0, -31.0)],
   ];
   for (const [name, a, b] of routes) {
     it(`hay camino: ${name}`, () => {
@@ -72,18 +74,18 @@ describe('gente — grilla de navegación', () => {
   }
 
   it('el portón es la entrada: de la vereda al hall no se pasa por una salida de emergencia', () => {
-    const path = nav.findPath(P(37.0, 4.0), P(37.5, -6.0))!;
+    const path = nav.findPath(P(...fromPlan(37.0, 4.0)), P(...fromPlan(37.5, -6.0)))!;
     const pts = path.legs[0].pts;
     for (let i = 0; i < pts.length; i += 2) {
       const u = pts[i];
       const v = pts[i + 1];
-      if (v > -0.5 && v < 1.0) expect(u, 'cruza la línea de fachada por el portón').toBeGreaterThan(32.9);
+      if (v > -0.5 && v < 1.0) expect(u, 'cruza la línea de fachada por el portón').toBeGreaterThan(planU(32.9));
     }
   });
 
   it('no hay camino a través de los muros: el aula 1 está cerrada salvo su puerta', () => {
     // Desde el aula 1 a la calle Miguel Cané: hay que salir al pasillo y dar la vuelta.
-    const path = nav.findPath(P(3.0, -3.5), P(-5.0, -3.5));
+    const path = nav.findPath(P(...fromPlan(3.0, -3.5)), P(...fromPlan(-5.0, -3.5)));
     if (path) {
       // Si existe, no cruza el muro oeste: el largo delata el rodeo.
       expect(path.length).toBeGreaterThan(10);
@@ -93,15 +95,15 @@ describe('gente — grilla de navegación', () => {
 
   it('una puerta con llave (setDynamicSolid) se respeta y al abrirse vuelve a pasarse', () => {
     // Cierra el acceso al polideportivo desde el pasaje.
-    setDynamicSolid('test-gym', { u0: 49.8, v0: -11.2, u1: 50.8, v1: -9.1, level: 0 });
+    setDynamicSolid('test-gym', GYM_DOOR);
     try {
-      const path = nav.findPath(P(45.0, -10.1), P(55.0, -10.0));
+      const path = nav.findPath(P(...fromPlan(45.0, -10.1)), P(...fromPlan(55.0, -10.0)));
       if (path) {
         for (const leg of path.legs) {
           for (let i = 0; i < leg.pts.length; i += 2) {
             const u = leg.pts[i];
             const v = leg.pts[i + 1];
-            expect(u > 49.8 && u < 50.8 && v > -11.2 && v < -9.1, 'pasa por la puerta cerrada').toBe(false);
+            expect(u > GYM_DOOR.u0 && u < GYM_DOOR.u1 && v > GYM_DOOR.v0 && v < GYM_DOOR.v1, 'pasa por la puerta cerrada').toBe(false);
           }
         }
       }
@@ -109,7 +111,7 @@ describe('gente — grilla de navegación', () => {
       setDynamicSolid('test-gym', null);
     }
     nav.now += 100;
-    const again = nav.findPath(P(45.0, -10.1), P(55.0, -10.0));
+    const again = nav.findPath(P(...fromPlan(45.0, -10.1)), P(...fromPlan(55.0, -10.0)));
     expect(again).not.toBeNull();
   });
 
@@ -117,8 +119,10 @@ describe('gente — grilla de navegación', () => {
     // Antes sólo se marcaba al cruzarlo un camino y la marca vencía a los
     // 6 s: el esquive y los destinos al azar metían chicos adentro.
     const g = new NavGrid();
-    const bins = { u0: 21.65, u1: 23.55, v0: -19.85, v1: -19.35, level: 0 as Level };
-    expect(g.isWalkable(0, 22.6, -19.6)).toBe(true);
+    // Centro leído en el plano; el cesto y los márgenes, en metros reales.
+    const [bu, bv] = fromPlan(22.6, -19.6);
+    const bins = { u0: bu - 0.95, u1: bu + 0.95, v0: bv - 0.25, v1: bv + 0.25, level: 0 as Level };
+    expect(g.isWalkable(0, bu, bv)).toBe(true);
     setDynamicSolid('test-bins', bins);
     try {
       for (let k = 0; k < 400; k++) {
@@ -126,30 +130,30 @@ describe('gente — grilla de navegación', () => {
         g.sweepDynamic(300);
       }
       for (const [u, v] of [
-        [22.6, -19.6],
-        [21.7, -19.4],
-        [23.5, -19.8],
-        [22.6, -19.2], // 15 cm fuera del borde: margen de cuerpo
-        [21.5, -19.6],
+        [bu, bv],
+        [bu - 0.9, bv + 0.2],
+        [bu + 0.9, bv - 0.2],
+        [bu, bv + 0.4], // 15 cm fuera del borde: margen de cuerpo
+        [bu - 1.1, bv],
       ]) {
         expect(g.isWalkable(0, u, v), `cesto en ${u}, ${v}`).toBe(false);
       }
-      expect(g.isWalkable(0, 22.6, -18.6), 'a 75 cm se pasa').toBe(true);
+      expect(g.isWalkable(0, bu, bv + 1.0), 'a 75 cm se pasa').toBe(true);
       // Vence la marca: se vuelve a tantear y sigue cerrado.
       g.now += 100;
-      expect(g.isWalkable(0, 22.6, -19.6)).toBe(false);
+      expect(g.isWalkable(0, bu, bv)).toBe(false);
     } finally {
       setDynamicSolid('test-bins', null);
     }
     g.now += 100;
-    expect(g.isWalkable(0, 22.6, -19.6), 'sin los cestos se vuelve a pisar').toBe(true);
+    expect(g.isWalkable(0, bu, bv), 'sin los cestos se vuelve a pisar').toBe(true);
   });
 
   it('las escaleras se derivan del plano y llevan a cada piso', () => {
     expect(stairLinks().length).toBeGreaterThanOrEqual(nav.usableLinks().length);
     const links = nav.usableLinks();
     const has = (from: Level, to: Level, uMin: number, uMax: number) =>
-      links.some((l) => l.from === from && l.to === to && l.pts[0][0] >= uMin && l.pts[0][0] <= uMax);
+      links.some((l) => l.from === from && l.to === to && l.pts[0][0] >= planU(uMin) && l.pts[0][0] <= planU(uMax));
     // Edificio principal (hall o bloque norte o ala oeste), bloque al aula de danzas, y el jardín.
     expect(has(0, 1, 5, 40), 'planta baja → primer piso').toBe(true);
     expect(has(1, 2, 40, 50), 'primer piso → aula de danzas').toBe(true);
@@ -167,11 +171,11 @@ describe('gente — grilla de navegación', () => {
   });
 
   it('de la planta baja al aula de danzas del segundo piso, por escaleras', () => {
-    const path = nav.findPath(P(37.5, -6.0), P(47.0, -8.0, 2));
+    const path = nav.findPath(P(...fromPlan(37.5, -6.0)), P(...fromPlan(47.0, -8.0), 2));
     expect(path).not.toBeNull();
     const stairs = path!.legs.filter((l) => l.stair).map((l) => l.stair!.id);
     expect(stairs.length).toBeGreaterThanOrEqual(2);
-    expect(roomAt(47.0, -8.0, 2)?.id).toBe('aulaDanzas');
+    expect(roomAt(...fromPlan(47.0, -8.0), 2)?.id).toBe('aulaDanzas');
   });
 
   it('los caminos son cortos de calcular', () => {

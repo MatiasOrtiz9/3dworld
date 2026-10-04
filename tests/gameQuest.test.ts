@@ -5,6 +5,7 @@ import { dialogue } from '../src/game/story/dialogues';
 import { objective } from '../src/game/story/objectives';
 import { FRASES, phrasesFromQuery } from '../src/game/story/phrases';
 import { LOCKS } from '../src/game/story/world';
+import { fromPlan } from '../src/world/SchoolLayout';
 import { focusByGaze, focusByRay, type Candidate } from '../src/game/Interaction';
 import { zoneForRoom } from '../src/game/audioZones';
 import type { Effect } from '../src/game/story/types';
@@ -93,7 +94,7 @@ describe('motor de la historia', () => {
     const bell = e.interact('campana');
     expect(bell.some((f) => f.do === 'phase' && f.phase === 'recreo')).toBe(true);
     expect(bell.some((f) => f.do === 'script' && f.id === 'recreo')).toBe(true);
-    expect(e.stationFor('martin')?.at).toEqual({ room: 'hall', at: [34.7, -7.8] });
+    expect(e.stationFor('martin')?.at).toEqual({ room: 'hall', at: fromPlan(34.7, -7.8) });
   });
 
   it('los objetos que todavía no están listos no hacen nada', () => {

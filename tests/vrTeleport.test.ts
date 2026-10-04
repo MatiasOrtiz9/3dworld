@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateCityPlan } from '../src/world/CityLayout';
 import { CityIndex } from '../src/world/CityIndex';
-import { LANDINGS, LEVEL_Y, SCHOOL, toWorld } from '../src/world/SchoolLayout';
+import { LANDINGS, LEVEL_Y, SCHOOL, fromPlan, toWorld } from '../src/world/SchoolLayout';
 
 /**
  * Destino de teletransporte VR, con el mismo predicado que main.ts (el punto
@@ -15,9 +15,10 @@ describe('teletransporte VR en la escuela', () => {
   const f = index.school!;
   const can = (x: number, z: number, feet: number) =>
     [[0, 0], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3]].every(([dx, dz]) => index.canLandAt(x + dx, z + dz, feet));
+  /** Punto leído en el plano (`fromPlan`), al nivel dado. */
   const land = (u: number, v: number, level: 0 | 1 | 2) => {
     const feet = LEVEL_Y[level];
-    const { x, z } = toWorld(f, u, v);
+    const { x, z } = toWorld(f, ...fromPlan(u, v));
     return { ok: can(x, z, feet), feet: index.groundHeight(x, z, feet) };
   };
 
@@ -39,7 +40,7 @@ describe('teletransporte VR en la escuela', () => {
     let before = 0;
     for (let u = 33; u <= 38; u += 0.5) {
       for (let v = -34.5; v <= -25.5; v += 0.5) {
-        const { x, z } = toWorld(f, u, v);
+        const { x, z } = toWorld(f, ...fromPlan(u, v));
         if (can(x, z, LEVEL_Y[1])) now++;
         if ([[0, 0], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3]].every(([dx, dz]) => !index.isPedestrianBlocked(x + dx, z + dz))) before++;
       }

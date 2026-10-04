@@ -6,14 +6,18 @@ import {
   PORTAL_PILLARS,
   PORTAL_RAILS,
   ROOMS,
+  SC,
   SCHOOL,
   STATION_SPOTS,
   STUDENT_ZONES,
   U,
   V,
   WALLS,
+  fromPlan,
   inPoly,
   miguelCaneU,
+  planU,
+  planV,
   roomAt,
   toLocal,
   toWorld,
@@ -22,14 +26,18 @@ import { triangulate } from '../src/world/builders/PrismBatch';
 
 const SEEDS = [1, 7, 42, 99, 123, 2050, 31337, 424242, 7777, 55555, 8, 13, 21, 34, 89];
 
-/** Camina en línea recta de a pasos cortos: false si algún punto está bloqueado. */
+/**
+ * Camina en línea recta de a pasos cortos: false si algún punto está
+ * bloqueado. Los vértices se leen en el plano (`fromPlan`), como los cita
+ * HANDOFF: así el recorrido sigue a la escuela a tamaño real.
+ */
 function walkable(index: CityIndex, f: ReturnType<CityIndex['school']> & object, path: Array<[number, number]>): boolean {
   for (let i = 0; i < path.length - 1; i++) {
     const [u0, v0] = path[i];
     const [u1, v1] = path[i + 1];
     const n = Math.ceil(Math.hypot(u1 - u0, v1 - v0) / 0.1);
     for (let k = 0; k <= n; k++) {
-      const p = toWorld(f, u0 + ((u1 - u0) * k) / n, v0 + ((v1 - v0) * k) / n);
+      const p = toWorld(f, ...fromPlan(u0 + ((u1 - u0) * k) / n, v0 + ((v1 - v0) * k) / n));
       if (index.isPedestrianBlocked(p.x, p.z)) return false;
     }
   }
@@ -102,15 +110,15 @@ describe('escuela CIMDIP & Miguel Cané — planta del plano de evacuación', ()
   });
 
   it('respeta las proporciones medidas del plano', () => {
-    // Frente sobre Laprida y fondo del jardín.
-    expect(SCHOOL.width).toBeGreaterThan(60);
-    expect(SCHOOL.width).toBeLessThan(75);
-    // Cinco aulas de ~6,5 m sobre Laprida.
+    // Frente sobre Laprida: el real, ~78 m (OpenStreetMap), no los 67,4 del plano.
+    expect(SCHOOL.width).toBeGreaterThan(77);
+    expect(SCHOOL.width).toBeLessThan(79);
+    // Cinco aulas sobre Laprida: ~6,5 m en el plano, ~7,5 m reales.
     const aulas = [U.w, U.c2, U.c3, U.c4, U.c5, U.east1];
     for (let i = 0; i < 5; i++) {
       const w = aulas[i + 1] - aulas[i];
-      expect(w).toBeGreaterThan(5.8);
-      expect(w).toBeLessThan(7.4);
+      expect(w).toBeGreaterThan(5.8 * SC);
+      expect(w).toBeLessThan(7.4 * SC);
     }
     // El gimnasio es el ambiente más grande.
     const gym = ROOMS.find((r) => r.id === 'gimnasio')!;
@@ -142,8 +150,8 @@ describe('escuela CIMDIP & Miguel Cané — planta del plano de evacuación', ()
   it('los ambientes de planta baja no se superponen', () => {
     // Muestreo en grilla: cada punto cae a lo sumo en un ambiente.
     const ground = ROOMS.filter((r) => (r.level ?? 0) === 0);
-    for (let u = -2; u < 68; u += 0.7) {
-      for (let v = -39; v < 0; v += 0.7) {
+    for (let u = planU(-2); u < planU(68); u += 0.7) {
+      for (let v = planV(-39); v < 0; v += 0.7) {
         const hits = ground.filter((r) => inPoly(r.poly, u, v)).map((r) => r.id);
         expect(hits.length, `${u.toFixed(1)}, ${v.toFixed(1)}: ${hits.join(',')}`).toBeLessThanOrEqual(1);
       }
@@ -158,7 +166,7 @@ describe('escuela CIMDIP & Miguel Cané — planta del plano de evacuación', ()
 
   it('el ala oeste se apoya sobre la diagonal de Miguel Cané', () => {
     // A 30 cm dentro de la línea municipal hay muro; a 1 m, ambiente.
-    for (const v of [-12, -16, -19, -35.5]) {
+    for (const v of [-12, -16, -19, -35.5].map(planV)) {
       const inside = toWorld(f, miguelCaneU(v) + 1.0, v);
       expect(index.isSolid(inside.x, inside.z), `v=${v}`).toBe(false);
       const wall = toWorld(f, miguelCaneU(v), v);
@@ -214,7 +222,7 @@ describe('escuela CIMDIP & Miguel Cané — planta del plano de evacuación', ()
       [U.c3, -3],
       [U.patioW, -15],
       [U.gymW, -15],
-      [41.5, V.facade],
+      [planU(41.5), V.facade],
     ]) {
       const p = toWorld(f, u, v);
       expect(index.isSolid(p.x, p.z), `${u}, ${v}`).toBe(true);

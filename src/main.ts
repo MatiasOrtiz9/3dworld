@@ -27,7 +27,7 @@ import type { TouchControls } from './ui/TouchControls';
 import { classifyDevice, detectTouchMode, evenCap, fovForAspect, mobileRenderScale, readDeviceInfo, sampleRefresh } from './ui/device';
 import { GameDirector } from './game/GameDirector';
 import type { PlayerApi, WorldPoint } from './game/contracts';
-import { SCHOOL, toWorld } from './world/SchoolLayout';
+import { SCHOOL, fromPlan, planU, toWorld } from './world/SchoolLayout';
 
 // ---------------------------------------------------------------- referencias
 
@@ -274,6 +274,8 @@ Object.assign(window as unknown as Record<string, unknown>, {
   __plan: () => city?.plan ?? null,
   // Marco de la escuela: las capturas se encuadran en coordenadas del plano (u, v).
   __schoolFrame: () => city?.schoolFrame ?? null,
+  // Para las herramientas: punto leído en el plano CAD → metros reales.
+  __fromPlan: fromPlan,
   // Colisión y pisos: tools/test-vr.mjs verifica con el mismo índice que el juego.
   __index: () => city?.index ?? null,
   // Estado de la caminata VR (pies, cabeza, movimiento) para tools/test-vr.mjs.
@@ -326,8 +328,8 @@ window.addEventListener('pagehide', (event) => {
 
 /** Primer cuadro, en escritorio y en VR: la fachada de la escuela desde Laprida. */
 function startView(c: City): { eye: Vector3; look: Vector3 } {
-  const eye = toWorld(c.schoolFrame, 31, SCHOOL.front + 11.8);
-  const look = toWorld(c.schoolFrame, 36.5, 0);
+  const eye = toWorld(c.schoolFrame, planU(31), SCHOOL.front + 11.8);
+  const look = toWorld(c.schoolFrame, planU(36.5), 0);
   return { eye: new Vector3(eye.x, 1.7, eye.z), look: new Vector3(look.x, 3.6, look.z) };
 }
 
@@ -392,8 +394,10 @@ async function buildCity(newSeed: number): Promise<void> {
   // gradación (ver Environment.setInMaterialGrade).
   environment.setInMaterialGrade(profile.post === 'off');
   // La sombra estática gasta su resolución en la escuela, no en el barrio.
-  const centre = toWorld(city.schoolFrame, 34, -20);
-  environment.setFocus({ x: centre.x, z: centre.z }, 95);
+  // Centro del predio leído en el plano; con la escuela real (78 × 47 m) el
+  // radio sube a 100 para que el jardín y la esquina de Miguel Cané entren.
+  const centre = toWorld(city.schoolFrame, ...fromPlan(34, -20));
+  environment.setFocus({ x: centre.x, z: centre.z }, 100);
   // Mapa de luz natural de los interiores (ventanas, fondos de aula, debajo
   // de mesas y escaleras) y adaptación de la exposición al entrar: sin esto,
   // las aulas quedan con la luz pareja de antes.

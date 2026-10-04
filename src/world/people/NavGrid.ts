@@ -10,6 +10,8 @@ import {
   WALLS,
   inLot,
   levelOf,
+  planU,
+  planV,
   roomAt,
   schoolFloorLocal,
   schoolSolidLocal,
@@ -46,8 +48,12 @@ import {
 
 /** Lado de celda (m). */
 export const NAV_CELL = 0.25;
-/** Límites locales de la grilla: el predio, la vereda de Laprida y la calle del fondo. */
-export const NAV_BOUNDS = { u0: -8, v0: -41.5, u1: 70.5, v1: 7.5 } as const;
+/**
+ * Límites locales de la grilla: el predio, la vereda de Laprida y la calle del
+ * fondo. Salen del plano (`planU`/`planV`): la escuela a tamaño real es más
+ * grande y la grilla la sigue sin dejar afuera el jardín ni la vereda.
+ */
+export const NAV_BOUNDS = { u0: planU(-8), v0: planV(-41.5), u1: planU(70.5), v1: planV(7.5) } as const;
 const C = NAV_CELL;
 const U0 = NAV_BOUNDS.u0;
 const V0 = NAV_BOUNDS.v0;
@@ -93,7 +99,7 @@ function closedForCrowd(level: Level, type: string, u: number, v: number, nu: nu
   if (type === 'exit') return true;
   // Puerta roja del polideportivo a Laprida: de servicio. Sin esto, todo el
   // que va al gimnasio desde la vereda entraba por ahí y no por el portón.
-  if (Math.abs(v) < 0.4 && u > 65.5) return true;
+  if (Math.abs(v) < 0.4 && u > planU(65.5)) return true;
   // Puerta de la portería al atrio (la celda sur de la oficina de recepción,
   // CAD): es del portero. Abierta para la grilla, la oficina era un segundo
   // acceso entre el atrio y el vestíbulo y la multitud la usaba en todos los

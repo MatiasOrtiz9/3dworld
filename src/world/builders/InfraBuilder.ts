@@ -479,7 +479,11 @@ export class InfraBuilder {
       const z = north ? site.z0 - treeLine : along;
       if (!this.rng.chance(0.72)) continue;
       this.street.treePit(x, z);
-      this.nature.broadleaf(x, z, this.rng.range(0.62, 1.1), 0.1);
+      // Sobre Gral. Acha el muro del polideportivo y del jardín queda a 4 m
+      // del arbolado: una copa grande (hasta ~4 m de radio) se metía por la
+      // bóveda y se veía adentro del gimnasio. Se acota sin cambiar el azar.
+      const scale = this.rng.range(0.62, 1.1);
+      this.nature.broadleaf(x, z, north ? scale : Math.min(scale, 0.8), 0.1);
     }
   }
 

@@ -31,8 +31,11 @@ import {
   VAULTED,
   WALKABLE,
   WALLS,
+  SC,
   ceilingHeight,
   inPoly,
+  planU,
+  planV,
   roomLevel,
   stairY,
   type Level,
@@ -690,7 +693,14 @@ const EYE_ADAPT_OUT = 0.6;
  * Grilla en planta de la luz de la escuela: 10 cm por celda (un muro interior
  * son dos celdas, así cada cara de un muro lee SU ambiente y no el de al lado).
  */
-export const DAYLIGHT_GRID = { u0: -9.6, v0: -42, cell: 0.1, width: 820, height: 460 } as const;
+export const DAYLIGHT_GRID = (() => {
+  // Derivada del predio real (ver `SC`): del ochavo de Miguel Cané (−9,6 en el
+  // plano) y el fondo (−42) hasta pasar el muro este y la línea municipal.
+  const cell = 0.1;
+  const u0 = -9.6 * SC;
+  const v0 = -42 * SC;
+  return { u0, v0, cell, width: Math.ceil((planU(72.4) - u0) / cell - 1e-6), height: Math.ceil((planV(4) - v0) / cell - 1e-6) } as const;
+})();
 
 /**
  * Calibración de la luz de los interiores (multiplica el rebote y el cielo).

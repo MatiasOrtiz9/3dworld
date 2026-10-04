@@ -1,6 +1,6 @@
 import type { CharacterLook, NpcAnim, NpcRole, SchoolPhase } from '../../game/contracts';
 import { Rng } from '../../utils/rng';
-import { LEVEL_Y, U, V, WALLS, inLot, levelOf, roomAt, schoolFloorLocal, schoolSolidLocal, type Level, type Rect } from '../SchoolLayout';
+import { LEVEL_Y, U, V, WALLS, inLot, levelOf, planU, planV, roomAt, schoolFloorLocal, schoolSolidLocal, type Level, type Rect } from '../SchoolLayout';
 import { GESTURES, SEATED, newAnimState, setBase, startGesture, tickAnim, type AnimId, type AnimState } from './Anim';
 import { bodyDims, dressStaff, makeAppearance, type Appearance, type BodyDims, type StaffKind } from './Looks';
 import { NAV_BOUNDS, NavGrid, type NavPoint, type PathJob, type PathLeg } from './NavGrid';
@@ -167,7 +167,7 @@ export class Agent {
   scriptOnce = 0;
   resolve: ((ok: boolean) => void) | null = null;
   /** Calle de la vereda (paseantes y los que se van): v del carril y sentido. */
-  laneV = 4;
+  laneV = planV(4);
   laneDir = 1;
   walkOff = false;
   /** Lugar de la fila al que fue (para avanzar cuando la fila se mueve). */
@@ -226,12 +226,26 @@ const KINDER_ROOMS = ['salaAmarilla', 'salaRoja', 'salaCeleste'];
 /** Cupo por aula: un aula llena al 100 % se ve artificial. */
 const ROOM_CAP = 18;
 
+/**
+ * Eje de la entrada sobre Laprida (u 37 del plano): parte la vereda en dos
+ * mitades para los que llegan y se van.
+ */
+const MID_U = planU(37);
+/** Cuánto se agrandó el frente en u: las distancias "a lo largo de la cuadra" crecen con él. */
+const SCALE_U = planU(10) / 10;
+/** Rectángulo leído en el plano, en metros reales. */
+function planRect(u0: number, v0: number, u1: number, v1: number): Rect {
+  return { u0: planU(u0), v0: planV(v0), u1: planU(u1), v1: planV(v1) };
+}
+/** Rincón del patio este, al pie de la escalera exterior, donde charlan los de secundaria. */
+const PATIO_EXT_GROUPS: Rect = planRect(33.5, -26.5, 41.5, -20.5);
+
 /** Zonas de juego (local, planta baja). */
-const PLAY_KIDS: Rect = { u0: 34.2, v0: -31.5, u1: 49.2, v1: -23.9 };
+const PLAY_KIDS: Rect = planRect(34.2, -31.5, 49.2, -23.9);
 // Dentro del patio central del CAD (u 14,83–27,36, v −8,53 a −20,96): con el
 // rectángulo viejo se jugaba en la punta del comedor y en el pasillo norte.
-const PLAY_PRIMARY: Rect = { u0: 16.2, v0: -20.4, u1: 26.9, v1: -10.2 };
-const PLAY_SECONDARY: Rect = { u0: 53.0, v0: -18.8, u1: 65.5, v1: -4.2 };
+const PLAY_PRIMARY: Rect = planRect(16.2, -20.4, 26.9, -10.2);
+const PLAY_SECONDARY: Rect = planRect(53.0, -18.8, 65.5, -4.2);
 /**
  * Baños para los mandados durante la clase, por nivel. En el primer piso sólo
  * Damas y Caballeros, que abren al pasillo de los trofeos: los del sector
@@ -293,13 +307,13 @@ export class PeopleSim {
   private pvu = 0;
   private pvv = 0;
   private plast: { u: number; v: number } | null = null;
-  view: SimView = { cu: 37, cv: 12, cy: 1.7, fu: 0, fv: -1, player: null };
+  view: SimView = { cu: MID_U, cv: planV(12), cy: 1.7, fu: 0, fv: -1, player: null };
   /** Personas activas que quiere el nivel adaptativo. */
   private targetActive = Infinity;
   private adaptiveT = 0;
   /** Límites de la vereda de Laprida (u) según el barrio. */
-  laneMin = -6.5;
-  laneMax = 69.2;
+  laneMin = planU(-6.5);
+  laneMax = planU(69.2);
   /** Presupuesto de A* por cuadro (expansiones), para no trabar el cuadro. */
   pathBudget: number;
   private readonly hash = new Map<number, Agent[]>();
@@ -439,16 +453,16 @@ export class PeopleSim {
     const blocked = this.world.blocked;
     if (!blocked) return;
     const step = (dir: number, limit: number) => {
-      let u = 37;
+      let u = MID_U;
       for (let k = 0; k < 400; k++) {
         const nu = u + dir * 0.5;
-        if (Math.abs(nu - 37) > limit || blocked(nu, 3.8) || blocked(nu, 4.8)) break;
+        if (Math.abs(nu - MID_U) > limit || blocked(nu, planV(3.8)) || blocked(nu, planV(4.8))) break;
         u = nu;
       }
       return u;
     };
-    this.laneMin = Math.min(-6.5, step(-1, 70));
-    this.laneMax = Math.max(69.2, step(1, 70));
+    this.laneMin = Math.min(planU(-6.5), step(-1, 70 * SCALE_U));
+    this.laneMax = Math.max(planU(69.2), step(1, 70 * SCALE_U));
   }
 
   get population(): number {
@@ -551,7 +565,7 @@ export class PeopleSim {
         for (const a of pw) plan.set(a, this.wanderTask('patioOeste', 0));
         const [sh, se, ss, sw] = split(sec, [0.35, 0.25, 0.25, 0.15]);
         groupsIn(sh, 'hall', 0, [2, 4]);
-        groupsIn(se, { u0: 33.5, v0: -26.5, u1: 41.5, v1: -20.5 }, 0, [3, 5]);
+        groupsIn(se, PATIO_EXT_GROUPS, 0, [3, 5]);
         for (const a of ss) plan.set(a, home(a, 'sitTalk') ?? this.wanderTask('hall', 0));
         for (const a of sw) plan.set(a, this.wanderTask('hall', 0));
         teachers.forEach((t, i) => {
@@ -585,7 +599,7 @@ export class PeopleSim {
         for (const a of pw) plan.set(a, this.wanderTask('patioOeste', 0));
         groupsIn(pc, 'pasilloSur', 0, [2, 3]);
         const [sg, sh, sp, sc, sgy] = split(sec, [0.3, 0.2, 0.2, 0.15, 0.15]);
-        groupsIn(sg, { u0: 33.5, v0: -26.5, u1: 41.5, v1: -20.5 }, 0, [3, 5]);
+        groupsIn(sg, PATIO_EXT_GROUPS, 0, [3, 5]);
         groupsIn(sh, 'hall', 0, [2, 4]);
         for (const a of sp) plan.set(a, { k: 'play', rect: PLAY_SECONDARY, level: 0 });
         for (const a of sc) plan.set(a, this.seatTask(a, ['buffet'], 'sitTalk') ?? this.wanderTask('buffet', 0));
@@ -625,8 +639,8 @@ export class PeopleSim {
           if (i === 0) plan.set(t, { k: 'stand', at: this.places.speaker, anim: 'talk' });
           else {
             const side = i % 2 === 0;
-            const u = 55.5 + Math.floor((i - 1) / 2) * 1.6;
-            const v = side ? -19.0 : -3.4;
+            const u = planU(55.5) + Math.floor((i - 1) / 2) * 1.6;
+            const v = side ? planV(-19.0) : planV(-3.4);
             const p = this.nav.nearestWalkable(0, u, v, 1) ?? { u, v };
             plan.set(t, { k: 'stand', at: { u: p.u, v: p.v, level: 0, yaw: side ? 0.35 : Math.PI - 0.35 }, anim: 'idle' });
           }
@@ -731,8 +745,8 @@ export class PeopleSim {
     // Cada uno sale hacia la punta de la vereda de "su casa", sin que todos
     // apunten al mismo metro cuadrado.
     const end = this.places.sidewalkEnds[a.priority < 0.5 ? 0 : 1];
-    const inward = end.u < 37 ? 1 : -1;
-    const exit = { u: end.u + inward * this.rng.next() * 3, v: 2.9 + this.rng.next() * 2.8, level: 0 as Level };
+    const inward = end.u < MID_U ? 1 : -1;
+    const exit = { u: end.u + inward * this.rng.next() * 3, v: planV(2.9) + this.rng.next() * 2.8, level: 0 as Level };
     return { k: 'leave', exit };
   }
 
@@ -824,7 +838,7 @@ export class PeopleSim {
       }
     }
     if (task.k === 'stroll') {
-      a.laneV = rt.chance(0.5) ? 3.7 : 4.9;
+      a.laneV = planV(rt.chance(0.5) ? 3.7 : 4.9);
       a.laneDir = rt.chance(0.5) ? 1 : -1;
       this.teleport(a, this.laneMin + rt.next() * (this.laneMax - this.laneMin), a.laneV, 0, a.laneDir > 0 ? -Math.PI / 2 : Math.PI / 2);
       a.stage = 'act';
@@ -833,9 +847,9 @@ export class PeopleSim {
     }
     if (arriving) {
       // En la vereda, rumbo al portón, con una demora para que lleguen escalonados.
-      const u = 37 + (rt.next() - 0.5) * 2 * (rt.chance(0.5) ? 14 : 30);
-      const v = 2.8 + rt.next() * 2.6;
-      this.teleport(a, clamp(u, this.laneMin + 1, this.laneMax - 1), v, 0, yawOfLocal(37 - u, -v));
+      const u = MID_U + (rt.next() - 0.5) * 2 * (rt.chance(0.5) ? 14 : 30) * SCALE_U;
+      const v = planV(2.8) + rt.next() * 2.6;
+      this.teleport(a, clamp(u, this.laneMin + 1, this.laneMax - 1), v, 0, yawOfLocal(MID_U - u, -v));
       a.stage = 'act';
       a.task = { k: 'idle' };
       this.schedule(a, task, rt.next() * 25);
@@ -843,7 +857,7 @@ export class PeopleSim {
     }
     if (task.k === 'leave') {
       // Los que quedan vienen saliendo: frente al portón, rumbo a la vereda.
-      const p = this.places.randomInRect(this.places.sidewalkFront, () => rt.next(), 0, 0.3) ?? { u: 37, v: 3.5, level: 0 as Level };
+      const p = this.places.randomInRect(this.places.sidewalkFront, () => rt.next(), 0, 0.3) ?? { u: MID_U, v: planV(3.5), level: 0 as Level };
       this.teleport(a, p.u, p.v, 0, rt.range(-Math.PI, Math.PI));
       a.stage = 'act';
       a.task = { k: 'idle' };
@@ -1039,16 +1053,16 @@ export class PeopleSim {
     // La punta que la cámara no está mirando (o la más lejana).
     const score = (u: number) => {
       const du = u - v.cu;
-      const dv = 4.2 - v.cv;
+      const dv = planV(4.2) - v.cv;
       const d = Math.hypot(du, dv) || 1;
       return d * (1.5 - (du * v.fu + dv * v.fv) / d);
     };
     const end = score(ends[0]) > score(ends[1]) ? ends[0] : ends[1];
     // Repartidos a lo largo de unos metros de vereda: si todos aparecen en el
     // mismo punto se empujan entre sí.
-    const u = end + (end < 37 ? 1 : -1) * this.rt.next() * 4;
-    a.laneV = 3.2 + this.rt.next() * 2.2;
-    this.teleport(a, u, a.laneV, 0, u < 37 ? -Math.PI / 2 : Math.PI / 2);
+    const u = end + (end < MID_U ? 1 : -1) * this.rt.next() * 4;
+    a.laneV = planV(3.2) + this.rt.next() * 2.2;
+    this.teleport(a, u, a.laneV, 0, u < MID_U ? -Math.PI / 2 : Math.PI / 2);
     a.stage = 'act';
     a.task = { k: 'idle' };
     this.begin(a, task);
@@ -1067,7 +1081,7 @@ export class PeopleSim {
     // Tramo previo: si está fuera de la vereda medida o fuera de la grilla, primero vuelve.
     if (a.v > NAV_BOUNDS.v1 - 1 || a.u < NAV_BOUNDS.u0 + 0.5 || a.u > NAV_BOUNDS.u1 - 0.5) {
       const tu = clamp(a.u, NAV_BOUNDS.u0 + 1, NAV_BOUNDS.u1 - 1);
-      a.pre = [a.u, a.v, NaN, tu, Math.min(a.v, 5.5), NaN];
+      a.pre = [a.u, a.v, NaN, tu, Math.min(a.v, planV(5.5)), NaN];
       a.preI = 0;
     } else {
       a.pre = null;
@@ -1188,7 +1202,7 @@ export class PeopleSim {
       // Llegó a la punta de la vereda: sigue de largo hasta perderse de vista.
       a.walkOff = true;
       a.stage = 'act';
-      a.laneDir = t.exit.u < 37 ? -1 : 1;
+      a.laneDir = t.exit.u < MID_U ? -1 : 1;
       a.laneV = a.v;
       return;
     }
@@ -1508,7 +1522,7 @@ export class PeopleSim {
     if (walkOff) {
       // Fuera de cuadro y lejos (o muy lejos): se fue.
       const d = Math.hypot(a.u - this.view.cu, a.v - this.view.cv);
-      if ((a.unseen > 1.2 && d > 22) || Math.abs(a.u - 37) > 95) {
+      if ((a.unseen > 1.2 && d > 22) || Math.abs(a.u - MID_U) > 95) {
         a.gone = true;
         a.stage = 'gone';
         a.walkOff = false;
@@ -1744,6 +1758,10 @@ export class PeopleSim {
       let budget = a.walkSpeed * 0.7 * dt;
       if (a.wp > 0 && a.wp < pts.length / 2 && this.stairAhead(a, leg)) budget = 0;
       const moving = budget > 0;
+      // Esperando al pie (todavía no pisó el primer escalón): la fila se
+      // abre un poco. En el tramo no hay esquive, y los que llegaban por el
+      // pasillo se quedaban parados todos en el mismo punto del pie.
+      if (!moving && a.wp === 1) this.spreadAtFoot(a);
       while (a.wp < pts.length / 2 && budget > 0) {
         const su = a.wp > 0 ? pts[a.wp * 2] - pts[a.wp * 2 - 2] : 0;
         const sv = a.wp > 0 ? pts[a.wp * 2 + 1] - pts[a.wp * 2 - 1] : 0;
@@ -1891,6 +1909,43 @@ export class PeopleSim {
         this.requestPath(a, { u: a.u, v: a.v, level: a.level }, a.goal);
       }
     }
+  }
+
+  /**
+   * Separa un poco a quien espera al pie de una escalera de los que esperan
+   * pegados a él (menos de 0,32 m), sin meterlo en un muro: así la fila de
+   * espera no se funde en un solo bulto.
+   */
+  private spreadAtFoot(a: Agent): void {
+    const R = 0.32;
+    let pu = 0;
+    let pv = 0;
+    const cell = this.hashKey(a.level, a.u, a.v);
+    for (let di = -1; di <= 1; di++) {
+      for (let dj = -1; dj <= 1; dj++) {
+        const list = this.hash.get(cell + di + dj * 1000);
+        if (!list) continue;
+        for (const o of list) {
+          if (o === a || !o.alive || Math.abs(o.y - a.y) > 0.5) continue;
+          const du = a.u - o.u;
+          const dv = a.v - o.v;
+          const d = Math.hypot(du, dv);
+          if (d >= R) continue;
+          // Dos exactamente en el mismo punto: se abren según el índice.
+          const k = d > 1e-4 ? (R - d) / d : R;
+          pu += d > 1e-4 ? du * k : (a.idx < o.idx ? 1 : -1) * k;
+          pv += d > 1e-4 ? dv * k : 0;
+        }
+      }
+    }
+    const m = Math.hypot(pu, pv);
+    if (m < 1e-4) return;
+    const step = Math.min(0.04, m * 0.5) / m;
+    const nu = a.u + pu * step;
+    const nv = a.v + pv * step;
+    if (schoolSolidLocal(nu, nv, a.y) || !this.nav.isWalkable(a.level, nu, nv)) return;
+    a.u = nu;
+    a.v = nv;
   }
 
   /**

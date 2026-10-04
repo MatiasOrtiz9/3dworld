@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { LEVEL_Y, setDynamicSolid, type Level } from '../src/world/SchoolLayout';
+import { LEVEL_Y, planU, planV, setDynamicSolid, type Level } from '../src/world/SchoolLayout';
 import { resolveAnchor, roomById, roomCenter, standNear } from '../src/game/story/anchors';
 import { StoryEngine } from '../src/game/story/StoryEngine';
 import { DOOR_LOCKS, ENTRANCE_U, EVAC_ROUTE, INTERACTABLES, LOCKS, PLACES, STAIR_GUIDES, interactable } from '../src/game/story/world';
@@ -16,7 +16,7 @@ import { flood, reached, walk } from './gameReachKit';
  */
 
 /** Portal sobre Laprida, frente a la entrada vidriada: donde empieza la historia. */
-const PORTAL: readonly [number, number] = [ENTRANCE_U, 3.2];
+const PORTAL: readonly [number, number] = [ENTRANCE_U, planV(3.2)];
 
 function applyLocks(open: (z: ZoneId) => boolean): void {
   for (const l of LOCKS) setDynamicSolid(l.id, open(l.zone) ? null : l.rect);
@@ -115,17 +115,17 @@ describe('alcance caminando', () => {
 
   it('antes de hablar con Rubén la escuela está cerrada; después, abierta', () => {
     const closed = reachable(() => false);
-    expect(canReach(closed, { u: 37.45, v: -6, level: 0 }), 'hall alcanzable sin Rubén').toBe(false);
+    expect(canReach(closed, { u: planU(37.45), v: planV(-6), level: 0 }), 'hall alcanzable sin Rubén').toBe(false);
     // Ni por adentro de la portería (tiene puerta al atrio y al vestíbulo).
-    expect(canReach(closed, { u: 37.6, v: -3.2, level: 0 }), 'portería alcanzable sin Rubén').toBe(false);
+    expect(canReach(closed, { u: planU(37.6), v: planV(-3.2), level: 0 }), 'portería alcanzable sin Rubén').toBe(false);
     const open = reachable((z) => z === 'entrada');
-    expect(canReach(open, { u: 37.45, v: -6, level: 0 })).toBe(true);
+    expect(canReach(open, { u: planU(37.45), v: planV(-6), level: 0 })).toBe(true);
     // Sin el primer piso abierto no se sube.
-    expect(open[1].length === 0 || !reached(open[1], 34.95, -8.0)).toBe(true);
+    expect(open[1].length === 0 || !reached(open[1], planU(34.95), planV(-8.0))).toBe(true);
     const all = reachable(() => true);
-    expect(canReach(all, { u: 34.95, v: -8.0, level: 1 }), 'pasillo de los trofeos').toBe(true);
-    expect(canReach(all, { u: 47.0, v: -8.2, level: 2 }), 'aula de danzas').toBe(true);
-    expect(canReach(all, { u: 63.5, v: -32.0, level: 2 }), 'SUM del jardín').toBe(true);
+    expect(canReach(all, { u: planU(34.95), v: planV(-8.0), level: 1 }), 'pasillo de los trofeos').toBe(true);
+    expect(canReach(all, { u: planU(47.0), v: planV(-8.2), level: 2 }), 'aula de danzas').toBe(true);
+    expect(canReach(all, { u: planU(63.5), v: planV(-32.0), level: 2 }), 'SUM del jardín').toBe(true);
   });
 
   it('cada paso de la historia se alcanza con las zonas abiertas en ese momento', () => {

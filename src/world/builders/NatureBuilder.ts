@@ -158,6 +158,16 @@ export class NatureBuilder {
   }
 
   /**
+   * Un árbol que no se planta pero consume del generador compartido lo mismo
+   * que `broadleaf`: así un perfil puede omitir árboles que no se ven (el
+   * visor, en los patios cerrados de las manzanas) sin correr el azar del
+   * resto del barrio (HANDOFF 42).
+   */
+  skipBroadleaf(scale = 1): void {
+    this.legacyDraws(scale);
+  }
+
+  /**
    * Los números que la versión anterior de `broadleaf` sacaba del generador
    * COMPARTIDO de la ciudad, en el mismo orden y cantidad (los valores se
    * descartan). Todos los constructores comparten ese generador: si un árbol

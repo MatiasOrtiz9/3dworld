@@ -4,7 +4,7 @@ import { CreateCylinder } from '@babylonjs/core/Meshes/Builders/cylinderBuilder'
 import { CreateIcoSphere } from '@babylonjs/core/Meshes/Builders/icoSphereBuilder';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
-import { GYM_MID, LEVEL_Y, schoolSolidLocal, setDynamicSolid, toWorld, type SchoolFrame } from '../../world/SchoolLayout';
+import { GYM_MID, ITEMS, LEVEL_Y, U, schoolSolidLocal, setDynamicSolid, toWorld, type SchoolFrame } from '../../world/SchoolLayout';
 import { STANDARD_SUN_COMP } from '../../world/Materials';
 import type { Resolved } from '../story/anchors';
 import type { LockDef } from '../story/types';
@@ -591,7 +591,12 @@ export class GameProps {
   }
 }
 
-/** Punto de siete metros, frente al arco este del polideportivo. */
-export const PENALTY_SPOT = { u: 59.45, v: GYM_MID } as const;
-/** Línea de gol del arco este (el frente del arco, hacia la cancha). */
-export const GOAL_MOUTH_U = 66.09;
+/**
+ * Línea de gol del arco este (el frente del arco, hacia la cancha). Sale del
+ * arco mismo (`ITEMS`, ya en metros reales), 0,36 m delante de su centro: así
+ * la pelota sigue entrando al arco aunque el plano cambie de escala.
+ */
+const EAST_GOAL = ITEMS.find((i) => i.kind === 'goal' && i.face === 'w');
+export const GOAL_MOUTH_U = (EAST_GOAL ? EAST_GOAL.u : U.e - 0.95) - 0.36;
+/** Punto de siete metros, frente al arco este: la distancia del penal es real, no se escala. */
+export const PENALTY_SPOT = { u: GOAL_MOUTH_U - 6.64, v: GYM_MID } as const;

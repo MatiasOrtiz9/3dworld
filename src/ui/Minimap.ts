@@ -1,4 +1,4 @@
-import { FENCES, ROOMS, STAIRS, U, WALLS, WALKABLE, miguelCaneU, roomLevel, type Level, type Room } from '../world/SchoolLayout';
+import { FENCES, ROOMS, STAIRS, U, WALLS, WALKABLE, miguelCaneU, planU, planV, roomLevel, type Level, type Room } from '../world/SchoolLayout';
 import { UI } from './draw';
 
 /**
@@ -31,10 +31,15 @@ export interface MapState {
 
 /** Píxeles por metro del plano precalculado. */
 const PRE = 7;
-const U0 = -14;
-const V0 = -46;
-const U1 = 74;
-const V1 = 14;
+/**
+ * Marco del lienzo, leído en el plano y pasado a metros reales: la escuela a
+ * tamaño real es más grande y el lienzo crece con ella (los píxeles por metro
+ * no cambian, así el minimapa se ve a la misma escala que antes).
+ */
+const U0 = planU(-14);
+const V0 = planV(-46);
+const U1 = planU(74);
+const V1 = planV(14);
 
 function fillFor(r: Room): string {
   if (!r.roofed) return '#29452f';
@@ -67,11 +72,11 @@ export class Minimap {
     if (level === 0) {
       // Calles: Laprida al sur y Miguel Cané en diagonal al oeste.
       g.fillStyle = '#1b2523';
-      const [lx0, ly0] = at(U0, 2.4);
+      const [lx0, ly0] = at(U0, planV(2.4));
       g.fillRect(lx0, ly0, c.width, 9 * PRE);
       g.beginPath();
-      const p0 = at(miguelCaneU(4) - 2, 4);
-      const p1 = at(miguelCaneU(-44) - 2, -44);
+      const p0 = at(miguelCaneU(planV(4)) - 2, planV(4));
+      const p1 = at(miguelCaneU(planV(-44)) - 2, planV(-44));
       g.moveTo(p0[0], p0[1]);
       g.lineTo(p1[0], p1[1]);
       g.lineTo(p1[0] - 9 * PRE, p1[1]);
@@ -81,7 +86,7 @@ export class Minimap {
       g.fillStyle = 'rgba(238,246,242,0.28)';
       g.font = `700 ${Math.round(PRE * 1.3)}px ${UI.font}`;
       g.textAlign = 'center';
-      const [tx, ty] = at(U.e / 2, 7.2);
+      const [tx, ty] = at(U.e / 2, planV(7.2));
       g.fillText('LAPRIDA', tx, ty);
     }
     for (const r of ROOMS) {

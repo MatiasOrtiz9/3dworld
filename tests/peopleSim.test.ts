@@ -5,7 +5,7 @@ import { Rig, F_FARM_L, F_FARM_R, F_SHIN_L, F_SHIN_R } from '../src/world/people
 import { bodyDims, makeAppearance } from '../src/world/people/Looks';
 import { treadFloor } from '../src/world/people/Places';
 import { Rng } from '../src/utils/rng';
-import { FURNITURE, ITEMS, KINDER_ROOMS, LEVEL_Y, STAIRS, U, V, WALLS, miguelCaneU, riserCount, roomAt, setDynamicSolid, stairY } from '../src/world/SchoolLayout';
+import { FURNITURE, ITEMS, KINDER_ROOMS, LEVEL_Y, STAIRS, U, V, WALLS, fromPlan, miguelCaneU, planU, planV, riserCount, roomAt, setDynamicSolid, stairY } from '../src/world/SchoolLayout';
 import { hiddenBySchool } from '../src/world/people/Culling';
 import { resolveAnchor, standNear } from '../src/game/story/anchors';
 import { character } from '../src/game/story/characters';
@@ -23,7 +23,7 @@ import { TrafficSim } from '../src/world/life/traffic';
  * prueba también que la gente llega sola a donde tiene que ir.
  */
 
-const FAR: SimView = { cu: 37, cv: 30, cy: 1.7, fu: 0, fv: -1, player: null };
+const FAR: SimView = { cu: planU(37), cv: planV(30), cy: 1.7, fu: 0, fv: -1, player: null };
 const STUDENT = new Set(['kid', 'student', 'studentSecondary']);
 const CLASSROOMS = /^(aula|sala(Amarilla|Roja|Celeste)|tecnologia|bilingue)/;
 
@@ -263,19 +263,19 @@ describe('gente — momentos del día', () => {
 describe('gente — personajes con nombre y reacciones', () => {
   it('goTo camina por la escuela (también entre pisos) y avisa al llegar', async () => {
     const sim = new PeopleSim(3, { crowdSize: 40, detailed: false });
-    const a = sim.spawnNamed('directora', { role: 'teacher', seed: 1, labCoat: true }, { u: 37.4, v: -6, level: 0 }, 0);
+    const a = sim.spawnNamed('directora', { role: 'teacher', seed: 1, labCoat: true }, { u: planU(37.4), v: planV(-6), level: 0 }, 0);
     expect(sim.character('directora')).toBe(a);
     let done: boolean | null = null;
-    void sim.goTo(a, { u: 22, v: -18, level: 0 }).then((ok) => (done = ok));
+    void sim.goTo(a, { u: planU(22), v: planV(-18), level: 0 }).then((ok) => (done = ok));
     for (let t = 0; t < 60 && done === null; t += 0.1) {
       sim.update(0.1, FAR);
       await Promise.resolve();
     }
     expect(done).toBe(true);
-    expect(Math.hypot(a.u - 22, a.v + 18)).toBeLessThan(0.6);
+    expect(Math.hypot(a.u - planU(22), a.v - planV(-18))).toBeLessThan(0.6);
     // Al primer piso (pasillo de los trofeos) por la escalera del hall.
     done = null;
-    void sim.goTo(a, { u: 34.2, v: -7, level: 1 }).then((ok) => (done = ok));
+    void sim.goTo(a, { u: planU(34.2), v: planV(-7), level: 1 }).then((ok) => (done = ok));
     for (let t = 0; t < 90 && done === null; t += 0.1) {
       sim.update(0.1, FAR);
       await Promise.resolve();
@@ -285,15 +285,15 @@ describe('gente — personajes con nombre y reacciones', () => {
     expect(Math.abs(a.y - LEVEL_Y[1])).toBeLessThan(0.05);
     // Sin camino: se resuelve false.
     let bad: boolean | null = null;
-    void sim.goTo(a, { u: 120, v: -200, level: 0 }).then((ok) => (bad = ok));
+    void sim.goTo(a, { u: planU(120), v: planV(-200), level: 0 }).then((ok) => (bad = ok));
     for (let t = 0; t < 5 && bad === null; t += 0.1) {
       sim.update(0.1, FAR);
       await Promise.resolve();
     }
     expect(bad).toBe(false);
     // Teleport, mirar y gestos.
-    sim.teleportNamed(a, { u: 35.0, v: -4, level: 0 }, Math.PI);
-    expect(a.u).toBeCloseTo(35.0, 5);
+    sim.teleportNamed(a, { u: planU(35.0), v: planV(-4), level: 0 }, Math.PI);
+    expect(a.u).toBeCloseTo(planU(35.0), 5);
     expect(a.level).toBe(0);
     sim.play(a, 'wave');
     expect(a.anim.gesture).toBe('wave');
@@ -326,17 +326,17 @@ describe('gente — personajes con nombre y reacciones', () => {
   it('esquive: dos personas de frente por un pasillo no se atraviesan', () => {
     const sim = new PeopleSim(5, { crowdSize: 1, detailed: false });
     for (const x of sim.agents) x.dormant = true;
-    const a = sim.spawnNamed('a', { role: 'student', seed: 2 }, { u: 12, v: -8.25, level: 0 }, -Math.PI / 2);
-    const b = sim.spawnNamed('b', { role: 'student', seed: 3 }, { u: 24, v: -8.25, level: 0 }, Math.PI / 2);
-    void sim.goTo(a, { u: 24, v: -8.25, level: 0 });
-    void sim.goTo(b, { u: 12, v: -8.25, level: 0 });
+    const a = sim.spawnNamed('a', { role: 'student', seed: 2 }, { u: planU(12), v: planV(-8.25), level: 0 }, -Math.PI / 2);
+    const b = sim.spawnNamed('b', { role: 'student', seed: 3 }, { u: planU(24), v: planV(-8.25), level: 0 }, Math.PI / 2);
+    void sim.goTo(a, { u: planU(24), v: planV(-8.25), level: 0 });
+    void sim.goTo(b, { u: planU(12), v: planV(-8.25), level: 0 });
     let minD = Infinity;
     for (let t = 0; t < 20; t += 0.05) {
       sim.update(0.05, FAR);
       minD = Math.min(minD, Math.hypot(a.u - b.u, a.v - b.v));
     }
     expect(minD).toBeGreaterThan(0.3);
-    expect(Math.hypot(a.u - 24, a.v + 8.25)).toBeLessThan(1);
+    expect(Math.hypot(a.u - planU(24), a.v - planV(-8.25))).toBeLessThan(1);
   });
 
   it('reacción al jugador: lo miran y le abren paso', () => {
@@ -575,7 +575,7 @@ describe('gente — revisión de la escuela habitada', () => {
     }
     // El portero sigue llegando a su ventanilla, por la puerta del vestíbulo.
     const sim = new PeopleSim(42, { crowdSize: 110, detailed: false });
-    expect(sim.nav.componentAt(0, sim.places.porter.u, sim.places.porter.v)).toBe(sim.nav.componentAt(0, U.recW - 1.5, -3.0));
+    expect(sim.nav.componentAt(0, sim.places.porter.u, sim.places.porter.v)).toBe(sim.nav.componentAt(0, U.recW - 1.5, planV(-3.0)));
   });
 
   it('portón con llave: la gente espera afuera sin buscar caminos imposibles y entra en cuanto abren', () => {
@@ -584,8 +584,8 @@ describe('gente — revisión de la escuela habitada', () => {
     const [e0, e1] = hallFront('entrance', (c) => c < U.recW);
     const lock = { u0: e0 - 0.05, u1: e1 + 0.05, v0: V.hallDoors - 0.25, v1: V.hallDoors + 0.25, level: 0 as const };
     // La cámara en el portón: quien está cerca se ve (y no se lo puede reubicar).
-    const gate: SimView = { cu: 35.24, cv: 1.0, cy: 1.7, fu: 0, fv: -1, player: null };
-    const count = frontCrossings(sim, (a) => a.alive && a.level === 0 && Math.hypot(a.u - 35.24, a.v - 1.0) < 14);
+    const gate: SimView = { cu: planU(35.24), cv: planV(1.0), cy: 1.7, fu: 0, fv: -1, player: null };
+    const count = frontCrossings(sim, (a) => a.alive && a.level === 0 && Math.hypot(a.u - planU(35.24), a.v - planV(1.0)) < 14);
     const waiting = () => sim.agents.filter((a) => a.alive && a.waitEpoch >= 0).length;
     setDynamicSolid('test-porton', lock);
     const shut = (() => {
@@ -777,30 +777,30 @@ describe('gente del barrio — veredas', () => {
   it('la escuela tapa a quien camina del otro lado del edificio, nunca a quien está a la vista', () => {
     // Desde el portón: la calle del fondo y la lateral del gimnasio, detrás del
     // edificio; de una calle lateral a la otra, a través de la escuela.
-    expect(hiddenBySchool(35.24, 1.0, 30, -55)).toBe(true);
-    expect(hiddenBySchool(35.24, 1.0, 70, -15)).toBe(true);
-    expect(hiddenBySchool(70, -20, -12, -20)).toBe(true);
+    expect(hiddenBySchool(...fromPlan(35.24, 1.0), ...fromPlan(30, -55))).toBe(true);
+    expect(hiddenBySchool(...fromPlan(35.24, 1.0), ...fromPlan(70, -15))).toBe(true);
+    expect(hiddenBySchool(...fromPlan(70, -20), ...fromPlan(-12, -20))).toBe(true);
     // A la vista: a lo largo de Laprida, la esquina del gimnasio, a lo largo
     // de la lateral, de Miguel Cané y de la calle del fondo.
-    expect(hiddenBySchool(35, 4, 90, 4)).toBe(false);
-    expect(hiddenBySchool(35, 4, -20, 4)).toBe(false);
-    expect(hiddenBySchool(35, 4, 69.5, -1.5)).toBe(false);
-    expect(hiddenBySchool(69.8, -5, 69.8, -35)).toBe(false);
-    expect(hiddenBySchool(miguelCaneU(-10) - 1.5, -10, miguelCaneU(-30) - 1.5, -30)).toBe(false);
-    expect(hiddenBySchool(10, -46, 50, -46)).toBe(false);
+    expect(hiddenBySchool(...fromPlan(35, 4), ...fromPlan(90, 4))).toBe(false);
+    expect(hiddenBySchool(...fromPlan(35, 4), ...fromPlan(-20, 4))).toBe(false);
+    expect(hiddenBySchool(...fromPlan(35, 4), ...fromPlan(69.5, -1.5))).toBe(false);
+    expect(hiddenBySchool(...fromPlan(69.8, -5), ...fromPlan(69.8, -35))).toBe(false);
+    expect(hiddenBySchool(miguelCaneU(planV(-10)) - 1.5, planV(-10), miguelCaneU(planV(-30)) - 1.5, planV(-30))).toBe(false);
+    expect(hiddenBySchool(...fromPlan(10, -46), ...fromPlan(50, -46))).toBe(false);
     // Con la gente del barrio de verdad: desde el portón, el atrio y la
     // vereda, nadie de este lado de la fachada queda tapado y todos los de la
     // calle del fondo (detrás del edificio) sí.
     const sw = new Sidewalks(plan, frame, 42, sidewalkOptions(110, false));
     // La cámara en el portón, mirando a la escuela (la burbuja acerca gente ahí).
-    sw.camX = frame.ox - 35.24;
-    sw.camZ = frame.oz + 1.0;
+    sw.camX = frame.ox - planU(35.24);
+    sw.camZ = frame.oz + planV(1.0);
     sw.camFX = 0;
     sw.camFZ = -1;
-    const cams: Array<[number, number]> = [
-      [35.24, 1.0],
-      [35.24, -0.4],
-      [36.5, 4.5],
+    const cams: Array<readonly [number, number]> = [
+      fromPlan(35.24, 1.0),
+      fromPlan(35.24, -0.4),
+      fromPlan(36.5, 4.5),
     ];
     let front = 0;
     let back = 0;
@@ -814,7 +814,7 @@ describe('gente del barrio — veredas', () => {
             expect(hidden, `${u.toFixed(1)},${v.toFixed(1)}`).toBe(false);
             front++;
           }
-          if (v < -40 && u > 8 && u < 55) {
+          if (v < planV(-40) && u > planU(8) && u < planU(55)) {
             expect(hidden, `${u.toFixed(1)},${v.toFixed(1)}`).toBe(true);
             back++;
           }
@@ -855,7 +855,10 @@ describe('gente del barrio — veredas', () => {
   it('la burbuja: quien camina lejos y fuera de cuadro reaparece cerca de la cámara, en una vereda y fuera del cono', () => {
     // Cámara en Laprida, en la punta este del barrio (lejos de la escuela,
     // donde se junta la gente al empezar), mirando al oeste (+x).
-    const cam = { x: -100, z: 28.5, fx: 1, fz: 0 };
+    // En pasos de la grilla (frente a la manzana del extremo este, sobre
+    // Laprida): sigue valiendo si cambia el tamaño de manzana.
+    const pitch = plan.blockSize + plan.streetWidth;
+    const cam = { x: -2.0 * pitch, z: pitch / 2, fx: 1, fz: 0 };
     const near = (sw: Sidewalks) => sw.walkers.filter((w) => !w.a.hidden && Math.hypot(w.x - cam.x, w.z - cam.z) < 60).length;
     const run = (bubble: boolean) => {
       const opts = sidewalkOptions(90, false);

@@ -13,8 +13,10 @@ import type { CityIndex } from '../world/CityIndex';
 import {
   ITEMS,
   LEVEL_Y,
+  fromPlan,
   inLot,
   levelOf,
+  planV,
   roomAt,
   roomLabel,
   schoolSolidLocal,
@@ -597,7 +599,7 @@ export class GameDirector {
 
   private spawn(def: CharacterDef): void {
     const st = this.engine.stationFor(def.id);
-    const place = st ? this.stationSpot(st) : { spot: { u: ENTRANCE_U, v: 3, level: 0 as Level }, yaw: 0 };
+    const place = st ? this.stationSpot(st) : { spot: { u: ENTRANCE_U, v: planV(3), level: 0 as Level }, yaw: 0 };
     let handle: NpcHandle | null = null;
     try {
       // Si la gente sobrevivió a una reconstrucción, el personaje ya existe: se reusa.
@@ -2130,8 +2132,8 @@ export class GameDirector {
     // vereda opuesta (que quedan detrás): el portal, las aulas con sus rejas y
     // el gimnasio entran en cuadro sin nada delante.
     const k = Math.sin(this.titleT * 0.045);
-    const eye = toWorld(this.frame, 44 + k * 8, 9.5);
-    const look = toWorld(this.frame, 38 + k * 5, -3);
+    const eye = toWorld(this.frame, ...fromPlan(44 + k * 8, 9.5));
+    const look = toWorld(this.frame, ...fromPlan(38 + k * 5, -3));
     cam.position.set(eye.x, 2.3 + Math.sin(this.titleT * 0.1) * 0.15, eye.z);
     cam.setTarget(new Vector3(look.x, 3.8, look.z));
   }

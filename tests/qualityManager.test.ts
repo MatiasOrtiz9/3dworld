@@ -3,9 +3,10 @@ import type { Engine } from '@babylonjs/core/Engines/engine';
 import type { Scene } from '@babylonjs/core/scene';
 import { FAR_FLOOR_FACTOR, QUALITY, QualityManager, TIER_ORDER } from '../src/core/QualityManager';
 import { fogAmount, fogDensityFor, fogReach } from '../src/world/TimeOfDay';
+import { generateCityPlan } from '../src/world/CityLayout';
 
 /** Medio lado del barrio compacto (CityLayout): la niebla cierra en `fogReach` de esto. */
-const EXTENT = 142.5;
+const EXTENT = generateCityPlan(42).extent;
 
 /** Cámara mínima: lo que QualityManager consulta de una cámara real. */
 function fakeCamera(className = 'UniversalCamera', isRigCamera = false) {

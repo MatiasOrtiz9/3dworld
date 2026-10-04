@@ -14,10 +14,12 @@ describe('periferia en obra', () => {
     expect(idx.isPedestrianBlocked(0, pe.z0)).toBe(true);
   });
   it('las calles perimetrales siguen transitables', () => {
-    expect(idx.isSolid(0, -85.5)).toBe(false);
-    expect(idx.isSolid(0, 85.5)).toBe(false);
-    expect(idx.isSolid(-142.5, 0)).toBe(false);
-    expect(idx.isSolid(85.5, 0)).toBe(false);
+    // Ejes de las perimetrales: ±1,5 pasos en z, −2,5 y +1,5 pasos en x.
+    const pitch = plan.blockSize + plan.streetWidth;
+    expect(idx.isSolid(0, -1.5 * pitch)).toBe(false);
+    expect(idx.isSolid(0, 1.5 * pitch)).toBe(false);
+    expect(idx.isSolid(-2.5 * pitch, 0)).toBe(false);
+    expect(idx.isSolid(1.5 * pitch, 0)).toBe(false);
   });
   it('es determinista', () => {
     expect(generateCityPlan(42).periphery).toEqual(pe);

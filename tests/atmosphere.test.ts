@@ -16,6 +16,7 @@ import {
   staticShadowFrame,
   sunDirection,
 } from '../src/world/TimeOfDay';
+import { planU, planV } from '../src/world/SchoolLayout';
 import { TileableNoise } from '../src/world/ProceduralNoise';
 import { PAINTED_KINDS, paintSurface } from '../src/world/TexturePainter';
 
@@ -86,7 +87,7 @@ describe('horas del día', () => {
 
 describe('niebla atada al tamaño del mundo', () => {
   it('funde el borde del suelo y deja nítida la escuela, en cualquier tamaño de barrio', () => {
-    for (const extent of [70, 100, 142.5]) {
+    for (const extent of [70, 100, 142.5, 160]) {
       const reach = fogReach(extent);
       // El suelo base termina a extent + 200 m del centro.
       expect(reach).toBeGreaterThan(extent + 200);
@@ -213,9 +214,11 @@ describe('luz natural horneada de la escuela', async () => {
   // Importa Babylon (el plugin vive junto al entorno): se carga una sola vez.
   const { bakeSchoolDaylight, DAYLIGHT_GRID } = await import('../src/world/Environment');
   const bake = bakeSchoolDaylight();
+  // Los puntos de estas pruebas se leen en el plano: `planU`/`planV` los
+  // llevan a metros reales, donde vive la grilla horneada.
   const cell = (u: number, v: number) =>
-    Math.floor((v - DAYLIGHT_GRID.v0) / DAYLIGHT_GRID.cell) * bake.width +
-    Math.floor((u - DAYLIGHT_GRID.u0) / DAYLIGHT_GRID.cell);
+    Math.floor((planV(v) - DAYLIGHT_GRID.v0) / DAYLIGHT_GRID.cell) * bake.width +
+    Math.floor((planU(u) - DAYLIGHT_GRID.u0) / DAYLIGHT_GRID.cell);
   const light = (u: number, v: number, level = 0) => bake.light[cell(u, v) * 4 + level] / 128;
   const cover = (u: number, v: number, level = 0) => (bake.cover[cell(u, v) * 4 + level] / 255) * 4;
 

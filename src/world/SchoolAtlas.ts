@@ -6,6 +6,9 @@
 import {
   MC_SLOPE,
   ROOMS,
+  SC,
+  planU,
+  planV,
   STAIRS,
   U,
   V,
@@ -678,9 +681,12 @@ function drawPlan(ctx: CanvasRenderingContext2D, r: Region): void {
   ctx.textBaseline = 'middle';
   ctx.font = '700 20px Arial, Helvetica, sans-serif';
   ctx.fillText('PLANO DE EVACUACIÓN — PLANTA BAJA', x0 + w / 2, y0 + 20);
-  const scale = 7.9;
+  // Píxeles por metro real: el dibujo ocupa los mismos píxeles de su celda
+  // que con el plano (7,9 px por metro del plano), aunque la escuela real
+  // sea `SC` veces más grande.
+  const scale = 7.9 / SC;
   const ox = x0 + 44;
-  const oy = y0 + 48 + 40 * scale; // v = 0 (Laprida)
+  const oy = y0 + 48 + 40 * SC * scale; // v = 0 (Laprida); el fondo, a 40 m del plano
   const at = (u: number, v: number): [number, number] => [ox + u * scale, oy + v * scale];
   // Ambientes con nombre.
   ctx.font = '600 9px Arial, Helvetica, sans-serif';
@@ -755,7 +761,7 @@ function drawPlan(ctx: CanvasRenderingContext2D, r: Region): void {
   }
   // Usted está aquí: el plano cuelga en el frente de la oficina de recepción
   // (ver SchoolIdentity), del lado del hall.
-  const [hx, hy] = at(37.6, V.recB - 0.4);
+  const [hx, hy] = at(planU(37.6), V.recB - 0.4);
   ctx.fillStyle = '#d0262d';
   ctx.beginPath();
   ctx.arc(hx, hy, 5, 0, Math.PI * 2);
@@ -768,9 +774,9 @@ function drawPlan(ctx: CanvasRenderingContext2D, r: Region): void {
   ctx.fillStyle = '#1f2430';
   ctx.textAlign = 'center';
   ctx.font = '700 12px Arial, Helvetica, sans-serif';
-  ctx.fillText('CALLE LAPRIDA', ox + 34 * scale, oy + 22);
+  ctx.fillText('CALLE LAPRIDA', ox + planU(34) * scale, oy + 22);
   ctx.save();
-  ctx.translate(ox - 22, oy - 20 * scale);
+  ctx.translate(ox - 22, oy + planV(-20) * scale);
   ctx.rotate(-Math.PI / 2 + Math.atan(MC_SLOPE));
   ctx.fillText('CALLE MIGUEL CANÉ', 0, 0);
   ctx.restore();

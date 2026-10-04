@@ -11,6 +11,8 @@ import {
   deskTopOf,
   hasFloor,
   inPoly,
+  planU,
+  planV,
   riserCount,
   roomAt,
   roomLevel,
@@ -337,7 +339,7 @@ export class Places {
    * Dentro de la portería, detrás de su ventanilla al vestíbulo (el portero no
    * sale de ahí). Se deriva del plano en `buildPosts`; esto es el respaldo.
    */
-  readonly porter: Spot = { u: 37.25, v: -3.6, level: 0, yaw: Math.PI / 2 };
+  readonly porter: Spot = { u: planU(37.25), v: planV(-3.6), level: 0, yaw: Math.PI / 2 };
   /** Detrás de la línea de la cantina, de cara a los que compran. */
   readonly cantina: Spot[] = [];
   /** Fila de la cantina: la cabeza mira al mostrador y el resto hacia la cabeza. */
@@ -345,20 +347,20 @@ export class Places {
   /** Recibimiento en el acceso vidriado del hall: de cara a la calle. */
   readonly portal: Spot[] = [];
   /** Frente al portón, del lado de la vereda: donde esperan las familias. */
-  readonly sidewalkFront = { u0: 29.6, v0: 2.6, u1: 44.6, v1: 5.6 };
+  readonly sidewalkFront = { u0: planU(29.6), v0: planV(2.6), u1: planU(44.6), v1: planV(5.6) };
   /** Puntas de la vereda de Laprida (dentro de la grilla). */
   readonly sidewalkEnds: NavPoint[] = [
-    { u: -6.5, v: 4.2, level: 0 },
-    { u: 69.2, v: 4.2, level: 0 },
+    { u: planU(-6.5), v: planV(4.2), level: 0 },
+    { u: planU(69.2), v: planV(4.2), level: 0 },
   ];
   /** Quien da el discurso en el acto: frente a todos, de cara al este. */
-  readonly speaker: Spot = { u: 53.2, v: -10.3, level: 0, yaw: -Math.PI / 2 };
+  readonly speaker: Spot = { u: planU(53.2), v: planV(-10.3), level: 0, yaw: -Math.PI / 2 };
   /** Filas del acto (de oeste a este), cada una de norte a sur; todos miran al oeste. */
   readonly actoRows: Spot[][] = [];
   /** Recorrido del lampazo: el eje del pasillo sur (CAD: 2,3 m entre las aulas y el patio). */
   readonly mopRoute: NavPoint[] = [
-    { u: 11.0, v: -7.36, level: 0 },
-    { u: 30.5, v: -7.36, level: 0 },
+    { u: planU(11.0), v: planV(-7.36), level: 0 },
+    { u: planU(30.5), v: planV(-7.36), level: 0 },
   ];
 
   constructor(private readonly nav: NavGrid) {
@@ -464,7 +466,7 @@ export class Places {
         }
       }
     }
-    if (this.portal.length === 0) this.portal.push({ u: 35.24, v: -3.4, level: 0, yaw: 0 });
+    if (this.portal.length === 0) this.portal.push({ u: planU(35.24), v: planV(-3.4), level: 0, yaw: 0 });
   }
 
   /**
@@ -880,7 +882,12 @@ export class Places {
     // Cadena de celdas (desde la grilla gruesa hacia el asiento) y suavizado.
     const chain: Array<[number, number]> = [];
     for (let c = found; c >= 0; c = prev[c]) chain.push(grid.center(c));
-    chain[chain.length - 1] = [seat.au, seat.av];
+    // La última celda se cambia por el punto exacto de parada. Si la cadena es
+    // una sola celda (su centro ya es grilla gruesa pero el punto no), se
+    // agrega: si no, el tramo arrancaba en un punto fuera de la grilla gruesa
+    // y quien venía caminando no tenía dónde engancharse.
+    if (chain.length > 1) chain[chain.length - 1] = [seat.au, seat.av];
+    else chain.push([seat.au, seat.av]);
     const out: number[] = [chain[0][0], chain[0][1], NaN];
     let a = 0;
     while (a < chain.length - 1) {
@@ -943,9 +950,11 @@ export class Places {
 
   private buildActoRows(): void {
     for (let r = 0; r < 10; r++) {
-      const u = 55.2 + r * 0.8;
+      // Las filas arrancan donde marca el plano, pero el paso entre filas y
+      // entre chicos es real (la gente no se escala con el edificio).
+      const u = planU(55.2) + r * 0.8;
       const row: Spot[] = [];
-      for (let v = -17.6; v <= -4.2; v += 0.62) {
+      for (let v = planV(-17.6); v <= planV(-4.2); v += 0.62) {
         const jitterU = ((r * 7 + Math.round(v * 3)) % 3) * 0.05;
         if (!this.nav.isMain(0, u + jitterU, v)) continue;
         row.push({ u: u + jitterU, v, level: 0, yaw: Math.PI / 2 });

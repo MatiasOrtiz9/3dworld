@@ -18,6 +18,9 @@ import {
   toWorld,
   GYM_MID,
   makerWallAt,
+  SC,
+  planU,
+  planV,
   type SchoolFrame,
 } from './SchoolLayout';
 import { AH, AW, R, drawAtlas, plateRegion, type PlateName, type Region } from './SchoolAtlas';
@@ -76,12 +79,12 @@ export class SchoolIdentity {
     const portalU = (PORTAL.g0 + PORTAL.g1) / 2;
     // Portal sobre Laprida: marquesina y escudo.
     // El portal sobresale 0,85 m de la fachada (ver SchoolBuilder.portal).
-    q.wall((PORTAL.u0 + PORTAL.u1) / 2, 0.875, 3.15, 8.2, 1.36, 0, S, R.sign);
-    q.wall(portalU, 0.875, 6.78, 0.72, 0.62, 0, S, R.crest);
+    q.wall((PORTAL.u0 + PORTAL.u1) / 2, PORTAL.front + 0.025, 3.15, 8.2, 1.36, 0, S, R.sign);
+    q.wall(portalU, PORTAL.front + 0.025, 6.78, 0.72, 0.62, 0, S, R.crest);
     q.wall(FLAG.u, FLAG.v, FLAG.y, 1.6, 1.0, 0, S, R.flag);
     // Jardín: marquesina "Educación Inicial" y banda "CIMDIP" sobre la calle del norte.
-    q.wall(63.3, V.top - 0.97, 3.2, 8.0, 0.88, 0, N, R.inicial);
-    q.wall(58.525, V.top - 0.27, 6.0, 1.4, 5.2, 0, N, R.cimdip);
+    q.wall(planU(63.3), V.top - 0.97, 3.2, 8.0, 0.88, 0, N, R.inicial);
+    q.wall(planU(58.525), V.top - 0.27, 6.0, 1.4, 5.2, 0, N, R.cimdip);
 
     // Hall de acceso: banner de pie, reloj sobre las puertas y plano de evacuación.
     const banner = ITEMS.find((it) => it.kind === 'banner');
@@ -90,8 +93,8 @@ export class SchoolIdentity {
     // Recepción: mural del cruce de los Andes en el muro oeste (el del aula
     // 5, entre el frente del hall y la boca del pasillo sur), con el lema
     // pintado debajo sobre el zócalo de mármol (0:18-0:23).
-    q.wall(U.east1 + 0.105, -4.25, FY + 2.3, 2.6, 1.5, 1, 0, R.sanMartin);
-    q.wall(U.east1 + 0.106, -4.25, FY + 1.05, 2.5, 0.62, 1, 0, R.motto);
+    q.wall(U.east1 + 0.105, planV(-4.25), FY + 2.3, 2.6, 1.5, 1, 0, R.sanMartin);
+    q.wall(U.east1 + 0.106, planV(-4.25), FY + 1.05, 2.5, 0.62, 1, 0, R.motto);
 
     // Aula Maker: el mural de vinilo sobre la medianera (dos paños) y
     // COMPARTE en el testero este; Educabot al costado de los muebles de la
@@ -103,31 +106,32 @@ export class SchoolIdentity {
       const [cu, cv] = makerWallAt((s0 + s1) / 2, 0.16);
       const [au, av] = makerWallAt(0, 0);
       const [bu, bv] = makerWallAt(0, 1);
-      q.wall(cu, cv, FY + 1.275, s1 - s0, 2.35, bu - au, bv - av, region);
+      // `s` es del plano: el paño real mide (s1 − s0)·SC.
+      q.wall(cu, cv, FY + 1.275, (s1 - s0) * SC, 2.35, bu - au, bv - av, region);
     }
     // COMPARTE va sobre el banco de la láser, al norte del portón al patio.
-    q.wall(U.tecE - 0.16, -34.7, FY + 1.95, 2.05, 1.175, -1, 0, R.makerC);
+    q.wall(U.tecE - 0.16, planV(-34.7), FY + 1.95, 2.05, 1.175, -1, 0, R.makerC);
     // Educabot: en el costado del primer mueble, frente a la puerta.
-    q.wall(13.69, -31.89, FY + 0.95, 0.45, 1.9, 0, S, R.educabot);
-    q.wall(U.tecE - 0.11, -32.45, FY + 2.5, 0.5, 0.18, -1, 0, R.salida);
-    q.wall(13.2, V.nBlockN + 0.115, FY + 2.42, 0.5, 0.18, 0, S, R.salida);
+    q.wall(planU(13.69), planV(-31.89), FY + 0.95, 0.45, 1.9, 0, S, R.educabot);
+    q.wall(U.tecE - 0.11, planV(-32.45), FY + 2.5, 0.5, 0.18, -1, 0, R.salida);
+    q.wall(planU(13.2), V.nBlockN + 0.115, FY + 2.42, 0.5, 0.18, 0, S, R.salida);
 
     // Pasillo sur: carteleras de corcho de marco rojo cerca de la salida.
-    q.wall(2.6, V.classTop - 0.115, FY + 1.9, 1.4, 1.0, 0, N, R.cork1);
-    q.wall(6.35, V.corrS + 0.115, FY + 1.9, 1.4, 1.0, 0, S, R.cork2);
+    q.wall(planU(2.6), V.classTop - 0.115, FY + 1.9, 1.4, 1.0, 0, N, R.cork1);
+    q.wall(planU(6.35), V.corrS + 0.115, FY + 1.9, 1.4, 1.0, 0, S, R.cork2);
     // Reloj sobre la entrada, del lado del hall.
-    const entrance = (34.2 + 36.27) / 2;
+    const entrance = planU((34.2 + 36.27) / 2);
     q.wall(entrance, V.hallDoors - 0.13, 3.0, 0.42, 0.42, 0, N, R.clock);
     // El plano de evacuación cuelga en el frente de la oficina de recepción.
-    q.wall(37.6, V.recB - 0.115, 1.65, 1.0, 0.62, 0, -1, R.plan);
+    q.wall(planU(37.6), V.recB - 0.115, 1.65, 1.0, 0.62, 0, -1, R.plan);
 
     // Tecnología: mural "imagina · diseña · crea" y cartel del aula maker.
-    q.wall(25.0, V.nBlockN - 0.115, 1.95, 3.7, 1.48, 0, N, R.mural);
-    q.wall(14.6, V.nBlockN - 0.115, 1.8, 0.9, 1.46, 0, N, R.maker);
+    q.wall(planU(25.0), V.nBlockN - 0.115, 1.95, 3.7, 1.48, 0, N, R.mural);
+    q.wall(planU(14.6), V.nBlockN - 0.115, 1.8, 0.9, 1.46, 0, N, R.maker);
 
     // Aula de danzas: afiches de las muestras en el testero norte.
-    q.wall(45.6, V.gymTop + 0.115, 2.35, 0.75, 1.12, 0, S, R.ballet1);
-    q.wall(46.55, V.gymTop + 0.115, 2.35, 0.75, 1.12, 0, S, R.ballet2);
+    q.wall(planU(45.6), V.gymTop + 0.115, 2.35, 0.75, 1.12, 0, S, R.ballet1);
+    q.wall(planU(46.55), V.gymTop + 0.115, 2.35, 0.75, 1.12, 0, S, R.ballet2);
 
     // Polideportivo: la cancha ocupa todo el piso (corre de oeste a este) y
     // la bandera blanca con el escudo cuelga en el testero este.
@@ -141,36 +145,38 @@ export class SchoolIdentity {
     // Carteles de los ambientes sobre sus puertas.
     const plate = (name: PlateName, u: number, v: number, nu: number, nv: number, w = 1.15, y = 2.42) =>
       q.wall(u, v, y, w, w * (64 / 504), nu, nv, plateRegion(name));
-    plate('E.P', 18.25, V.nBlockS + 0.115, 0, S);
+    plate('E.P', planU(18.25), V.nBlockS + 0.115, 0, S);
     // Sobre la boca del pasillo del Aula Maker (paso alto) y sobre su portón al patio este.
-    plate('TECNOLOGÍA', 13.3, V.nBlockS + 0.115, 0, S, 1.15, 2.78);
-    plate('TECNOLOGÍA', U.tecE + 0.115, -32.45, 1, 0, 1.15, 2.52);
-    plate('ADM', 9.6, V.admN - 0.115, 0, N, 0.8);
-    plate('PROF.', 11.5, V.profB + 0.115, 0, S, 0.8);
-    plate('DIR. PRIM', 4.3, V.corrS + 0.115, 0, S, 0.9);
-    plate('BUFFET', 28.67, V.corrS + 0.115, 0, S);
+    plate('TECNOLOGÍA', planU(13.3), V.nBlockS + 0.115, 0, S, 1.15, 2.78);
+    plate('TECNOLOGÍA', U.tecE + 0.115, planV(-32.45), 1, 0, 1.15, 2.52);
+    plate('ADM', planU(9.6), V.admN - 0.115, 0, N, 0.8);
+    plate('PROF.', planU(11.5), V.profB + 0.115, 0, S, 0.8);
+    plate('DIR. PRIM', planU(4.3), V.corrS + 0.115, 0, S, 0.9);
+    plate('BUFFET', planU(28.67), V.corrS + 0.115, 0, S);
     // Su puerta es doble (vano de 2,25 m): el cartel va por encima del cabezal.
-    plate('SALÓN DE LOS ESPEJOS', U.salonW - 0.115, -11.85, -1, 0, 1.5, 2.46);
-    plate('GIMNASIO · SUM', U.gymW - 0.115, -10.1, -1, 0, 1.5, 2.5);
-    plate('GIMNASIO · SUM', 59.3, V.gymTop - 0.115, 0, N, 1.6, 2.55);
-    plate('ARTE', 52.35, V.artB + 0.115, 0, S, 0.8);
-    plate('TEATRO', 55.05, V.artB + 0.115, 0, S, 0.9);
-    plate('V. DAMAS', U.vdW - 0.115, -25.95, -1, 0, 0.9);
+    plate('SALÓN DE LOS ESPEJOS', U.salonW - 0.115, planV(-11.85), -1, 0, 1.5, 2.46);
+    plate('GIMNASIO · SUM', U.gymW - 0.115, planV(-10.1), -1, 0, 1.5, 2.5);
+    plate('GIMNASIO · SUM', planU(59.3), V.gymTop - 0.115, 0, N, 1.6, 2.55);
+    plate('ARTE', planU(52.35), V.artB + 0.115, 0, S, 0.8);
+    plate('TEATRO', planU(55.05), V.artB + 0.115, 0, S, 0.9);
+    plate('V. DAMAS', U.vdW - 0.115, planV(-25.95), -1, 0, 0.9);
     {
       // Puerta del jardín sobre la medianera vieja (diagonal).
       const k = 0.2496;
       const l = Math.hypot(1, k);
       const nu = -k / l;
       const nv = 1 / l;
-      plate('JARDÍN DE INFANTES CIMPID', 60.75 + nu * 0.115, rearV(60.75) + nv * 0.115, nu, nv, 1.6);
+      const uj = planU(60.75);
+      plate('JARDÍN DE INFANTES CIMPID', uj + nu * 0.115, rearV(uj) + nv * 0.115, nu, nv, 1.6);
     }
-    plate('PATIO AIRE LIBRE', 23.02, V.corrS + 0.115, 0, S, 1.3, 2.78);
-    plate('PATIO AIRE LIBRE', 36.2, V.hallTop + 0.115, 0, S, 1.3, 2.78);
+    plate('PATIO AIRE LIBRE', planU(23.02), V.corrS + 0.115, 0, S, 1.3, 2.78);
+    plate('PATIO AIRE LIBRE', planU(36.2), V.hallTop + 0.115, 0, S, 1.3, 2.78);
     // Sobre la entrada, del lado del atrio (a 3,35 m quedaba sobre el cielorraso).
     plate('HALL DE ACCESO', entrance, V.hallDoors + 0.115, 0, S, 1.3, 2.95);
 
     // Esquina de Laprida y Miguel Cané: carteles de calle y punto de encuentro.
-    const pole = { u: -6.3, v: 3.3 };
+    // El mismo poste que dibuja `SchoolBuilder.frontage` (coordenadas del plano).
+    const pole = { u: planU(-6.3), v: planV(3.3) };
     for (const s of [S, N]) {
       q.wall(pole.u + 0.5, pole.v + s * 0.035, 2.95, 0.9, 0.17, 0, s, R.lapr);
     }
