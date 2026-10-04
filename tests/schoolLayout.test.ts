@@ -184,8 +184,9 @@ describe('escuela CIMDIP & Miguel Cané — planta del plano de evacuación', ()
     expect(walkable(index, f, [[13.65, -7.4], [13.65, -22.1], [9.7, -22.1], [9.7, -24.2], [11.5, -26.0], [11.5, -27.45], [10.3, -27.45]])).toBe(true);
     // Pasillo sur → patio oeste por su paso, rodeando los canteros.
     expect(walkable(index, f, [[23.02, -7.4], [23.02, -10.0], [17.2, -10.0], [17.2, -15.0]])).toBe(true);
-    // Hall → patio este por la puerta del testero norte.
-    expect(walkable(index, f, [[36.2, -9], [36.2, -18]])).toBe(true);
+    // Hall → patio este por la puerta del testero norte (video 2026: corrida
+    // al este del rincón del cantero) y por el medio libre del tramo.
+    expect(walkable(index, f, [[37.5, -9], [37.5, -13.4], [38.2, -14.2], [38.2, -18]])).toBe(true);
     // Hall → pasaje → gimnasio por la puerta doble.
     expect(walkable(index, f, [[39, -9.8], [52, -9.8]])).toBe(true);
     // Gimnasio → salida a Laprida.

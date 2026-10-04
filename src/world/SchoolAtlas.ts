@@ -555,34 +555,29 @@ function drawCourt(ctx: CanvasRenderingContext2D, r: Region): void {
   ctx.restore();
 }
 
-/** Banner de pie del hall: el que aparece al entrar en el recorrido virtual. */
+/**
+ * Banner de pie del hall. En el video de 2026 ya no es el blanco con letras
+ * rojas de 2020: lona oscura, el escudo sobre una placa blanca arriba, el
+ * lema en amarillo y una franja amarilla abajo (es cartelería impresa, no una
+ * frase de nadie: HANDOFF 75 no aplica).
+ */
 function drawTotem(ctx: CanvasRenderingContext2D, r: Region): void {
   const [x0, y0, x1, y1] = r;
   const w = x1 - x0;
-  const h = y1 - y0;
-  ctx.fillStyle = '#fbfaf7';
-  ctx.fillRect(x0, y0, w, h);
-  ctx.strokeStyle = RED;
-  ctx.lineWidth = 8;
-  ctx.strokeRect(x0 + 4, y0 + 4, w - 8, h - 8);
+  const cx = x0 + w / 2;
+  ctx.fillStyle = '#2a2420';
+  ctx.fillRect(x0, y0, w, y1 - y0);
+  // Placa blanca con el escudo.
+  ctx.fillStyle = '#f7f6f2';
+  ctx.fillRect(x0 + 22, y0 + 18, w - 44, 112);
+  emblem(ctx, cx, y0 + 74, 44);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = '#7a1f25';
-  ctx.font = '700 26px Georgia, "Times New Roman", serif';
-  ctx.fillText('ESCUELA', x0 + w / 2, y0 + 48);
-  ctx.font = '700 21px Georgia, "Times New Roman", serif';
-  ctx.fillText('CIMDIP &', x0 + w / 2, y0 + 80);
-  ctx.fillText('MIGUEL CANÉ', x0 + w / 2, y0 + 106);
-  ctx.fillStyle = RED;
-  ctx.font = '700 15px Arial, Helvetica, sans-serif';
-  ctx.fillText('MATERNAL · JARDÍN', x0 + w / 2, y0 + 142);
-  ctx.fillText('PRIMARIA · SECUNDARIA', x0 + w / 2, y0 + 164);
-  emblem(ctx, x0 + w / 2, y0 + 262, 62);
-  ctx.fillStyle = '#7a1f25';
-  ctx.font = 'italic 15px Georgia, "Times New Roman", serif';
-  ctx.fillText('Desde 1981', x0 + w / 2, y0 + 366);
-  ctx.fillStyle = RED;
-  ctx.fillRect(x0 + 18, y1 - 34, w - 36, 12);
+  ctx.fillStyle = '#f2c230';
+  ctx.font = '900 21px Arial, Helvetica, sans-serif';
+  const lines = ['COMPETENCIAS', 'DIGITALES,', 'PENSAMIENTO', 'CRÍTICO Y', 'CREATIVIDAD.'];
+  lines.forEach((t, k) => ctx.fillText(t, cx, y0 + 182 + k * 32, w - 20));
+  ctx.fillRect(x0, y1 - 58, w, 40);
 }
 
 /** Cartel de ambiente: fondo blanco, filete rojo, texto del plano. */

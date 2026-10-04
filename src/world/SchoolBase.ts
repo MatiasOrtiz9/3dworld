@@ -454,6 +454,13 @@ export interface Stair {
   hollow?: boolean;
   /** Del lado abierto, paño de metal desplegado con marco (la del hall, 0:19; la blanca del comedor, 9:44) en vez de parantes. */
   meshGuard?: boolean;
+  /**
+   * Baranda del lado abierto según el video de 2026 (manda sobre `meshGuard`):
+   * `perforated`, tres paños de chapa perforada clara en marco de caño rojo
+   * (la del hall); `rails`, caño rojo con pasamanos y dos travesaños paralelos
+   * a la pendiente, sin malla (la blanca del comedor).
+   */
+  guard?: 'perforated' | 'rails';
 }
 
 /** Descanso: plataforma horizontal entre tramos, a `y` sobre el piso de planta baja. */
@@ -556,6 +563,7 @@ export type ItemKind =
   | 'cafeTable' // mesa de patio: pie rojo, tapa de madera con damero; sin `h`, cuatro sillas negras; con `h`, mesa alta de pie
   | 'boxBench' // banco/mesita de chapa plegada en U (con color; alto en `h`)
   | 'pot' // maceta redonda blanca con planta
+  | 'slimTree' // arbolito de troncos finos en su cazuela (alto en `h`)
   | 'bunting'; // guirnalda de banderines de colores (a lo largo de u, a la altura `y`)
 
 /** Hacia dónde mira el frente del objeto (o la cara útil de algo contra un muro). */
@@ -581,6 +589,10 @@ export interface Item {
   h?: number;
   /** Reja (`gate`): paño de metal desplegado con marco en vez de barrotes. */
   mesh?: boolean;
+  /** Mesa de patio (`cafeTable`): con el damero de azulejos en la tapa (las del tramo largo, en 2026, son lisas). */
+  chess?: boolean;
+  /** Mesa de patio (`cafeTable`) baja: cuántas sillas la rodean (4 si no se indica). */
+  chairs?: number;
 }
 
 /**

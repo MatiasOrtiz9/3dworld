@@ -16,6 +16,7 @@ import {
   riserCount,
   roomAt,
   roomLevel,
+  roundChairAngles,
   type Facing,
   type Item,
   type Level,
@@ -679,8 +680,7 @@ export class Places {
           // Las mesas altas del patio (con `h`) son de pie: sin sillas.
           if (it.kind === 'cafeTable' && it.h !== undefined) break;
           const small = it.kind === 'roundTable';
-          for (let k = 0; k < 4; k++) {
-            const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
+          for (const a of roundChairAngles(it)) {
             // A la misma distancia a la que el constructor dibuja las sillas
             // (con 0,3 la gente se sentaba 13 cm detrás de su silla).
             const cu = it.u + Math.cos(a) * (it.w / 2 + FURNITURE.roundChair);

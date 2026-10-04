@@ -168,6 +168,8 @@ function boxes(it: Item): Box[] {
       return [box(u, v, 1.3, 1.3, -0.08, 0.04, 'pit'), box(u, v, 0.3, 0.3, 0.04, 3, 'trunk')];
     case 'bareTree':
       return [box(u, v, 1.1, 1.1, 0, 0.04, 'pit'), box(u, v, 0.16, 0.16, 0.04, 2.6, 'trunk')];
+    case 'slimTree':
+      return [box(u, v, 0.16, 0.16, 0, h ?? 3.4, 'trunk')];
     case 'column':
       return [all(0, 3.1)];
     case 'roundColumn':
@@ -455,8 +457,10 @@ function allowedPair(a: Item, b: Item): boolean {
   if (has('barre', 'mirror')) return true;
   // El telón cuelga al borde del escenario.
   if (has('curtain', 'stage')) return true;
-  // Barandas que se encuentran en una esquina.
+  // Barandas que se encuentran en una esquina (también las de caño hechas
+  // con paneles finos, como la del cajón del patio de juegos).
   if (a.kind === 'gate' && b.kind === 'gate') return true;
+  if (a.kind === 'wallPanel' && b.kind === 'wallPanel' && Math.min(a.w, a.d) <= 0.05 && Math.min(b.w, b.d) <= 0.05) return true;
   return false;
 }
 
@@ -612,7 +616,7 @@ describe('QA del equipamiento de la escuela', () => {
   it('nada atraviesa el cielorraso de su ambiente', () => {
     const bad: string[] = [];
     for (const it of ITEMS) {
-      if (OUTSIDE.has(it.kind) || it.kind === 'palm' || it.kind === 'tree' || it.kind === 'bareTree') continue;
+      if (OUTSIDE.has(it.kind) || it.kind === 'palm' || it.kind === 'tree' || it.kind === 'bareTree' || it.kind === 'slimTree') continue;
       const r = roomAt(it.u, it.v, level(it));
       if (!r || !r.roofed) continue;
       const ceil = ceilingHeight(r);
@@ -663,6 +667,9 @@ describe('QA del equipamiento de la escuela', () => {
     for (const g of GEOS) {
       for (const o of g.w.openings) {
         if (!WALKABLE.has(o.type)) continue;
+        // Un paso que arranca en un descanso (umbral alto, HANDOFF 81) no lo
+        // tapa lo que está apoyado en el piso de abajo.
+        if ((o.hb ?? 0) > 1.9) continue;
         // Franja de 60 cm a cada lado del vano: lo que la invade le resta paso.
         const reach = g.t / 2 + 0.6;
         const taken: Array<[number, number, string]> = [];

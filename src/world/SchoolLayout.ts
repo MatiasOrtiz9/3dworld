@@ -301,6 +301,17 @@ export function chairScaleOf(it: Item): number {
   return size === 'small' ? FURNITURE.smallScale : size === 'primary' ? FURNITURE.primarySeat / FURNITURE.seat : 1;
 }
 
+/**
+ * Ángulos (en planta) de las sillas que rodean una mesa redonda, hexagonal o
+ * de patio: cuatro en diagonal, o las que diga `chairs` en una mesa de patio
+ * (las del tramo largo de 2026 tienen dos, contra el muro). Lo usan el
+ * constructor (dónde se dibujan) y la gente (dónde se sienta).
+ */
+export function roundChairAngles(it: Item): number[] {
+  const n = it.kind === 'cafeTable' ? Math.max(0, Math.min(4, it.chairs ?? 4)) : 4;
+  return Array.from({ length: n }, (_, k) => (k / n) * Math.PI * 2 + Math.PI / 4);
+}
+
 /** ¿Hay piso transitable de ese nivel en el punto? La planta baja cubre todo el predio. */
 export function hasFloor(level: Level, u: number, v: number): boolean {
   if (level === 0) return true;

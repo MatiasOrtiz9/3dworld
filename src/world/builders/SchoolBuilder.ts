@@ -39,6 +39,7 @@ import {
   SALON_COLUMNS,
   makerWallAt,
   riserCount,
+  roundChairAngles,
   wallGapBehind,
   GYM_MID,
   GYM_PILASTERS,
@@ -168,6 +169,13 @@ const STYLES: Readonly<Record<string, RoomStyle>> = {
   // propia (bloque al oeste, gris al este) en los datos del muro.
   gimnasio: { stripe: false },
   jardin: { wall: 'yellow', stripe: false },
+  // Video de 2026: el pasillo del jardín, Arte y Teatro van blancos y lisos,
+  // sin guarda roja, con cielorraso de placas; V. Damas es un vestuario con
+  // azulejos blancos hasta el techo.
+  hallJardin: { stripe: false, ceiling: 'panels', lights: 'panel' },
+  arte: { stripe: false, ceiling: 'panels' },
+  teatro: { stripe: false },
+  vDamas: { wall: 'ceramic', stripe: false },
   torreHall: { stripe: false, lights: 'none' },
   // Ambientes del bloque norte que el CAD agrega (sin recorrido): el aula
   // como las de primaria, el depósito y el local del fondo, blancos.
@@ -362,6 +370,9 @@ export class SchoolBuilder {
       woodIn: i('#a8784a', 'timber', 0.22, 0.5),
       // Bloque de hormigón a la vista (polideportivo, aula de danzas, Adm.).
       block: i('#a5a49f', 'block', 0.16, undefined, 'wall'),
+      // Bloque del frente de Arte al patio (video 2026, 1:04): más claro y
+      // más cálido que el del polideportivo.
+      blockLight: i('#b9b6ae', 'block', 0.16, undefined, 'wall'),
       // Cortinas: celestes en las aulas del frente, violetas en las demás.
       // Tela con pliegues (relieve y sombra propia), mate.
       sky: s('#2fa8d8', 0.95, 0, 'fabric'),
@@ -379,7 +390,8 @@ export class SchoolBuilder {
       // El polideportivo se ilumina por las franjas traslúcidas y las ventanas
       // altas (9:22–9:28), que el sol directo no atraviesa en el modelo: más
       // rebote propio en su piso y sus muros, o queda en penumbra.
-      gymFloor: i('#bdb9ae', 'pavement', 0.52, undefined, 'floor'),
+      // Video 2026: gris claro pulido, no beige.
+      gymFloor: i('#c6c5bf', 'pavement', 0.52, 0.45, 'floor'),
       // Vinílico del Aula Maker: verde salvia y azul acero.
       green: i('#4f8a5f', 'rubber', undefined, 0.7, 'floor'),
       steel: i('#4d6b85'),
@@ -421,6 +433,9 @@ export class SchoolBuilder {
       timber: s('#c99a62', 0.55, 0, 'timber'),
       timberDark: s('#7b5236', 0.55, 0, 'timber'),
       chairGreen: s('#2f7a5c', 0.6, 0, 'plaster'),
+      // Verde oscuro de la columna acolchada del hall y de los contenedores
+      // del patio (video 2026): con el verde de las sillas se leía menta.
+      darkGreen: s('#1d5a34', 0.6, 0, 'plaster'),
       plasticCream: s('#e3d8bd', 0.45, 0, 'plaster'),
       // Pizarra blanca, hojas y mesadas: melamina o esmalte, con brillo.
       board: i('#f6f7f6', null, 0.35, 0.4),
@@ -468,7 +483,6 @@ export class SchoolBuilder {
       orangeWall: m.orange,
       // Colores del recorrido que comparten material con uno cercano.
       charcoal: m.metalDark,
-      darkGreen: m.chairGreen,
       darkRed: m.red,
       brick: m.red,
       oak: m.timber,
@@ -1600,7 +1614,8 @@ export class SchoolBuilder {
     // Huellas de chapa semilla de melón (relieve también en VR, 8:37–8:41).
     const tread = chequer ? m.metalTread : m.stair;
     // La del jardín tiene pasamanos negro (11:49–13:06).
-    const rail = chequer || s.u0 >= U.teaE - 0.01 ? m.metalDark : s.hollow ? m.frame : m.red;
+    // Video 2026: la blanca del comedor tiene baranda de caño rojo.
+    const rail = chequer || s.u0 >= U.teaE - 0.01 ? m.metalDark : s.hollow && !s.guard ? m.frame : m.red;
     for (let i = 0; i < n; i++) {
       const c = from + run * (i + 0.5);
       const top = FY + s.y0 + ((i + 1) * (s.y1 - s.y0)) / n;
@@ -1612,7 +1627,9 @@ export class SchoolBuilder {
       // Nariz de escalón clara (las del acceso llevan una franja amarilla).
       if (!this.detailed && i > 0 && i < n - 1) continue;
       // Narices amarillas en el primer escalón y en la llegada (0:19, 1:35).
-      const yellow = !chequer && (i === n - 1 || (i === 0 && s.y0 < 0.5));
+      // La del hall (chapa perforada, video 2026) tiene los escalones grises
+      // lisos: las amarillas son de la otra escalera.
+      const yellow = !chequer && s.guard !== 'perforated' && (i === n - 1 || (i === 0 && s.y0 < 0.5));
       const nose = yellow ? m.yellow : m.slab;
       if (alongU) this.box(nose, c - run * 0.45, (s.v0 + s.v1) / 2, 0.05, 0.02, s.v1 - s.v0, top);
       else this.box(nose, (s.u0 + s.u1) / 2, c - run * 0.45, s.u1 - s.u0, 0.02, 0.05, top);
@@ -1639,7 +1656,10 @@ export class SchoolBuilder {
       // superior pasa por el pie de cada contrahuella y baja 26 cm.
       if (s.hollow || chequer) {
         // Las zancas de la de chapa siguen de hierro pintado.
-        for (const sgn of [-1, 1]) sloped(chequer ? m.metalDark : tread, mid + sgn * (width / 2 - 0.03), yMid - 0.13, 0.26 * Math.cos(ang), 0.06);
+        // La blanca del comedor (video 2026) tiene zancas de mampostería
+        // blanca, más altas: el costado se lee macizo y blanco.
+        const deep = s.guard === 'rails' ? 0.42 : 0.26;
+        for (const sgn of [-1, 1]) sloped(chequer ? m.metalDark : s.guard === 'rails' ? m.facade : tread, mid + sgn * (width / 2 - 0.03), yMid - deep / 2, deep * Math.cos(ang), 0.06);
       } else {
         sloped(tread, mid, yMid - 0.13, 0.26 * Math.cos(ang), width);
       }
@@ -1661,6 +1681,10 @@ export class SchoolBuilder {
       // se medía desde el borde del tramo y quedaba a 10–15 cm del muro, o
       // metido dentro.
       const across = face !== null ? face + inward * 0.065 : edge + inward * 0.04;
+      if (!walled && s.guard) {
+        this.stairGuard2026(s, rail, sloped, across, yMid, rise, length, railLong, runAt, treadTop);
+        continue;
+      }
       if (!walled && s.meshGuard) {
         this.stairMesh(s, rail, sloped, across, yMid, rise, length, railLong, runAt, treadTop);
         continue;
@@ -1684,6 +1708,50 @@ export class SchoolBuilder {
         }
       }
       if (!walled && this.detailed) sloped(rail, across, yMid + 0.45, 0.03, 0.03, railLong);
+    }
+  }
+
+  /**
+   * Barandas del video de 2026 en el lado abierto de un tramo, ~1 m sobre la
+   * línea de los escalones. `perforated` (la del hall): marco de caño rojo
+   * con tres paños de chapa perforada clara separados por parantes.
+   * `rails` (la blanca del comedor): caño rojo con pasamanos, dos travesaños
+   * paralelos a la pendiente y parantes en las puntas y el medio. La colisión
+   * es la misma barrera del costado de siempre.
+   */
+  private stairGuard2026(
+    s: Stair,
+    red: Material,
+    sloped: (mat: Material, across: number, y: number, thick: number, width: number, long?: number) => void,
+    across: number,
+    yMid: number,
+    rise: number,
+    length: number,
+    railLong: number,
+    runAt: (t: number) => number,
+    treadTop: (t: number) => number,
+  ): void {
+    const alongU = s.dir === 'u+' || s.dir === 'u-';
+    const ang = Math.atan2(rise, length);
+    const H_TOP = s.guard === 'perforated' ? 1.0 : 0.95;
+    sloped(red, across, yMid + H_TOP, 0.045, 0.045, railLong);
+    if (s.guard === 'perforated') {
+      // Zócalo del marco y el paño claro entre él y el pasamanos (chapa
+      // perforada blanca rosada: con el blanco de los marcos, sin material nuevo).
+      sloped(red, across, yMid + 0.14, 0.035, 0.035, railLong);
+      sloped(this.m.frame, across, yMid + (H_TOP + 0.14) / 2, (H_TOP - 0.18) * Math.cos(ang), 0.012, railLong);
+    } else {
+      for (const y of [0.35, 0.65]) sloped(red, across, yMid + y, 0.032, 0.032, railLong);
+    }
+    // Parantes: puntas y divisiones de los paños (o el del medio).
+    const ts = s.guard === 'perforated' ? [0, 1 / 3, 2 / 3, 1] : [0, 0.5, 1];
+    for (const f of ts) {
+      const t = 0.06 + 0.88 * f;
+      const at = runAt(t);
+      const railY = yMid + H_TOP + (t - 0.5) * rise;
+      const y0 = f === 0 || f === 1 ? treadTop(t) : yMid + 0.12 + (t - 0.5) * rise;
+      const [pu, pv] = alongU ? [at, across] : [across, at];
+      this.box(red, pu, pv, 0.045, railY - y0, 0.045, y0);
     }
   }
 
@@ -2015,15 +2083,36 @@ export class SchoolBuilder {
         const ph = it.h ?? 0.6;
         this.box(this.mat(it.color, m.blue), u, v, w, ph, d, FY);
         this.box(m.soil, u, v, w - 0.12, 0.04, d - 0.12, FY + ph - 0.02);
-        const n = Math.max(1, Math.round(Math.max(w, d) / 1.1));
+        // Los canteros rojos altos del patio de juegos (video 2026) llevan una
+        // hilera pareja de plantitas (cintas, agaves chicos), no matas grandes.
+        const small = ph >= 0.95;
+        // En el visor, la mitad de plantitas (presupuesto de triángulos).
+        const n = Math.max(1, Math.round(Math.max(w, d) / (small ? (this.detailed ? 0.75 : 1.5) : 1.1)));
         for (let k = 0; k < n; k++) {
           const t = (k + 0.5) / n - 0.5;
           const p = toWorld(this.f, u + (w >= d ? t * (w - 0.5) : 0), v + (w >= d ? 0 : t * (d - 0.5)));
-          this.nature.shrub(p.x, p.z, this.rng.range(0.55, 0.8), FY + ph);
+          this.nature.shrub(p.x, p.z, small ? this.rng.range(0.28, 0.36) : this.rng.range(0.55, 0.8), FY + ph);
         }
         break;
       }
       case 'bench': {
+        if (it.color === 'frame') {
+          // Banco de plaza blanco de listones con respaldo (video 2026, 1:05):
+          // seis listones de asiento y respaldo sobre patas negras finas.
+          const [fu, fv] = faceDir(it.face);
+          const len = alongV ? d : w;
+          const dep = alongV ? w : d;
+          const slat = (off: number, y: number, h: number) =>
+            this.box(m.frame, u + fu * off, v + fv * off, alongV ? 0.07 : len, h, alongV ? len : 0.07, FY + y);
+          for (let k = 0; k < 4; k++) slat(dep / 2 - 0.06 - k * 0.11, 0.42, 0.03);
+          for (let k = 0; k < 3; k++) slat(-dep / 2 + 0.03, 0.55 + k * 0.12, 0.07);
+          for (const sgn of [-1, 1]) {
+            const a = sgn * (len / 2 - 0.15);
+            this.box(m.metalDark, u + (alongV ? 0 : a), v + (alongV ? a : 0), alongV ? dep - 0.04 : 0.05, 0.42, alongV ? 0.05 : dep - 0.04, FY);
+            this.box(m.metalDark, u + (alongV ? 0 : a) - fu * (dep / 2 - 0.03), v + (alongV ? a : 0) - fv * (dep / 2 - 0.03), 0.05, 0.45, 0.05, FY + 0.42);
+          }
+          break;
+        }
         const mat = this.mat(it.color, room?.id === 'buffet' ? m.timberDark : m.red);
         this.box(mat, u, v, w, 0.06, d, FY + 0.42);
         for (const s of [-1, 1]) {
@@ -2335,6 +2424,8 @@ export class SchoolBuilder {
         const top = it.h ?? 3.1;
         this.box(m.white, u, v, w * 0.8, top, d * 0.8, FY);
         this.box(this.mat(it.color, m.chairGreen), u, v, w, 2.0, d, FY + 0.05);
+        // Cinta azul en el borde de arriba de la protección (video 2026).
+        if (it.color === 'darkGreen') this.box(m.blue, u, v, w + 0.01, 0.05, d + 0.01, FY + 1.85);
         break;
       }
       case 'workbench': {
@@ -2649,9 +2740,19 @@ export class SchoolBuilder {
           this.box(m.red, u, v, w, 1.4, d, FY + 1.4);
         }
         break;
-      case 'flagpole':
-        this.cyl(m.metal, u, v, 0.07, it.h ?? 6.5, FY);
+      case 'flagpole': {
+        const ph = it.h ?? 6.5;
+        // En 2026 los mástiles son blancos (con color, el de la bandera).
+        this.cyl(it.color ? m.frame : m.metal, u, v, 0.07, ph, FY);
+        if (it.color && it.color !== 'frame') {
+          // Bandera quieta, caída junto al mástil: la argentina (celeste,
+          // blanca, celeste) o una toda azul.
+          const sky = this.mat(it.color, m.blue);
+          const stripes = it.color === 'skyWall' ? [sky, m.frame, sky] : [sky, sky, sky];
+          stripes.forEach((mat, k) => this.box(mat, u + 0.05, v, 0.02, 0.3, 0.55, FY + ph - 0.45 - (k + 1) * 0.3));
+        }
         break;
+      }
       case 'stack': {
         const mat = this.mat(it.color, m.red);
         const n = Math.round((it.h ?? 1.6) / 0.09);
@@ -2822,16 +2923,17 @@ export class SchoolBuilder {
         break;
       }
       case 'cafeTable': {
-        // Mesa del patio nuevo: pie central rojo con cruz, tapa de madera
-        // rojiza y un damero de azulejos; las bajas con cuatro sillas
-        // plásticas negras (como las redondas), las altas son de pie.
+        // Mesa del patio nuevo: pie central rojo con cruz y tapa de madera
+        // rojiza; con `chess`, un damero de azulejos (en 2026 lo tienen las
+        // del patio de las gradas; las del tramo largo son lisas). Las bajas
+        // llevan sillas plásticas negras (`roundChairAngles`), las altas son
+        // de pie.
         const hgt = (it.h ?? FURNITURE.tableTop) - 0.05;
         this.box(this.mat(it.color, m.timberDark), u, v, w, 0.05, d, FY + hgt);
         this.box(m.red, u, v, 0.09, hgt, 0.09, FY);
         this.box(m.red, u, v, w * 0.7, 0.04, 0.07, FY);
         this.box(m.red, u, v, 0.07, 0.04, d * 0.7, FY);
-        if (it.h !== undefined) break;
-        if (this.detailed) {
+        if (it.chess && this.detailed) {
           const c = 0.11;
           this.box(m.frame, u, v, 4 * c + 0.02, 0.004, 4 * c + 0.02, FY + hgt + 0.05);
           for (let a = 0; a < 4; a++) {
@@ -2840,8 +2942,8 @@ export class SchoolBuilder {
             }
           }
         }
-        for (let k = 0; k < 4; k++) {
-          const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
+        if (it.h !== undefined) break;
+        for (const a of roundChairAngles(it)) {
           this.chair(m.metalDark, u + Math.cos(a) * (w / 2 + FURNITURE.roundChair), v + Math.sin(a) * (w / 2 + FURNITURE.roundChair), [-Math.cos(a), -Math.sin(a)]);
         }
         break;
@@ -2861,7 +2963,8 @@ export class SchoolBuilder {
         this.cyl(m.frame, u, v, w, 0.55, FY, true);
         this.cyl(m.soil, u, v, w - 0.06, 0.02, FY + 0.53);
         const p = toWorld(this.f, u, v);
-        this.nature.shrub(p.x, p.z, this.rng.range(0.5, 0.7), FY + 0.55);
+        // Las macetas chicas (0,45 m) llevan una planta chica.
+        this.nature.shrub(p.x, p.z, w < 0.5 ? this.rng.range(0.3, 0.38) : this.rng.range(0.5, 0.7), FY + 0.55);
         break;
       }
       case 'bunting': {
@@ -2869,14 +2972,15 @@ export class SchoolBuilder {
         // muro: cordón y banderines de colores; en VR, la mitad.
         const y = FY + (it.y ?? 3.1);
         this.piece(m.metalDark, [u - w / 2, v], [u + w / 2, v], 0.01, y - 0.01, y);
-        const cols = [m.red, m.blue, m.yellow, m.chairGreen, m.lime, m.frame];
-        const step = this.detailed ? 0.24 : 0.48;
+        // Papel picado pastel, banderines chicos casi pegados (video 2026).
+        const cols = [m.pinkWall, m.skyWall, m.yellow, m.orange, m.lilac, m.frame];
+        const step = this.detailed ? 0.18 : 0.36;
         const n = Math.floor(w / step);
         for (let k = 0; k < n; k++) {
           const fu = u - w / 2 + (k + 0.5) * (w / n);
           // Cuelga un poco más en el medio (catenaria baja).
           const sag = 0.25 * (1 - ((2 * (k + 0.5)) / n - 1) ** 2);
-          this.box(cols[k % cols.length], fu, v, 0.14, 0.16, 0.008, y - 0.17 - sag);
+          this.box(cols[k % cols.length], fu, v, 0.15, 0.18, 0.008, y - 0.19 - sag);
         }
         break;
       }
@@ -2901,6 +3005,34 @@ export class SchoolBuilder {
           limb(mid, a + side * 0.25, lean - 0.2, 0.9, 0.045);
           limb(mid, a - side * 0.7, lean + 0.35, 0.6, 0.035);
         }
+        break;
+      }
+      case 'slimTree': {
+        const ph = it.h ?? 3.4;
+        const bark = this.mats.surface(PALETTE.barkLight, 0.95, 0, 'timber');
+        if (w >= 0.4) {
+          // Palmera de tronco grueso y peludo contra el salón (video 2026,
+          // 0:07): el tronco sale de cuadro; arriba, un penacho corto de hojas
+          // paradas (con las frondas largas de `palm` se metían en el salón).
+          this.cyl(bark, u, v, 0.45, ph, FY);
+          const frond = this.mats.foliage(PALETTE.leafMid);
+          const p = toWorld(this.f, u, v);
+          for (let k = 0; k < 9; k++) {
+            const a = (k / 9) * Math.PI * 2;
+            this.farm.add('box', frond, new Vector3(p.x + Math.sin(a) * 0.25, FY + ph + 0.2, p.z + Math.cos(a) * 0.25), new Vector3(0.3, 0.05, 0.9), a, -0.7);
+          }
+          break;
+        }
+        // Arbolito de pocos troncos finos (video 2026): dos tallos de corteza
+        // gris oliva y una copa chica arriba, en su cazuela.
+        for (const [du, dv, k] of [
+          [0.04, 0.03, 1],
+          [-0.05, -0.02, 0.9],
+        ] as const) {
+          this.cyl(bark, u + du, v + dv, 0.07, ph * k, FY);
+        }
+        const p = toWorld(this.f, u, v);
+        this.farm.add('blob', this.mats.foliage(PALETTE.leafMid), new Vector3(p.x, FY + ph - 0.1, p.z), new Vector3(1.0, 0.9, 1.0));
         break;
       }
       case 'hedge': {

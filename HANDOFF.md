@@ -1143,6 +1143,39 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     - Recorridos guardados (`steps_*.json` del QA): las coordenadas literales
       de `__t.go` van envueltas en `...__fromPlan(u, v)`.
 
+92. **Video de 2026 (hall + patio de juegos, pasillo al jardín y gimnasio).**
+    Lo que cambió respecto del de 2020, en los datos del plano:
+    - Escaleras: la del hall con paños de chapa perforada clara en marco de
+      caño rojo y escalones grises sin nariz amarilla; la blanca del comedor
+      con baranda de caño rojo (pasamanos y dos travesaños), sin malla, y
+      zancas blancas macizas (`Stair.guard`, manda sobre `meshGuard`).
+    - Patio de juegos (tramo): cantero rojo corrido en L desde el rincón de la
+      puerta del hall (puerta vidriada simple corrida al este, dos macetas),
+      fila de juegos de chapa (mesa + dos bancos); detrás, piso verde con dos
+      contenedores y el cajón bajo con baranda de caño y la palmera; contra
+      el salón, cazuelas de ripio con palmeras y arbolitos (`slimTree`) y
+      mesitas lisas de dos sillas; muros del patio en revoque liso (no bloque);
+      ventanal del hall casi hasta el piso; ventanal del comedor al norte.
+    - Frente a Arte: gradas azules, tres mástiles blancos con la bandera
+      argentina y una azul, mesas dobles con damero (`cafeTable.chess`),
+      banco blanco de listones, papel picado pastel, bloque claro a la vista
+      (`blockLight`), ventana corrediza y puerta de seis vidrios, pilastra.
+    - Pasillo del jardín, Arte y Teatro: blancos sin guarda roja, cielorraso
+      de placas, piso cerámico claro, paños vidriados al pasillo; Arte con
+      filas de mesas largas rojas y bancos. V. Damas es vestuario: azulejo
+      blanco, piso terracota, banco de madera, paneles grises y perchero;
+      puertas de hoja roja. Gimnasio: piso gris claro y la puerta del pasillo
+      enmarcada en azul marino.
+    - Hall: banner oscuro con lema amarillo (cartelería impresa), cuadro de
+      marco oscuro y cámara sobre la puerta del cuartito, columna acolchada
+      verde oscuro con cinta azul, mostrador corrido rojo de la recepción con
+      vidriado blanco y las sillas de espera frente a él.
+    - Sin hacer (dudosos o de bajo impacto): murales infantiles del pasillo,
+      puerta negra al final del pasillo, bicicletero de pared y matafuego del
+      hall del jardín, piso verde del jardín, aro de básquet y acolchado rojo
+      corrido del gimnasio, Teatro como aula, cantero redondo de la esquina NE,
+      persianas rosadas sobre la escalera, juntas del piso del patio.
+
 ---
 
 ## 6. Estado actual

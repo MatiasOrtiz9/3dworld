@@ -23,7 +23,7 @@ function outside(poly: readonly (readonly [number, number])[], u: number, v: num
 }
 
 describe('vegetación de los patios', () => {
-  const trees = ITEMS.filter((it) => (it.kind === 'palm' || it.kind === 'tree') && (it.level ?? 0) === 0);
+  const trees = ITEMS.filter((it) => (it.kind === 'palm' || it.kind === 'tree' || it.kind === 'slimTree') && (it.level ?? 0) === 0);
 
   it('hay palmeras y árboles en los patios', () => {
     expect(trees.length).toBeGreaterThan(1);
@@ -31,7 +31,8 @@ describe('vegetación de los patios', () => {
 
   for (const t of trees) {
     // Alcance horizontal de la copa (ver SchoolBuilder.palm y NatureBuilder.broadleaf).
-    const reach = t.kind === 'palm' ? 3.3 * 0.95 * Math.min(1, (t.h ?? 6) / 6) : 2.6;
+    // `slimTree`: copa chica de 1 m o penacho corto de hojas paradas (~0,6 m).
+    const reach = t.kind === 'palm' ? 3.3 * 0.95 * Math.min(1, (t.h ?? 6) / 6) : t.kind === 'slimTree' ? 0.6 : 2.6;
     it(`${t.kind} en (${t.u}, ${t.v}) no asoma dentro de un ambiente techado`, () => {
       const bad: string[] = [];
       for (let k = 0; k < 24; k++) {
