@@ -84,6 +84,15 @@ export interface SoundscapeOptions {
 export type MixChannel = 'music' | 'ambience' | 'effects' | 'voice';
 /** 'auto': voz del navegador en castellano si hay; si no, bla-bla. */
 export type VoiceMode = 'auto' | 'tts' | 'babble';
+
+/**
+ * Voces del ambiente: multitudes de fondo (patio, aulas, jardín) y sonidos
+ * sueltos con voz (risas, gritos, la maestra, charlas). El usuario pidió que
+ * no haya voces ni susurros: apagadas. Ponerlo en true las devuelve.
+ */
+const AMBIENT_VOICES = false;
+/** Sonidos sueltos que son voces humanas. */
+const VOICE_EVENTS: ReadonlySet<string> = new Set(['laugh', 'shout', 'teacher', 'voices']);
 export type DoorMaterial = 'wood' | 'metal';
 
 /** Constante de tiempo del cruce entre zonas (s): cruzar una puerta se oye, pero no salta. */
@@ -584,7 +593,11 @@ export class Soundscape implements AudioApi {
     this.voiceActive = true;
     this.voiceEndCb = onEnd ?? null;
     this.duck(true);
-    if (ttsVoice) this.speakTts(text, prof, ttsVoice, token);
+    // Sin voces (`AMBIENT_VOICES`): la línea dura lo mismo pero nadie habla,
+    // ni con voz del navegador ni con bla-bla.
+    if (!AMBIENT_VOICES) {
+      /* silencio */
+    } else if (ttsVoice) this.speakTts(text, prof, ttsVoice, token);
     else this.speakBabble(text, prof);
     // Respaldo: la línea termina sí o sí (la voz del navegador a veces no avisa).
     this.voiceTimer = setTimeout(
@@ -874,7 +887,9 @@ export class Soundscape implements AudioApi {
     this.applauseBuf.getChannelData(1).set(crossfadeLoop(aR, apLen, aR.length - apLen));
 
     // Multitudes: el patio primero (es lo que más se oye), después el resto.
-    const plan: Array<[S.CrowdKind, number, VoiceLayer[]]> = [
+    // Apagadas mientras no haya voces (`AMBIENT_VOICES`): eran el murmullo y
+    // los "susurros" de chicos y aulas de fondo.
+    const plan: Array<[S.CrowdKind, number, VoiceLayer[]]> = !AMBIENT_VOICES ? [] : [
       ['kids', lp ? 8 : 12, ['kids']],
       ['murmur', lp ? 7 : 10, ['class', 'crowd']],
       ['little', lp ? 6 : 8, ['little']],
@@ -1027,6 +1042,9 @@ export class Soundscape implements AudioApi {
    * donde corresponde respecto del oyente.
    */
   private fireAmbient(kind: AmbientEvent, t: number, at: WorldPoint | null, manual: boolean): void {
+    // Sin voces de ningún tipo (lo pidió el usuario): risas, gritos, la
+    // maestra y las charlas sueltas no suenan; quedan pájaros, pelota, autos…
+    if (!AMBIENT_VOICES && VOICE_EVENTS.has(kind)) return;
     const kit = this.kit;
     const bus = this.busEvents;
     if (!kit || !bus) return;

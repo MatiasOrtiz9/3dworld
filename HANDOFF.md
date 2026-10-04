@@ -1183,6 +1183,14 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
       corrido del gimnasio, Teatro como aula, cantero redondo de la esquina NE,
       persianas rosadas sobre la escalera, juntas del piso del patio.
 
+93. **No hay voces en el sonido** (lo pidió el usuario: "eliminá las voces o
+    susurros"). `AMBIENT_VOICES = false` en `Soundscape`: no se generan las
+    multitudes de fondo (chicos del patio, murmullo de aulas, jardín), no
+    suenan los sueltos con voz (`laugh`, `shout`, `teacher`, `voices`) y
+    `voice()` no habla (ni voz del navegador ni bla-bla), aunque se abra con
+    `?frases=1`: la línea dura lo mismo, en silencio. El resto del ambiente
+    (pájaros, pelota, silbato, autos, campana, pasos) sigue igual.
+
 ---
 
 ## 6. Estado actual
