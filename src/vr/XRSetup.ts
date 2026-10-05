@@ -14,6 +14,7 @@ import { XRLocomotion, type WalkIndex } from './XRLocomotion';
 import { ComfortVignette } from './XRComfortVignette';
 import { ControllerModels } from './XRControllerModels';
 import { WristPanel, type HudInfo } from './XRWristPanel';
+import { XRMapOverlay } from './XRMapOverlay';
 // Efecto secundario: registra `scene.beginAnimation`, que usa el anillo
 // giratorio del destino de teletransporte.
 import '@babylonjs/core/Animations/animatable';
@@ -195,6 +196,10 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
   const locomotion = new XRLocomotion(scene, experience, options.index, options.onStep);
   const teleportedObserver = teleport.onAfterCameraTeleport.add(() => locomotion.markTeleported());
   const wrist = new WristPanel(scene);
+  const mapOverlay = new XRMapOverlay(scene);
+  const mapOverlayObserver = scene.onBeforeRenderObservable.add(() => {
+    if (base.state === WebXRState.IN_XR) mapOverlay.update(cam);
+  });
   const models = new ControllerModels(scene, experience.input, (grip) => wrist.attachTo(grip));
   const vignette = new ComfortVignette(scene, cam);
   // El piso de teletransporte sigue a los pies: en el primer y segundo piso
@@ -262,6 +267,7 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
     },
     setHud(info: HudInfo): void {
       wrist.set(info);
+      mapOverlay.set(info);
     },
     placeAt(eye: Vector3, look: Vector3, feetY?: number): void {
       if (base.state !== WebXRState.IN_XR) return;
@@ -278,6 +284,7 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
       if (disposed) return;
       disposed = true;
       scene.onBeforeRenderObservable.remove(vignetteObserver);
+      scene.onBeforeRenderObservable.remove(mapOverlayObserver);
       teleport.onTargetMeshPositionUpdatedObservable.remove(teleportTargetObserver);
       teleport.onAfterCameraTeleport.remove(teleportedObserver);
       base.onStateChangedObservable.remove(stateObserver);
@@ -285,6 +292,7 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
       locomotion.dispose();
       models.dispose();
       wrist.dispose();
+      mapOverlay.dispose();
       vignette.dispose();
       experience.dispose();
       jointSource.dispose();

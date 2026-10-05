@@ -2,14 +2,12 @@ import { FENCES, ROOMS, STAIRS, U, WALLS, WALKABLE, miguelCaneU, planU, planV, r
 import { UI } from './draw';
 
 /**
- * Minimapa y brújula: la planta REAL de la escuela (los mismos ambientes y
- * muros con los que se levanta) del piso en el que está el jugador, girando
- * con él (adelante es arriba), con su flecha, el objetivo y la gente de la
- * historia. Fuera del círculo, una marca dorada en el borde indica hacia
- * dónde queda el objetivo; si está en otro piso, lo dice.
+ * Minimapa de vista general: muestra la planta REAL completa del piso actual,
+ * con el jugador, el objetivo y la gente de la historia en sus posiciones
+ * reales. La flecha del jugador marca su rumbo sobre el mapa fijo.
  *
  * Cada piso se dibuja una sola vez en un canvas fuera de pantalla: por
- * cuadro sólo se copia, girado y recortado. Es barato aun a 10 Hz.
+ * cuadro sólo se copia y se escala para encajar en el círculo. Es barato aun a 10 Hz.
  */
 
 export interface MapMarker {
@@ -58,6 +56,10 @@ export class Minimap {
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
+  }
+
+  get sourceCanvas(): HTMLCanvasElement {
+    return this.canvas;
   }
 
   /** Planta de un piso, dibujada la primera vez que se pide. */
@@ -168,8 +170,11 @@ export class Minimap {
     const ctx = this.ctx;
     const W = this.canvas.width;
     const R = W / 2;
-    // Escala de la vista: el círculo muestra unos 26 m de radio.
-    const view = R / 26;
+    // Vista general: todo el plano entra en el círculo sin seguir ni recortar
+    // al jugador. La flecha y el objetivo conservan su posición real.
+    const centerU = (U0 + U1) / 2;
+    const centerV = (V0 + V1) / 2;
+    const view = (R - 22) / (Math.max(U1 - U0, V1 - V0) / 2);
     ctx.clearRect(0, 0, W, W);
     ctx.save();
     ctx.beginPath();
@@ -178,10 +183,9 @@ export class Minimap {
     ctx.fillStyle = '#0b1513';
     ctx.fillRect(0, 0, W, W);
     ctx.translate(R, R);
-    ctx.rotate(-s.heading);
     const k = view / PRE;
     ctx.scale(k, k);
-    ctx.translate(-(s.u - U0) * PRE, -(s.v - V0) * PRE);
+    ctx.translate(-(centerU - U0) * PRE, -(centerV - V0) * PRE);
     ctx.drawImage(this.plan(s.level), 0, 0);
     // Gente de la historia en este piso.
     for (const p of s.people ?? []) {
@@ -193,47 +197,26 @@ export class Minimap {
     }
     ctx.restore();
 
-    // Objetivo: adentro del círculo, un rombo; afuera, una marca en el borde.
+    // Objetivo en su posición real dentro del plano completo.
     const t = s.target;
     if (t) {
-      const du = t.u - s.u;
-      const dv = t.v - s.v;
-      const c = Math.cos(-s.heading);
-      const sn = Math.sin(-s.heading);
-      let x = (du * c - dv * sn) * view;
-      let y = (du * sn + dv * c) * view;
-      const d = Math.hypot(x, y);
-      const edge = R - 14;
-      const outside = d > edge;
-      if (outside) {
-        x = (x / d) * edge;
-        y = (y / d) * edge;
-      }
+      const x = R + (t.u - centerU) * view;
+      const y = R + (t.v - centerV) * view;
       ctx.save();
-      ctx.translate(R + x, R + y);
+      ctx.translate(x, y);
       ctx.fillStyle = UI.gold;
       ctx.shadowColor = 'rgba(242,193,78,0.8)';
       ctx.shadowBlur = 10;
-      if (outside) {
-        ctx.rotate(Math.atan2(y, x) + Math.PI / 2);
-        ctx.beginPath();
-        ctx.moveTo(0, -11);
-        ctx.lineTo(8, 5);
-        ctx.lineTo(-8, 5);
-        ctx.closePath();
-        ctx.fill();
-      } else {
-        ctx.rotate(Math.PI / 4);
-        ctx.fillRect(-7, -7, 14, 14);
-      }
+      ctx.rotate(Math.PI / 4);
+      ctx.fillRect(-7, -7, 14, 14);
       ctx.restore();
       if (t.level !== s.level) {
         ctx.save();
         ctx.fillStyle = UI.ink;
         ctx.strokeStyle = UI.gold;
         ctx.lineWidth = 2;
-        const bx = R + x * (outside ? 0.78 : 1);
-        const by = R + y * (outside ? 0.78 : 1) - (outside ? 0 : 20);
+        const bx = x;
+        const by = y - 18;
         ctx.beginPath();
         ctx.arc(bx, by, 11, 0, Math.PI * 2);
         ctx.fill();
@@ -247,9 +230,10 @@ export class Minimap {
       }
     }
 
-    // Jugador: flecha al centro, siempre hacia arriba.
+    // Jugador: flecha en su posición y rumbo reales sobre el plano.
     ctx.save();
-    ctx.translate(R, R);
+    ctx.translate(R + (s.u - centerU) * view, R + (s.v - centerV) * view);
+    ctx.rotate(-s.heading);
     ctx.fillStyle = '#ffffff';
     ctx.strokeStyle = UI.ink;
     ctx.lineWidth = 3;
@@ -270,7 +254,7 @@ export class Minimap {
     ctx.beginPath();
     ctx.arc(R, R, R - 2, 0, Math.PI * 2);
     ctx.stroke();
-    const na = -s.heading - Math.PI / 2;
+    const na = -Math.PI / 2;
     const nx = R + Math.cos(na) * (R - 13);
     const ny = R + Math.sin(na) * (R - 13);
     ctx.fillStyle = UI.ink;

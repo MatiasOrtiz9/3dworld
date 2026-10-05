@@ -88,7 +88,7 @@ export interface GameDirectorDeps {
 
 export interface XRGameControls {
   setLocomotionEnabled(enabled: boolean): void;
-  setHud(info: { place: string; progress: string }): void;
+  setHud(info: { place: string; progress: string; mapCanvas?: HTMLCanvasElement; mapKey?: string; freeRoam?: boolean }): void;
 }
 
 // ================================================================ sesión
@@ -263,6 +263,8 @@ export class GameDirector {
   /** Lo que muestra el panel/HUD ahora, para re-mostrarlo al entrar o salir del visor. */
   private shown: { model: PanelModel; pick: (i: number) => void; toward?: { x: number; z: number } } | null = null;
   private xrMenu = false;
+  private xrScreen: 'dashboard' | 'map' | 'settings' | null = null;
+  private xrMapDrawKey = '';
   private wristKey = '';
   private readonly ray = new Ray(Vector3.Zero(), new Vector3(0, 0, 1), 20);
   /** Tiempo que el panel lleva fuera de la vista (se vuelve a poner delante). */
@@ -319,17 +321,8 @@ export class GameDirector {
     this.hud.bind({
       onPause: () => this.applyPause(),
       onReset: () => this.newGame(),
-      onFreeRoam: (on) => {
-        SESSION.freeRoam = on;
-        if (on) {
-          this.applyLocks(true);
-          this.locksDirty = false;
-        } else {
-          // Volver a cerrar con el jugador arriba lo dejaría encerrado: se
-          // espera a que esté en planta baja, fuera del jardín.
-          this.locksDirty = true;
-        }
-      },
+      onFreeRoam: (on) => this.setFreeRoam(on),
+      onFreeRoamStart: () => this.startFreeRoam(),
       passport: () => this.passport(),
     });
     this.hud.setFreeRoam(SESSION.freeRoam);
@@ -375,6 +368,19 @@ export class GameDirector {
   /** Último saludo sin frases, para las herramientas: a quién, cuándo (reloj del juego) y si avanzó la historia. */
   get lastGreeting(): { npc: string; at: number; due: boolean } | null {
     return this.greeted;
+  }
+
+  /** Abre o cierra el panel de mapa y ajustes desde el botón B/Y del visor. */
+  toggleXRMenu(): void {
+    if (!this.inXR || this.mode !== 'play' || this.modal !== null || !this.panel) return;
+    if (this.xrMenu) {
+      this.closeXRMenu();
+      return;
+    }
+    this.xrMenu = true;
+    this.xrScreen = 'dashboard';
+    this.applyPause();
+    this.showXRDashboard();
   }
 
   /** Conecta el panel 3D, el láser y la muñeca del visor. */
@@ -423,8 +429,15 @@ export class GameDirector {
     const ch = chapter(this.engine.currentChapter());
     this.hud.showTitle({
       progress: has ? `${ch.kicker} · ${this.engine.stamps}/${TOTAL_STAMPS} sellos` : null,
-      onStart: () => this.newGame(),
-      onContinue: () => this.resume(true),
+      onStart: () => {
+        this.setFreeRoam(false);
+        this.newGame();
+      },
+      onContinue: () => {
+        this.setFreeRoam(false);
+        this.resume(true);
+      },
+      onFreeRoam: () => this.startFreeRoam(),
     });
   }
 
@@ -449,6 +462,26 @@ export class GameDirector {
     this.resume(true);
   }
 
+  private setFreeRoam(on: boolean): void {
+    SESSION.freeRoam = on;
+    this.hud.setFreeRoam(on);
+    if (on) {
+      this.applyLocks(true);
+      this.locksDirty = false;
+    } else {
+      // Esperar a la planta baja evita dejar al jugador encerrado arriba.
+      this.locksDirty = true;
+    }
+  }
+
+  private startFreeRoam(): void {
+    this.setFreeRoam(true);
+    this.resume(true);
+    const feet = this.worldOf({ u: START.feet.u, v: START.feet.v, level: 0 });
+    const look = toWorld(this.frame, START.look.u, START.look.v);
+    this.player.teleport(feet, { x: look.x, y: START.look.y, z: look.z });
+  }
+
   private resume(fromTitle: boolean): void {
     SESSION.started = true;
     this.mode = 'play';
@@ -465,11 +498,11 @@ export class GameDirector {
     // Partida retomada en pleno simulacro: las flechas vuelven a estar.
     if (this.engine.available('c3.evacuar') && !this.drill) void this.scriptDrill();
     const fresh = this.engine.data.done.length === 0;
-    if (fresh && fromTitle) void this.intro();
+    if (fresh && fromTitle && !SESSION.freeRoam) void this.intro();
     else if (fresh && !SESSION.freeRoam) void this.intro();
     else {
       this.music('none');
-      if (fromTitle) {
+      if (fromTitle && !SESSION.freeRoam) {
         const ch = chapter(this.engine.currentChapter());
         this.hud.chapterCard(ch.kicker, ch.title);
       }
@@ -503,7 +536,7 @@ export class GameDirector {
     const paused = this.hud.paused;
     if (!paused) {
       this.clock += dt;
-      if (this.mode === 'play' && SESSION.started) this.engine.tick(dt);
+      if (this.mode === 'play' && SESSION.started && !SESSION.freeRoam) this.engine.tick(dt);
     }
     this.props.update(dt);
     this.screens.flush();
@@ -567,7 +600,7 @@ export class GameDirector {
       this.roomName = room ? roomLabel(room) : id === '__encuentro' ? 'Punto de encuentro' : id === '__laprida' ? 'Vereda de Laprida' : '';
       this.hud.setPlace(this.roomName);
       const place = placeForRoom(id);
-      if (place && SESSION.started) this.react(this.engine.enterPlace(place.id));
+      if (place && SESSION.started && !SESSION.freeRoam) this.react(this.engine.enterPlace(place.id));
     }
     this.hud.setLevelBadge(this.level === 0 ? 'PB' : `${this.level}° PISO`);
     if (this.locksDirty && this.level === 0 && !isJardinRoom(this.room)) {
@@ -578,20 +611,13 @@ export class GameDirector {
       this.cardAt = null;
       this.hud.closeCard();
     }
-    if (SESSION.started && this.modal === null) this.react(this.engine.atSpot(u, v, this.level));
+    if (SESSION.started && !SESSION.freeRoam && this.modal === null) this.react(this.engine.atSpot(u, v, this.level));
     // Distancia al objetivo, en el panel.
     const t = this.targetOf(this.engine.mainObjectives()[0]);
     const text = !t ? '' : t.spot.level !== this.level && inLot(u, v) ? (t.spot.level > this.level ? '▲ arriba' : '▼ abajo') : `${Math.round(Math.hypot(t.spot.u - u, t.spot.v - v))} m`;
     if (text !== this.distanceText) {
       this.distanceText = text;
       this.hud.setDistance(text);
-    }
-    if (this.inXR && this.xrControls) {
-      const key = `${this.roomName}|${this.progressText}`;
-      if (key !== this.wristKey) {
-        this.wristKey = key;
-        this.xrControls.setHud({ place: this.roomName, progress: this.progressText });
-      }
     }
   }
 
@@ -1886,7 +1912,7 @@ export class GameDirector {
       const raw = this.targetOf(this.engine.mainObjectives()[0]);
       const target = raw ? this.guideTo(raw) : null;
       const focusKey = this.focus?.key ?? '';
-      if (target && this.modal === null) {
+      if (target && this.modal === null && !SESSION.freeRoam) {
         diamonds.push({ ...target.world, y: target.world.y + bob, size: 0.3, color: GOLD, yaw: t * 1.5 });
         if (target.ring && target.spot === raw?.spot) {
           const W = this.worldOf(target.spot);
@@ -1925,18 +1951,36 @@ export class GameDirector {
     const f = this.player.forward();
     const heading = Math.atan2(-f.x, -f.z);
     const raw = this.targetOf(this.engine.mainObjectives()[0]);
-    const target = raw ? this.guideTo(raw) : null;
+    const target = raw && !SESSION.freeRoam ? this.guideTo(raw) : null;
     const people = this.npcs
       .filter((n) => n.handle || n.station)
       .map((n) => ({ ...this.npcSpot(n), color: n.def.color }));
-    this.hud.updateMap({
+    const mapState = {
       u: this.feetLocal.u,
       v: this.feetLocal.v,
       level: this.level,
       heading,
       target: target ? { ...target.spot, level: raw!.spot.level } : null,
       people,
-    });
+    };
+    this.hud.updateMap(mapState);
+    if (this.inXR && this.xrControls) {
+      // Mantener la textura del mapa en el visor actualizada a 2 Hz.
+      const mapKey = `${Math.floor(this.clock * 2)}|${Math.round(mapState.u * 2)}|${Math.round(mapState.v * 2)}|${Math.round(heading * 10)}|${this.level}`;
+      const key = `${this.roomName}|${SESSION.freeRoam ? 'libre' : this.progressText}|${mapKey}`;
+      if (key !== this.wristKey) {
+        this.wristKey = key;
+        this.xrControls.setHud({
+          place: this.roomName,
+          progress: SESSION.freeRoam ? 'Toda la escuela abierta · sin misiones' : this.progressText,
+          mapCanvas: this.hud.minimap.sourceCanvas,
+          mapKey,
+          mapLevel: this.level === 0 ? 'PB' : `${this.level}°`,
+          freeRoam: SESSION.freeRoam,
+        });
+      }
+      if (this.xrMenu && this.xrScreen === 'map' && mapKey !== this.xrMapDrawKey) this.showXRMap();
+    }
   }
 
   // ===================================================================== pantallas
@@ -2182,6 +2226,7 @@ export class GameDirector {
       this.panel?.hide();
       this.panel?.setLabel(null);
       this.xrMenu = false;
+      this.xrScreen = null;
       if (this.mode === 'title') this.showTitle();
       else if (this.shown) this.present(true);
       this.applyPause();
@@ -2217,18 +2262,32 @@ export class GameDirector {
     }
   }
 
-  /** Inicio dentro del visor: el título HTML no existe ahí. */
-  /**
-   * Al entrar al visor desde el título se juega directo (continúa la partida
-   * guardada o empieza una nueva): antes aparecía un menú que había que
-   * apuntar con el láser, y con el clic sin entrar el jugador quedaba quieto.
-   */
+  /** Pantalla de bienvenida 3D, equivalente al título de escritorio. */
   private startInXR(): void {
+    if (!this.panel || !this.xr) return;
     this.hud.hideTitle();
-    this.xrMenu = false;
-    this.resume(true);
-    const hint = SESSION.phrases ? 'Stick izq.: caminar · A o gatillo: hablar, seguir y elegir' : 'Stick izq.: caminar · A o gatillo: saludar, usar y elegir';
-    this.after(5, () => this.vrToast('Controles', hint));
+    this.xrMenu = true;
+    this.xrScreen = null;
+    this.applyPause();
+    const has = this.engine.data.done.length > 0;
+    const cam = this.xr.baseExperience.camera;
+    const f = cam.getDirection(Vector3.Forward());
+    this.panel.place(cam.globalPosition, { x: f.x, z: f.z });
+    const buttons = has
+      ? ['Continuar\nretomá el recorrido', 'Paseo libre\ntoda la escuela abierta, sin misiones', 'Nueva partida\nvolver a empezar']
+      : ['Nueva partida\nempieza en Laprida', 'Paseo libre\ntoda la escuela abierta, sin misiones'];
+    this.panel.show({ kind: 'welcome', buttons }, (i) => {
+      this.panel?.hide();
+      this.xrMenu = false;
+      if (i === 1) this.startFreeRoam();
+      else if (has && i === 0) {
+        this.setFreeRoam(false);
+        this.resume(true);
+      } else {
+        this.setFreeRoam(false);
+        this.newGame();
+      }
+    });
   }
 
   /** Botones del visor del cuadro anterior, por control (gatillo, A/X, B/Y). */
@@ -2254,11 +2313,14 @@ export class GameDirector {
   }
 
   private xrPress(kind: 'trigger' | 'primary' | 'secondary', c: WebXRInputSource): void {
-    if (this.mode !== 'play') return;
+    if (this.mode !== 'play' && this.mode !== 'title') return;
     const panel = this.panel;
     if (panel?.visible) {
       if (kind === 'secondary') {
-        panel.cancel();
+        if (this.mode === 'play') {
+          if (panel.cancel()) return;
+          if (this.xrMenu) this.closeXRMenu();
+        }
         return;
       }
       // La opción a la que apunta ESTE control; si no apunta al panel y hay
@@ -2268,6 +2330,91 @@ export class GameDirector {
       if (kind === 'primary') panel.pickFirstChoice();
       return;
     }
-    if (kind !== 'secondary' && this.modal === null && this.focus) this.interact(this.focus.key);
+    if (this.mode === 'play' && kind === 'secondary' && this.modal === null) {
+      this.toggleXRMenu();
+      return;
+    }
+    if (this.mode === 'play' && kind !== 'secondary' && this.modal === null && this.focus) this.interact(this.focus.key);
+  }
+
+  private placeXRPanel(): void {
+    if (!this.panel || !this.xr) return;
+    const cam = this.xr.baseExperience.camera;
+    const f = cam.getDirection(Vector3.Forward());
+    this.panel.place(cam.globalPosition, { x: f.x, z: f.z });
+  }
+
+  private closeXRMenu(): void {
+    this.xrMenu = false;
+    this.xrScreen = null;
+    this.panel?.hide();
+    this.applyPause();
+  }
+
+  private showXRDashboard(): void {
+    if (!this.panel || !this.xr) return;
+    this.xrScreen = 'dashboard';
+    this.placeXRPanel();
+    this.panel.show(
+      {
+        kind: 'menu',
+        kicker: 'Recorrido 40 · menú del visor',
+        title: '¿Qué querés ver?',
+        text: 'Abrí el plano completo de la escuela o cambiá los ajustes sin salir de VR. También podés volver al paseo cuando quieras.',
+        buttons: ['Mapa completo', 'Configuración', 'Seguir caminando'],
+      },
+      (i) => {
+        if (i === 0) this.showXRMap();
+        else if (i === 1) this.showXRSettings();
+        else this.closeXRMenu();
+      },
+    );
+  }
+
+  private showXRMap(): void {
+    if (!this.panel || !this.xr) return;
+    this.xrScreen = 'map';
+    const level = this.level === 0 ? 'Planta baja' : `${this.level}° piso`;
+    const f = this.player.forward();
+    const heading = Math.atan2(-f.x, -f.z);
+    this.xrMapDrawKey = `${Math.floor(this.clock * 2)}|${Math.round(this.feetLocal.u * 2)}|${Math.round(this.feetLocal.v * 2)}|${Math.round(heading * 10)}|${this.level}`;
+    this.placeXRPanel();
+    this.panel.show(
+      { kind: 'map', canvas: this.hud.minimap.sourceCanvas, level, place: this.roomName || 'Escuela CIMDIP' },
+      (i) => (i === 0 ? this.showXRSettings() : this.showXRDashboard()),
+    );
+  }
+
+  private showXRSettings(): void {
+    if (!this.panel || !this.xr) return;
+    this.xrScreen = 'settings';
+    this.placeXRPanel();
+    const sound = document.getElementById('btn-sound')?.textContent?.trim() ?? 'Sonido';
+    const movement = document.getElementById('btn-mode')?.textContent?.trim() ?? 'Modo: Caminar';
+    const free = SESSION.freeRoam ? 'Activado' : 'Desactivado';
+    const hour = document.getElementById('time-label')?.textContent?.trim() ?? '08:15';
+    this.panel.show(
+      {
+        kind: 'settings',
+        buttons: [`${sound}`, `${movement}`, `Paseo libre: ${free}`, `Cambiar hora · ${hour}`, 'Mapa completo', 'Seguir caminando'],
+      },
+      (i) => {
+        if (i === 0) document.getElementById('btn-sound')?.click();
+        else if (i === 1) document.getElementById('btn-mode')?.click();
+        else if (i === 2) document.getElementById('btn-free')?.click();
+        else if (i === 3) {
+          const slider = document.getElementById('time-slider') as HTMLInputElement | null;
+          if (slider) {
+            const min = Number(slider.min || 8);
+            const max = Number(slider.max || 20.5);
+            const next = Number(slider.value) + 2.5;
+            slider.value = String(next > max ? min : next);
+            slider.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        } else if (i === 4) this.showXRMap();
+        else this.closeXRMenu();
+        if (i >= 0 && i <= 3) this.showXRSettings();
+      },
+    );
   }
 }

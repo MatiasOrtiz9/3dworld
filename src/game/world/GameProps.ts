@@ -27,10 +27,13 @@ import { ThinSet } from './ThinSet';
 const hex = (h: string) => Color3.FromHexString(h);
 
 const COLORS = {
-  leaf: hex('#d9d2c3'),
-  glass: hex('#6f93a3'),
-  jardinGlass: hex('#7fa7c4'),
-  kick: hex('#b8353c'),
+  leaf: hex('#e7e1d1'),
+  glass: hex('#a8d8e5'),
+  jardinGlass: hex('#b7e1ec'),
+  kick: hex('#c94149'),
+  stile: hex('#b8353c'),
+  lockPlate: hex('#317d8a'),
+  brass: hex('#f2c14e'),
   post: hex('#2b2f36'),
   bandRed: hex('#d0262d'),
   bandWhite: hex('#f4f4f0'),
@@ -59,7 +62,7 @@ interface Part {
 }
 
 interface LeafVis {
-  parts: Array<Part & { y0: number; y1: number; thick: number }>;
+  parts: Array<Part & { f0?: number; f1?: number; y0: number; y1: number; thick: number }>;
   hinge: [number, number];
   /** Dirección del vano desde la bisagra (unitaria, en el plano). */
   dir: [number, number];
@@ -197,14 +200,27 @@ export class GameProps {
       for (let k = 0; k < 5; k++) vis.band.push({ set: this.box, i: this.box.add(k % 2 ? COLORS.bandWhite : COLORS.bandRed) });
       return vis;
     }
-    const glass = lock.id.includes('jardinCalle') ? COLORS.jardinGlass : lock.h > 2.5 ? COLORS.glass : COLORS.leaf;
     const mkLeaf = (hinge: [number, number], dir: [number, number], width: number): LeafVis => {
-      const parts: LeafVis['parts'] = [{ set: this.box, i: this.box.add(glass), y0: 0.03, y1: lock.h - 0.05, thick: 0.045 }];
-      if (glass !== COLORS.leaf) {
-        // Hojas vidriadas: travesaños rojos abajo y arriba, como las del portal.
-        parts.push({ set: this.box, i: this.box.add(COLORS.kick), y0: 0.03, y1: 0.13, thick: 0.06 });
-        parts.push({ set: this.box, i: this.box.add(COLORS.kick), y0: lock.h - 0.17, y1: lock.h - 0.07, thick: 0.06 });
-      }
+      const pane = lock.id.includes('jardinCalle') ? COLORS.jardinGlass : COLORS.glass;
+      const paneBottom = Math.min(0.9, lock.h * 0.38);
+      const paneTop = Math.min(lock.h - 0.34, 1.85);
+      // La hoja queda clara y escolar: zócalo, paño vidriado celeste y marco
+      // rojo visible. Los acentos dorados marcan con claridad que está trabada.
+      const parts: LeafVis['parts'] = [
+        { set: this.box, i: this.box.add(COLORS.leaf), y0: 0.03, y1: lock.h - 0.05, thick: 0.075 },
+        { set: this.box, i: this.box.add(COLORS.stile), f0: 0, f1: 0.07, y0: 0.02, y1: lock.h - 0.02, thick: 0.09 },
+        { set: this.box, i: this.box.add(COLORS.stile), f0: 0.93, f1: 1, y0: 0.02, y1: lock.h - 0.02, thick: 0.09 },
+        { set: this.box, i: this.box.add(COLORS.kick), y0: 0.03, y1: 0.16, thick: 0.1 },
+        { set: this.box, i: this.box.add(COLORS.stile), y0: lock.h - 0.12, y1: lock.h - 0.04, thick: 0.09 },
+        { set: this.box, i: this.box.add(pane), f0: 0.18, f1: 0.82, y0: paneBottom, y1: paneTop, thick: 0.082 },
+        { set: this.box, i: this.box.add(COLORS.stile), f0: 0.15, f1: 0.19, y0: paneBottom - 0.06, y1: paneTop + 0.06, thick: 0.1 },
+        { set: this.box, i: this.box.add(COLORS.stile), f0: 0.81, f1: 0.85, y0: paneBottom - 0.06, y1: paneTop + 0.06, thick: 0.1 },
+        { set: this.box, i: this.box.add(COLORS.stile), f0: 0.15, f1: 0.85, y0: paneBottom - 0.06, y1: paneBottom + 0.015, thick: 0.1 },
+        { set: this.box, i: this.box.add(COLORS.stile), f0: 0.15, f1: 0.85, y0: paneTop - 0.015, y1: paneTop + 0.06, thick: 0.1 },
+        { set: this.box, i: this.box.add(COLORS.lockPlate), f0: 0.28, f1: 0.72, y0: 1.04, y1: 1.28, thick: 0.11 },
+        { set: this.box, i: this.box.add(COLORS.brass), f0: 0.45, f1: 0.55, y0: 1.09, y1: 1.23, thick: 0.14 },
+        { set: this.box, i: this.box.add(COLORS.brass), f0: 0.41, f1: 0.59, y0: 1.19, y1: 1.24, thick: 0.16 },
+      ];
       return { parts, hinge, dir, width, swing: n };
     };
     if (lock.visual === 'door') {
@@ -256,12 +272,18 @@ export class GameProps {
       const s = Math.sin(ang);
       const du = L.dir[0] * c + L.swing[0] * s;
       const dv = L.dir[1] * c + L.swing[1] * s;
+      const nu = -dv;
+      const nv = du;
       const cu = L.hinge[0] + (du * L.width) / 2;
       const cv = L.hinge[1] + (dv * L.width) / 2;
       const W = this.w(cu, cv);
       const yaw = this.yawAlong(du, dv);
       for (const p of L.parts) {
-        p.set.set(p.i, W.x, base + (p.y0 + p.y1) / 2, W.z, yaw, L.width, p.y1 - p.y0, p.thick);
+        const f0 = p.f0 ?? 0;
+        const f1 = p.f1 ?? 1;
+        const along = L.width * ((f0 + f1) / 2);
+        const P = this.w(L.hinge[0] + du * along + nu * 0.03, L.hinge[1] + dv * along + nv * 0.03);
+        p.set.set(p.i, P.x, base + (p.y0 + p.y1) / 2, P.z, yaw, L.width * (f1 - f0), p.y1 - p.y0, p.thick);
       }
     }
   }

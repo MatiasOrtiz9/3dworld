@@ -11,11 +11,15 @@ export interface HudInfo {
   place: string;
   /** Avance de la misión, p. ej. "2 / 5 docentes". */
   progress: string;
+  mapCanvas?: HTMLCanvasElement;
+  mapKey?: string;
+  mapLevel?: string;
+  freeRoam?: boolean;
 }
 
-const W = 512;
-const H = 208;
-const WIDTH = 0.17;
+const W = 768;
+const H = 360;
+const WIDTH = 0.3;
 
 /**
  * Panel de muñeca: lo que en escritorio dicen el cartel "Estás en" y la barra
@@ -60,32 +64,54 @@ export class WristPanel {
   }
 
   set(info: HudInfo): void {
-    const key = `${info.place}|${info.progress}`;
+    const key = `${info.place}|${info.progress}|${info.mapKey ?? ''}|${info.freeRoam ? 1 : 0}`;
     if (key === this.drawn) return;
     this.drawn = key;
     const ctx = this.texture.getContext() as unknown as CanvasRenderingContext2D;
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = 'rgba(13, 27, 24, 0.86)';
-    roundRect(ctx, 4, 4, W - 8, H - 8, 22);
+    ctx.fillStyle = 'rgba(13, 27, 24, 0.94)';
+    roundRect(ctx, 4, 4, W - 8, H - 8, 26);
     ctx.fill();
     ctx.strokeStyle = 'rgba(242, 193, 78, 0.85)';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 4;
     ctx.stroke();
 
     ctx.textAlign = 'left';
-    ctx.fillStyle = '#b7d4ca';
-    ctx.font = '600 24px Arial, Helvetica, sans-serif';
-    ctx.fillText(info.place ? 'ESTÁS EN' : 'RECORRIDO CIMDIP', 26, 44);
+    ctx.fillStyle = info.freeRoam ? '#86dda5' : '#b7d4ca';
+    ctx.font = '700 25px Arial, Helvetica, sans-serif';
+    ctx.fillText(info.freeRoam ? 'PASEO LIBRE' : 'ESTÁS EN', 28, 45);
     ctx.fillStyle = '#eef6f2';
-    ctx.font = '700 38px Arial, Helvetica, sans-serif';
-    ctx.fillText(info.place || 'Barrio de la escuela', 26, 90, W - 52);
+    ctx.font = '700 34px Arial, Helvetica, sans-serif';
+    ctx.fillText(info.place || 'Barrio de la escuela', 28, 93, 390);
     ctx.fillStyle = '#f2c14e';
-    ctx.font = '600 28px Arial, Helvetica, sans-serif';
-    ctx.fillText(info.progress, 26, 134, W - 52);
+    ctx.font = '600 23px Arial, Helvetica, sans-serif';
+    ctx.fillText(info.progress, 28, 140, 390);
     ctx.fillStyle = '#8fb3a6';
-    ctx.font = '400 21px Arial, Helvetica, sans-serif';
-    ctx.fillText('Stick izq.: caminar (clic: correr)', 26, 168, W - 52);
-    ctx.fillText('Stick der.: girar · adelante: saltar', 26, 192, W - 52);
+    ctx.font = '400 20px Arial, Helvetica, sans-serif';
+    ctx.fillText('Stick izq.: caminar · apretar: correr', 28, 230, 390);
+    ctx.fillText('Stick der.: girar · adelante: saltar', 28, 263, 390);
+    ctx.fillText('B / Y: abrir mapa y configuración', 28, 296, 390);
+    ctx.fillStyle = '#b7d4ca';
+    ctx.font = '700 18px Arial, Helvetica, sans-serif';
+    ctx.fillText('MAPA COMPLETO', 455, 31, 240);
+    const mx = 590;
+    const my = 190;
+    const mr = 143;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(mx, my, mr, 0, Math.PI * 2);
+    ctx.clip();
+    if (info.mapCanvas) ctx.drawImage(info.mapCanvas, mx - mr, my - mr, mr * 2, mr * 2);
+    else {
+      ctx.fillStyle = '#0b1513';
+      ctx.fillRect(mx - mr, my - mr, mr * 2, mr * 2);
+    }
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(238,246,242,0.65)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(mx, my, mr, 0, Math.PI * 2);
+    ctx.stroke();
     this.texture.update(true);
   }
 

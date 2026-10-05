@@ -29,7 +29,10 @@ export type PanelModel =
   | { kind: 'line'; line: LineView }
   | { kind: 'activity'; view: ActivityView }
   | { kind: 'card'; card: CardView }
-  | { kind: 'menu'; kicker: string; title: string; text: string; buttons: string[] };
+  | { kind: 'menu'; kicker: string; title: string; text: string; buttons: string[] }
+  | { kind: 'welcome'; buttons: string[] }
+  | { kind: 'map'; canvas: HTMLCanvasElement; level: string; place: string }
+  | { kind: 'settings'; buttons: string[] };
 
 const W = 1024;
 const H = 700;
@@ -81,7 +84,7 @@ export class GamePanel3D {
       return m;
     };
     this.texture = new DynamicTexture('gamePanelTex', { width: W, height: H }, scene, true);
-    this.material = mkMat('gamePanel', this.texture, false);
+    this.material = mkMat('gamePanel', this.texture, true);
     this.panel = CreatePlane('gamePanel', { width: PANEL_W, height: PANEL_H }, scene);
     this.panel.material = this.material;
     this.panel.isPickable = true;
@@ -157,9 +160,11 @@ export class GamePanel3D {
   show(model: PanelModel, onPick: (i: number) => void): void {
     this.onPick = onPick;
     this.kind = model.kind;
+    const welcome = model.kind === 'welcome';
+    this.panel.scaling.setAll(welcome ? 1.28 : 1);
     const ctx = this.texture.getContext() as unknown as CanvasRenderingContext2D;
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = 'rgba(12,22,20,0.97)';
+    ctx.fillStyle = welcome ? 'rgba(9,18,18,0.84)' : 'rgba(12,22,20,0.97)';
     roundRect(ctx, 0, 0, W, H, 28);
     ctx.fill();
     ctx.strokeStyle = 'rgba(242,193,78,0.55)';
@@ -168,6 +173,9 @@ export class GamePanel3D {
     ctx.stroke();
     this.zones = [];
     switch (model.kind) {
+      case 'welcome':
+        this.drawWelcome(ctx, model.buttons);
+        break;
       case 'line':
         this.drawLine(ctx, model.line);
         break;
@@ -187,6 +195,27 @@ export class GamePanel3D {
         ctx.font = `500 32px ${UI.font}`;
         wrapText(ctx, model.text, 56, 210, W - 112, 44, 6);
         this.buttons(ctx, model.buttons, H - 60 - Math.ceil(model.buttons.length / 2) * 92, false, 2);
+        break;
+      case 'map':
+        this.header(ctx, 'Mapa de la escuela', model.level, model.place, UI.gold);
+        ctx.fillStyle = '#0b1513';
+        ctx.beginPath();
+        ctx.arc(W / 2, 365, 206, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(W / 2, 365, 200, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(model.canvas, W / 2 - 200, 165, 400, 400);
+        ctx.restore();
+        this.buttons(ctx, ['Configuración', 'Volver'], H - 108, false, 2);
+        break;
+      case 'settings':
+        this.header(ctx, 'Recorrido 40 · VR', 'Configuración', '', UI.gold);
+        ctx.fillStyle = UI.dim;
+        ctx.font = `500 28px ${UI.font}`;
+        wrapText(ctx, 'Ajustá el recorrido desde el visor. La calidad gráfica se adapta al modo VR.', 56, 194, W - 112, 40, 3);
+        this.buttons(ctx, model.buttons, 310, false, 2);
         break;
     }
     this.texture.update(true);
@@ -339,6 +368,82 @@ export class GamePanel3D {
   }
 
   // ===================================================================== dibujo
+
+  private drawWelcome(ctx: CanvasRenderingContext2D, buttons: string[]): void {
+    // Sello y encabezado reproducen la bienvenida de escritorio dentro del
+    // panel del visor, manteniendo visible la escuela a través del fondo.
+    ctx.strokeStyle = '#c63d49';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.arc(112, 112, 56, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = UI.gold;
+    ctx.font = `800 54px ${UI.font}`;
+    ctx.fillText('40', 112, 115);
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#b7d4ca';
+    ctx.font = `600 24px ${UI.font}`;
+    ctx.fillText('ESCUELA CIMDIP & MIGUEL CANÉ', 190, 105, W - 250);
+    ctx.fillStyle = UI.text;
+    ctx.font = `300 68px ${UI.font}`;
+    const prefix = 'RECORRIDO ';
+    const prefixWidth = ctx.measureText(prefix).width;
+    ctx.fillText(prefix, 56, 230);
+    ctx.fillStyle = UI.gold;
+    ctx.font = `700 68px ${UI.font}`;
+    ctx.fillText('40', 56 + prefixWidth, 230);
+
+    ctx.fillStyle = '#c5d4ce';
+    ctx.font = `500 28px ${UI.font}`;
+    wrapText(
+      ctx,
+      'La escuela cumple 40 años y te eligieron para armar el recorrido del aniversario. Recorré cada sector, ayudá a quienes la hacen todos los días y llegá al acto final en el Polideportivo.',
+      56,
+      296,
+      W - 112,
+      40,
+      3,
+    );
+
+    const cols = buttons.length > 2 ? 2 : buttons.length;
+    const gap = 14;
+    const x0 = 56;
+    const top = 426;
+    const bw = (W - x0 * 2 - gap * (cols - 1)) / cols;
+    buttons.forEach((label, i) => {
+      const x = x0 + (i % cols) * (bw + gap);
+      const y = top + Math.floor(i / cols) * 86;
+      const primary = i === 0;
+      ctx.fillStyle = primary ? UI.gold : 'rgba(255,255,255,0.1)';
+      roundRect(ctx, x, y, bw, 78, 16);
+      ctx.fill();
+      ctx.strokeStyle = primary ? UI.gold : 'rgba(255,255,255,0.38)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.fillStyle = primary ? UI.ink : UI.text;
+      const [title, subtitle] = label.split('\n');
+      ctx.font = `700 28px ${UI.font}`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = subtitle ? 'alphabetic' : 'middle';
+      ctx.fillText(title, x + 24, subtitle ? y + 34 : y + 40, bw - 48);
+      if (subtitle) {
+        ctx.fillStyle = primary ? 'rgba(13,27,24,0.72)' : '#b7d4ca';
+        ctx.font = `500 18px ${UI.font}`;
+        ctx.fillText(subtitle, x + 24, y + 61, bw - 48);
+      }
+      this.zones.push({ x0: x, y0: y, x1: x + bw, y1: y + 78, index: i });
+    });
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#91a89f';
+    ctx.font = `400 20px ${UI.font}`;
+    wrapText(ctx, 'Stick izq.: caminar y correr · Stick der.: girar y saltar · Gatillo: elegir. Después de empezar, B / Y abre el mapa completo y la configuración.', 56, 628, W - 112, 26, 2);
+  }
 
   private header(ctx: CanvasRenderingContext2D, kicker: string, title: string, progress: string, color: string): void {
     ctx.textAlign = 'left';
