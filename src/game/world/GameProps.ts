@@ -274,9 +274,6 @@ export class GameProps {
       const dv = L.dir[1] * c + L.swing[1] * s;
       const nu = -dv;
       const nv = du;
-      const cu = L.hinge[0] + (du * L.width) / 2;
-      const cv = L.hinge[1] + (dv * L.width) / 2;
-      const W = this.w(cu, cv);
       const yaw = this.yawAlong(du, dv);
       for (const p of L.parts) {
         const f0 = p.f0 ?? 0;

@@ -28,6 +28,7 @@ import {
 } from '../world/SchoolLayout';
 import type { AudioApi, NpcAnim, NpcHandle, PlayerApi, PopulationApi, SchoolPhase, WorldPoint } from './contracts';
 import type { Hud, LineView, PassportView } from '../ui/Hud';
+import type { HudInfo } from '../vr/XRWristPanel';
 import { consume, isConsumed, typingTarget } from '../ui/input';
 import { createActivity, type Activity } from './activities';
 import type { ActivityView } from './activities/types';
@@ -88,7 +89,7 @@ export interface GameDirectorDeps {
 
 export interface XRGameControls {
   setLocomotionEnabled(enabled: boolean): void;
-  setHud(info: { place: string; progress: string; mapCanvas?: HTMLCanvasElement; mapKey?: string; freeRoam?: boolean }): void;
+  setHud(info: HudInfo): void;
 }
 
 // ================================================================ sesión
