@@ -197,7 +197,7 @@ export const INTERACTABLES: readonly InteractableDef[] = [
     y: 1.1,
     size: [0.6, 0.6, 0.6],
     ready: (q) => q.done('c1.maker'),
-    notReady: 'La impresora está en pausa. El Profe Tomás la prepara cuando termines con el robot.',
+    notReady: 'La impresora está en pausa. La Profe Abi la prepara cuando termines con el robot.',
     effects: [{ do: 'item', id: 'llavero' }],
   },
   {
@@ -225,8 +225,8 @@ export const INTERACTABLES: readonly InteractableDef[] = [
     y: 0.95,
     size: [1.0, 0.4, 1.0],
     ready: (q) => q.flag('robotExplicado'),
-    notReady: 'Primero hablá con el Profe Tomás: él explica cómo se programa.',
-    silentNotReady: 'Primero saludá al Profe Tomás: él prepara la pista.',
+    notReady: 'Primero hablá con la Profe Abi: ella explica cómo se programa.',
+    silentNotReady: 'Primero saludá a la Profe Abi: ella prepara la pista.',
   },
   // --- Cantina ---------------------------------------------------------------
   {
