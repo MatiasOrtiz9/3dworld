@@ -106,7 +106,7 @@ export const OBJECTIVES: readonly ObjectiveDef[] = [
     id: 'c1.maker',
     chapter: 'c1',
     title: 'Programá el robot Educabot',
-    hint: 'Aula Maker: al fondo del pasillo norte, con el Profe Tomás.',
+    hint: 'Aula Maker: al fondo del pasillo norte, con la Profe Abi.',
     requires: ['p.directora'],
     target: { kind: 'talk', npc: 'tomas' },
     onComplete: [{ do: 'stamp', id: 'maker' }],
