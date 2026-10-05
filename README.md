@@ -265,7 +265,8 @@ src/
 │   ├── FlyCamera.ts
 │   └── PlayerController.ts # caminar/volar, gravedad, colisión
 ├── ui/Inspector.ts         # clic → ficha de la manzana
-├── vr/XRSetup.ts           # teleport, snap turn, hand tracking
+├── vr/                     # XRSetup (sesión), XRInput (botones), XRPointer (láser),
+│                           # XRLocomotion, XRComfort, viñeta, fundido, mandos, muñeca
 └── utils/rng.ts            # mulberry32 con semilla
 ```
 
@@ -332,18 +333,29 @@ Se documentan porque cada uno costó una iteración y son trampas reutilizables.
 ## VR
 
 Probado en el emulador de Quest 3 (`node tools/test-vr.mjs`); la caminata se
-ajustó con pruebas en el visor. Controles:
+ajustó con pruebas en el visor. Al entrar al visor aparece primero la **misma
+pantalla de inicio** que en la PC y el celular (sello 40, Continuar / Nueva
+partida, ajustes de confort, controles, salir); desde ahí se empieza y se entra
+a la escuela caminando. Controles (Quest 3):
 
-- **Stick izquierdo:** caminar con colisión y pisos (apretarlo corre). Si el
-  navegador no expone el stick como componente, se leen los ejes crudos del
-  gamepad.
-- **Stick derecho:** girar de a 30° a los costados, teletransporte hacia
-  adelante (arco hasta el destino) y un paso atrás hacia abajo.
-- **Gatillo:** elegir con el láser (hablar, usar, botones del panel). Empieza
-  en la mano derecha y pasa a la otra al apretar su gatillo.
-- **Muñeca:** dónde estás y el objetivo actual. Al moverse aparece una viñeta
-  de confort. El post-procesado se desactiva en VR (son pasadas de pantalla
-  completa por ojo).
+- **Stick izquierdo:** caminar con colisión y pisos, con arranque y frenada
+  suaves; **clic:** correr (se apaga solo al soltar el stick). En los menús,
+  cualquier stick mueve el resaltado.
+- **Stick derecho:** girar por pasos (30° o 45°) o continuo, teletransporte
+  hacia adelante (arco hasta el destino) y un paso atrás hacia abajo;
+  **clic:** trae el panel delante o, sin panel, recuerda el objetivo.
+- **Gatillo (cualquier mano):** apuntar con el láser y elegir; en los paneles
+  se elige al SOLTAR sobre el mismo botón. La mano que lo aprieta toma el láser.
+- **A / X:** usar o aceptar (saludar, el botón resaltado). **B:** volver o
+  cerrar. **Y:** menú del juego (pausa, pasaporte, confort, sonido, controles,
+  volver al inicio, salir de VR).
+- **Grip:** agarrar: arrastrar el panel a otro lugar, o tomar la pelota y
+  lanzarla al soltar.
+- **Muñeca:** lugar, capítulo, objetivo con distancia, sellos y una flecha que
+  señala hacia dónde ir. Confort (menú → Ajustes de confort): giro, velocidad,
+  dirección de la caminata, viñeta y modo sentado; se guarda en el visor.
+  El post-procesado se desactiva en VR (son pasadas de pantalla completa por
+  ojo).
 
 Para probar localmente, ejecutá `npm run dev:vr`. El servidor HTTPS escucha en
 el puerto `5182`. Con la PC y el Quest en la misma Wi-Fi, abrí en Meta Quest

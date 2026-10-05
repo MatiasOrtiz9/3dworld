@@ -335,11 +335,17 @@ function startView(c: City): { eye: Vector3; look: Vector3 } {
 
 /**
  * Dónde aparece el visor al entrar: donde estaba el jugador de escritorio,
- * mirando hacia el mismo lado. Antes de empezar (título), frente al portal.
+ * mirando hacia el mismo lado. Antes de empezar (título), en el mirador de
+ * la pantalla de inicio: de pie sobre la vereda de enfrente de Laprida,
+ * mirando la fachada; desde ahí se empieza la partida y se entra caminando.
  */
 function xrSpawn(): { eye: Vector3; look: Vector3 } {
   if (!city) throw new Error('sin escuela');
-  if (!director || director.atTitle || player?.mode !== 'walk') return startView(city);
+  if (director?.atTitle) {
+    const { eye, look } = director.xrLookout;
+    return { eye: new Vector3(eye.x, eye.y, eye.z), look: new Vector3(look.x, look.y, look.z) };
+  }
+  if (!director || player?.mode !== 'walk') return startView(city);
   const f = camera.getDirection(Vector3.Forward());
   const flat = new Vector3(f.x, 0, f.z);
   if (flat.lengthSquared() < 1e-4) flat.set(0, 0, 1);
@@ -715,6 +721,9 @@ async function start(): Promise<void> {
           vrIdle('Salir de VR');
         } else if (state === WebXRState.NOT_IN_XR) {
           vrIdle();
+          // El sonido se puede apagar desde el menú del visor: el botón de la
+          // barra lo refleja al volver.
+          if (sound.available) showSoundState(sound.isMuted);
           quality.settle();
           sound.setLowPower(quality.current === 'vr' || touchMode);
           const previous = tierBeforeVr;

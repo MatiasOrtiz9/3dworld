@@ -911,14 +911,27 @@ export function drawKidsMural(ctx: Ctx, r: Region, seed: number, grass = 0.08): 
     ctx.moveTo(x0, y1);
     ctx.lineTo(x0, gy);
     const waves = Math.max(3, Math.round(w / (h * 0.35)));
+    // La onda arranca y termina a la altura `gy` y sólo se perfila su borde
+    // de arriba: dos paños vecinos (kidsA y kidsC) empalman sin escalón ni
+    // la raya negra vertical que dejaba el contorno cerrado en cada costado.
+    const wave: Array<[number, number, number, number]> = [];
     for (let i = 0; i < waves; i++) {
       const xa = x0 + (w * (i + 0.5)) / waves;
       const xb = x0 + (w * (i + 1)) / waves;
-      ctx.quadraticCurveTo(xa, gy - h * grass * (0.35 + rnd() * 0.4), xb, gy + h * grass * (rnd() - 0.5) * 0.3);
+      const peak = gy - h * grass * (0.35 + rnd() * 0.4);
+      const end = gy + h * grass * (rnd() - 0.5) * 0.3;
+      wave.push([xa, peak, xb, i === waves - 1 ? gy : end]);
     }
+    ctx.beginPath();
+    ctx.moveTo(x0, y1);
+    ctx.lineTo(x0, gy);
+    for (const [xa, ya, xb, yb] of wave) ctx.quadraticCurveTo(xa, ya, xb, yb);
     ctx.lineTo(x1, y1);
     ctx.closePath();
     ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x0, gy);
+    for (const [xa, ya, xb, yb] of wave) ctx.quadraticCurveTo(xa, ya, xb, yb);
     ctx.stroke();
   } else {
     ctx.fillRect(x0, y1 - h * grass, w, h * grass);
@@ -1024,4 +1037,465 @@ export function drawSeaMural(ctx: Ctx, r: Region, seed: number): void {
   ctx.fillStyle = '#4fa64a';
   ctx.fillRect(x0, y1 - h * 0.1, w, h * 0.1);
   ctx.restore();
+}
+
+// ---------------------------------------------------------------- Escuela 2050: pantallas
+
+/**
+ * Lo que se dibuja en las pantallas de la Escuela 2050 (auditoría 2050,
+ * ítems 5, 15, 17 y 18): tótem del hall, mural LED, lema en vidrio, escudo
+ * retroiluminado del portal, contenidos de las pantallas de las aulas y las
+ * plaquitas digitales de las puertas. Van en el atlas de pantallas
+ * (`SchoolAtlas.drawScreens`), que se muestra con luz propia: lo que acá es
+ * casi negro se ve como vidrio apagado y lo claro, encendido.
+ */
+
+/** Vidrio oscuro de pantalla (no negro puro: refleja algo del ambiente). */
+const GLASS_BG = '#0e1621';
+/** LED cálido de la Escuela 2050 (≈ el material `ledWarm`). */
+export const LED_WARM = '#ffc27a';
+export const LED_COOL = '#7fd8ec';
+const INK = '#eef3f6';
+const ID_RED = '#d42a2a';
+const ID_NAVY = '#243b67';
+
+/** Fondo de vidrio oscuro con un degradé apenas frío arriba y un brillo diagonal. */
+function screenGlass(ctx: Ctx, r: Region, top = '#16233a', bottom = GLASS_BG): void {
+  const [x0, y0, x1, y1] = r;
+  const g = ctx.createLinearGradient(0, y0, 0, y1);
+  g.addColorStop(0, top);
+  g.addColorStop(1, bottom);
+  ctx.fillStyle = g;
+  ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+  // Reflejo diagonal muy suave: lo que hace leer vidrio y no un cartón negro.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x0, y0, x1 - x0, y1 - y0);
+  ctx.clip();
+  ctx.fillStyle = 'rgba(255,255,255,0.035)';
+  const w = x1 - x0;
+  ctx.beginPath();
+  ctx.moveTo(x0 + w * 0.55, y0);
+  ctx.lineTo(x0 + w * 0.8, y0);
+  ctx.lineTo(x0 + w * 0.45, y1);
+  ctx.lineTo(x0 + w * 0.2, y1);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+/** Filete LED en el borde de una región. */
+function ledEdge(ctx: Ctx, r: Region, color = LED_WARM, width = 3): void {
+  const [x0, y0, x1, y1] = r;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.strokeRect(x0 + width / 2, y0 + width / 2, x1 - x0 - width, y1 - y0 - width);
+  ctx.restore();
+}
+
+/** Color pleno (LED lineal): las tiras de luz usan una muestra lisa del atlas. */
+export function drawLedSwatch(ctx: Ctx, r: Region, color: string): void {
+  ctx.fillStyle = color;
+  ctx.fillRect(r[0], r[1], r[2] - r[0], r[3] - r[1]);
+}
+
+/**
+ * Plaquita digital de una puerta (ítem 18): vidrio oscuro, filete rojo
+ * CIMDIP a la izquierda, rótulo chico (lo genérico: "AULA", "SANITARIOS") y
+ * título grande (lo propio: el curso, el nombre), y un punto de estado.
+ */
+export function drawScreenPlate(ctx: Ctx, r: Region, caption: string, title: string): void {
+  const [x0, y0, x1, y1] = r;
+  const w = x1 - x0;
+  const h = y1 - y0;
+  screenGlass(ctx, r, '#132036', '#0b121c');
+  ctx.fillStyle = ID_RED;
+  ctx.fillRect(x0 + 6, y0 + 8, 6, h - 16);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  const left = x0 + 26;
+  const room = w - 26 - 44;
+  if (caption) {
+    ctx.fillStyle = LED_COOL;
+    ctx.font = `600 ${Math.round(h * 0.2)}px ${SANS}`;
+    ctx.fillText(caption.toUpperCase(), left, y0 + h * 0.27, room);
+  }
+  ctx.fillStyle = INK;
+  let size = Math.round(h * (caption ? 0.38 : 0.44));
+  ctx.font = `700 ${size}px ${SANS}`;
+  // Achicar el título largo antes que comprimirlo de más.
+  while (size > h * 0.24 && ctx.measureText(title).width > room * 1.15) {
+    size -= 2;
+    ctx.font = `700 ${size}px ${SANS}`;
+  }
+  ctx.fillText(title, left, y0 + h * (caption ? 0.64 : 0.52), room);
+  // Punto de estado (cálido: "en uso").
+  ctx.fillStyle = LED_WARM;
+  ctx.beginPath();
+  ctx.arc(x1 - 22, y0 + h / 2, h * 0.09, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(160,190,220,0.35)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x0 + 1, y0 + 1, w - 2, h - 2);
+}
+
+/**
+ * Pantalla del aula (ítem 17), cuatro contenidos: 0 la línea de tiempo de
+ * los 40 años, 1 una función graficada, 2 el sistema solar, 3 la agenda del
+ * día. Fondo de vidrio oscuro: la pantalla está encendida pero no encandila.
+ */
+export function drawBoardScreen(ctx: Ctx, r: Region, variant: number): void {
+  const [x0, y0, x1, y1] = r;
+  const w = x1 - x0;
+  const h = y1 - y0;
+  clip(ctx, r);
+  screenGlass(ctx, r, '#13284a', '#0a1424');
+  ctx.textBaseline = 'middle';
+  // Barra superior con el nombre de la escuela y la hora.
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fillRect(x0, y0, w, h * 0.12);
+  ctx.fillStyle = INK;
+  ctx.textAlign = 'left';
+  ctx.font = `700 ${Math.round(h * 0.06)}px ${SANS}`;
+  ctx.fillText('CIMDIP · 40', x0 + w * 0.03, y0 + h * 0.06);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = LED_WARM;
+  ctx.fillText('08:15', x1 - w * 0.03, y0 + h * 0.06);
+  const rnd = seeded(4040 + variant);
+  if (variant === 0) {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = INK;
+    ctx.font = `800 ${Math.round(h * 0.1)}px ${SANS}`;
+    ctx.fillText('40 años de escuela', x0 + w * 0.06, y0 + h * 0.27);
+    const ys = y0 + h * 0.62;
+    ctx.strokeStyle = LED_COOL;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x0 + w * 0.06, ys);
+    ctx.lineTo(x0 + w * 0.94, ys);
+    ctx.stroke();
+    const years = ['1981', '1995', '2008', '2020', '2026', '2050'];
+    years.forEach((y, i) => {
+      const x = x0 + w * (0.08 + (i * 0.84) / (years.length - 1));
+      ctx.fillStyle = i === years.length - 1 ? LED_WARM : LED_COOL;
+      ctx.beginPath();
+      ctx.arc(x, ys, h * 0.03, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = INK;
+      ctx.textAlign = 'center';
+      ctx.font = `600 ${Math.round(h * 0.055)}px ${SANS}`;
+      ctx.fillText(y, x, ys + (i % 2 ? -1 : 1) * h * 0.1);
+    });
+    ctx.fillStyle = 'rgba(238,243,246,0.6)';
+    ctx.font = `${Math.round(h * 0.05)}px ${SANS}`;
+    ctx.textAlign = 'left';
+    ctx.fillText('Recorrido 40 · estación 3 de 8', x0 + w * 0.06, y0 + h * 0.88);
+  } else if (variant === 1) {
+    // Ejes, grilla y una parábola.
+    const ox = x0 + w * 0.5;
+    const oy = y0 + h * 0.8;
+    ctx.strokeStyle = 'rgba(127,216,236,0.18)';
+    ctx.lineWidth = 1;
+    for (let i = -8; i <= 8; i++) {
+      ctx.beginPath();
+      ctx.moveTo(ox + i * w * 0.05, y0 + h * 0.16);
+      ctx.lineTo(ox + i * w * 0.05, y1 - h * 0.06);
+      ctx.stroke();
+    }
+    for (let j = -1; j <= 6; j++) {
+      ctx.beginPath();
+      ctx.moveTo(x0 + w * 0.08, oy - j * h * 0.1);
+      ctx.lineTo(x1 - w * 0.08, oy - j * h * 0.1);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x0 + w * 0.08, oy);
+    ctx.lineTo(x1 - w * 0.08, oy);
+    ctx.moveTo(ox, y0 + h * 0.16);
+    ctx.lineTo(ox, y1 - h * 0.06);
+    ctx.stroke();
+    ctx.strokeStyle = LED_WARM;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    for (let k = 0; k <= 60; k++) {
+      const t = -1 + (2 * k) / 60;
+      const x = ox + t * w * 0.3;
+      const y = oy - (1 - t * t) * h * 0.55;
+      if (k === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.fillStyle = INK;
+    ctx.textAlign = 'left';
+    ctx.font = `italic 700 ${Math.round(h * 0.08)}px Georgia, serif`;
+    ctx.fillText('f(x) = 4 − x²', x0 + w * 0.06, y0 + h * 0.24);
+  } else if (variant === 2) {
+    // Sistema solar: órbitas finas y planetas.
+    const cx = x0 + w * 0.2;
+    const cy = y0 + h * 0.58;
+    ctx.fillStyle = LED_WARM;
+    ctx.beginPath();
+    ctx.arc(cx, cy, h * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    const planets = ['#c9b79c', '#e8c27a', '#4f8fd8', '#d1603d', '#d8b48a', '#e3cf9c'];
+    planets.forEach((c, i) => {
+      const rx = w * (0.1 + i * 0.11);
+      ctx.strokeStyle = 'rgba(127,216,236,0.25)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, rx * 0.28, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      const a = rnd() * Math.PI * 2;
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(a) * rx, cy + Math.sin(a) * rx * 0.28, h * (0.018 + (i % 3) * 0.008), 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.fillStyle = INK;
+    ctx.textAlign = 'right';
+    ctx.font = `800 ${Math.round(h * 0.09)}px ${SANS}`;
+    ctx.fillText('Sistema solar', x1 - w * 0.05, y0 + h * 0.26);
+  } else {
+    // Agenda del día: bloques de color con hora y materia.
+    ctx.textAlign = 'left';
+    ctx.fillStyle = INK;
+    ctx.font = `800 ${Math.round(h * 0.09)}px ${SANS}`;
+    ctx.fillText('Hoy', x0 + w * 0.05, y0 + h * 0.25);
+    const rows: Array<[string, string, string]> = [
+      ['08:15', 'Lengua', '#e94b5c'],
+      ['09:00', 'Ciencias', '#3fa56b'],
+      ['10:00', 'Recreo', LED_WARM],
+      ['10:20', 'Robótica', '#3c8fd8'],
+      ['11:10', 'Arte', '#7a5bd6'],
+    ];
+    rows.forEach(([t, name, c], i) => {
+      const y = y0 + h * (0.38 + i * 0.12);
+      ctx.fillStyle = c;
+      ctx.fillRect(x0 + w * 0.05, y - h * 0.04, w * 0.012, h * 0.08);
+      ctx.fillStyle = 'rgba(238,243,246,0.65)';
+      ctx.font = `600 ${Math.round(h * 0.055)}px ${SANS}`;
+      ctx.fillText(t, x0 + w * 0.08, y);
+      ctx.fillStyle = INK;
+      ctx.font = `700 ${Math.round(h * 0.065)}px ${SANS}`;
+      ctx.fillText(name, x0 + w * 0.2, y);
+    });
+    ctx.fillStyle = '#f4f1ea';
+    ctx.beginPath();
+    ctx.arc(x0 + w * 0.78, y0 + h * 0.58, h * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    emblem(ctx, x0 + w * 0.78, y0 + h * 0.58, h * 0.22);
+  }
+  ctx.restore();
+}
+
+/**
+ * Tótem digital del hall (ítem 5). Frente: el lema de las competencias que
+ * ya tenía la lona, sobre vidrio, con el escudo y el "40" dorado. Dorso (al
+ * norte; antes se veía el frente espejado): el Recorrido 40, con las ocho
+ * estaciones como un camino de puntos.
+ */
+export function drawTotem2050(ctx: Ctx, r: Region, side: 'front' | 'back'): void {
+  const [x0, y0, x1, y1] = r;
+  const w = x1 - x0;
+  const h = y1 - y0;
+  clip(ctx, r);
+  screenGlass(ctx, r, '#152844', '#0a1220');
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if (side === 'front') {
+    // Disco claro detrás del escudo: se lee desde la puerta.
+    ctx.fillStyle = '#f4f1ea';
+    ctx.beginPath();
+    ctx.arc(x0 + w / 2, y0 + h * 0.15, w * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    emblem(ctx, x0 + w / 2, y0 + h * 0.155, w * 0.21);
+    ctx.fillStyle = LED_WARM;
+    ctx.font = `800 ${Math.round(w * 0.42)}px ${SANS}`;
+    ctx.fillText('40', x0 + w / 2, y0 + h * 0.37);
+    ctx.font = `700 ${Math.round(w * 0.075)}px ${SANS}`;
+    ctx.fillText('AÑOS', x0 + w / 2, y0 + h * 0.455);
+    ctx.fillStyle = INK;
+    ctx.font = `800 ${Math.round(w * 0.085)}px ${SANS}`;
+    const lines = ['COMPETENCIAS', 'DIGITALES,', 'PENSAMIENTO', 'CRÍTICO Y', 'CREATIVIDAD.'];
+    lines.forEach((l, i) => ctx.fillText(l, x0 + w / 2, y0 + h * (0.56 + i * 0.065), w * 0.86));
+    ctx.fillStyle = 'rgba(238,243,246,0.6)';
+    ctx.font = `600 ${Math.round(w * 0.06)}px ${SANS}`;
+    ctx.fillText('CIMDIP & M. CANÉ', x0 + w / 2, y0 + h * 0.93, w * 0.86);
+  } else {
+    ctx.fillStyle = LED_WARM;
+    ctx.font = `800 ${Math.round(w * 0.13)}px ${SANS}`;
+    ctx.fillText('RECORRIDO', x0 + w / 2, y0 + h * 0.08, w * 0.86);
+    ctx.font = `800 ${Math.round(w * 0.3)}px ${SANS}`;
+    ctx.fillText('40', x0 + w / 2, y0 + h * 0.19);
+    // Camino de estaciones en zigzag.
+    const pts: Array<[number, number]> = [];
+    for (let i = 0; i < 8; i++) pts.push([x0 + w * (i % 2 ? 0.68 : 0.32), y0 + h * (0.33 + i * 0.075)]);
+    ctx.strokeStyle = 'rgba(127,216,236,0.6)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    pts.forEach(([x, y], i) => {
+      ctx.fillStyle = i < 3 ? LED_WARM : '#1e3a5c';
+      ctx.strokeStyle = LED_COOL;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, w * 0.06, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = i < 3 ? '#1b1b1d' : INK;
+      ctx.font = `700 ${Math.round(w * 0.06)}px ${SANS}`;
+      ctx.fillText(String(i + 1), x, y + 1);
+    });
+    ctx.fillStyle = INK;
+    ctx.font = `600 ${Math.round(w * 0.065)}px ${SANS}`;
+    ctx.fillText('Seguí las estaciones', x0 + w / 2, y0 + h * 0.94, w * 0.86);
+  }
+  ctx.restore();
+  ledEdge(ctx, r, LED_WARM, 5);
+}
+
+/**
+ * Escudo retroiluminado del portal (ítem 15): disco claro con el escudo
+ * grande y un aro azul marino; fuera del disco, transparente (recorte por
+ * alfa), así se ve detrás el disco de luz cálida del portal.
+ */
+export function drawCrestDisc(ctx: Ctx, r: Region): void {
+  const [x0, y0, x1, y1] = r;
+  const w = x1 - x0;
+  const h = y1 - y0;
+  const cx = x0 + w / 2;
+  const cy = y0 + h / 2;
+  const R = Math.min(w, h) / 2 - 2;
+  ctx.clearRect(x0, y0, w, h);
+  const g = ctx.createRadialGradient(cx, cy - R * 0.2, R * 0.1, cx, cy, R);
+  g.addColorStop(0, '#fbf8f1');
+  g.addColorStop(1, '#e6dfd0');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = ID_NAVY;
+  ctx.lineWidth = R * 0.05;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R * 0.94, 0, Math.PI * 2);
+  ctx.stroke();
+  emblem(ctx, cx, cy - R * 0.04, R * 0.6);
+  ctx.fillStyle = ID_NAVY;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `700 ${Math.round(R * 0.11)}px ${SANS}`;
+  ctx.fillText('DESDE 1981', cx, cy + R * 0.76);
+}
+
+/** Lema grabado en vidrio (ítem 5): letras doradas sobre vidrio ahumado, filete de luz arriba y abajo. */
+export function drawMottoGlass(ctx: Ctx, r: Region): void {
+  const [x0, y0, x1, y1] = r;
+  const w = x1 - x0;
+  const h = y1 - y0;
+  screenGlass(ctx, r, '#1d2a3a', '#111a26');
+  ctx.fillStyle = LED_WARM;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `800 ${Math.round(h * 0.28)}px ${SANS}`;
+  ctx.fillText('SERÁS LO QUE DEBAS SER', x0 + w / 2, y0 + h * 0.34, w - 40);
+  ctx.fillText('O NO SERÁS NADA', x0 + w / 2, y0 + h * 0.7, w - 40);
+  ctx.fillStyle = 'rgba(255,214,160,0.85)';
+  ctx.fillRect(x0, y0, w, 4);
+  ctx.fillRect(x0, y1 - 4, w, 4);
+}
+
+/**
+ * Mural LED de San Martín (ítem 5): el mismo cruce de los Andes, dibujado al
+ * doble de resolución (el dibujo es vectorial: se escala el lienzo) en el
+ * atlas de pantallas, con un marco grafito fino.
+ */
+export function drawSanMartinLed(ctx: Ctx, r: Region): void {
+  const [x0, y0, x1, y1] = r;
+  ctx.save();
+  ctx.translate(x0, y0);
+  ctx.scale((x1 - x0) / 512, (y1 - y0) / 300);
+  drawSanMartin(ctx, [0, 0, 512, 300]);
+  ctx.restore();
+  ctx.strokeStyle = '#2b2e33';
+  ctx.lineWidth = 8;
+  ctx.strokeRect(x0 + 4, y0 + 4, x1 - x0 - 8, y1 - y0 - 8);
+}
+
+/**
+ * Tarjeta del salón de los espejos vista desde un espejo (ítem 22): la pared
+ * de enfrente en 12 m × 3 m, que repite a lo largo. Bloque claro, columnas
+ * rojas cada 3 m, ventanas altas con luz, la barra de madera a 1 m y una
+ * puerta. La lee `Materials.mirror` (MirrorPlugin) con el rayo reflejado,
+ * así se corre con quien mira (paralaje). Piso y cielorraso los pone el
+ * shader.
+ */
+export function drawMirrorRoom(ctx: Ctx, w: number, h: number): void {
+  // 1 px = 12 / w metros en x y 3 / h metros en y.
+  const mx = w / 12;
+  const my = h / 3;
+  const Y = (m: number) => h - m * my;
+  // Muro de bloque claro con juntas.
+  ctx.fillStyle = '#c4c2bb';
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = 'rgba(70,70,70,0.22)';
+  ctx.lineWidth = 1;
+  for (let row = 0; row * 0.2 < 3; row++) {
+    const y = Y(row * 0.2);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+    for (let x = (row % 2) * 0.2; x < 12; x += 0.4) {
+      ctx.beginPath();
+      ctx.moveTo(x * mx, y);
+      ctx.lineTo(x * mx, y - 0.2 * my);
+      ctx.stroke();
+    }
+  }
+  // Ventanas altas con luz de día (de 1,5 a 2,6 m) entre columnas.
+  for (const x of [0.6, 6.6]) {
+    const g = ctx.createLinearGradient(0, Y(2.6), 0, Y(1.5));
+    g.addColorStop(0, '#f4f7fb');
+    g.addColorStop(1, '#cfdce8');
+    ctx.fillStyle = g;
+    ctx.fillRect(x * mx, Y(2.6), 1.8 * mx, 1.1 * my);
+    ctx.strokeStyle = '#8c9096';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x * mx, Y(2.6), 1.8 * mx, 1.1 * my);
+    ctx.beginPath();
+    ctx.moveTo((x + 0.9) * mx, Y(2.6));
+    ctx.lineTo((x + 0.9) * mx, Y(1.5));
+    ctx.stroke();
+  }
+  // Puerta de dos hojas blancas.
+  ctx.fillStyle = '#e8e8e4';
+  ctx.fillRect(3.6 * mx, Y(2.1), 1.6 * mx, 2.1 * my);
+  ctx.strokeStyle = '#9a9a96';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(3.6 * mx, Y(2.1), 1.6 * mx, 2.1 * my);
+  ctx.beginPath();
+  ctx.moveTo(4.4 * mx, Y(2.1));
+  ctx.lineTo(4.4 * mx, h);
+  ctx.stroke();
+  // Columnas rojas cada 3 m, con su brillo.
+  for (let x = 0; x < 12; x += 3) {
+    ctx.fillStyle = '#a3262b';
+    ctx.fillRect((x + 2.75) * mx, 0, 0.3 * mx, h);
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    ctx.fillRect((x + 2.79) * mx, 0, 0.05 * mx, h);
+  }
+  // Barra de madera a 1 m con sus soportes grafito.
+  ctx.fillStyle = '#3a3d42';
+  for (let x = 0.4; x < 12; x += 1.5) ctx.fillRect(x * mx, Y(1.0), 0.03 * mx, 1.0 * my);
+  ctx.fillStyle = '#c99a62';
+  ctx.fillRect(0, Y(1.04), w, 0.05 * my);
+  // Zócalo oscuro.
+  ctx.fillStyle = '#6f6b64';
+  ctx.fillRect(0, Y(0.1), w, 0.1 * my);
 }

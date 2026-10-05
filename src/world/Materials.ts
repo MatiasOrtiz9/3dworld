@@ -7,6 +7,9 @@ import { MaterialPluginBase } from '@babylonjs/core/Materials/materialPluginBase
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh';
 import type { Nullable } from '@babylonjs/core/types';
 import type { UniformBuffer } from '@babylonjs/core/Materials/uniformBuffer';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture';
+import type { BaseTexture } from '@babylonjs/core/Materials/Textures/baseTexture';
 import { PALETTE } from './Palette';
 import { Textures, hasRelief, type SurfaceKind } from './Textures';
 import { Rng } from '../utils/rng';
@@ -18,8 +21,8 @@ import { WindPlugin } from './WindPlugin';
  * El mapa de normales y el de detalle no suman draw calls ni triángulos: son
  * un muestreo de textura más por píxel (y el marco tangente por derivadas).
  * En el visor, que paga cada píxel dos veces, se guardan para donde el
- * relieve es grande o se mira de cerca y en ángulo: pisos, bloque, ladrillo,
- * chapa y cortinas. La piel del látex de las paredes y la capa de detalle
+ * relieve es grande o se mira de cerca y en ángulo: pisos, bloque, ladrillo
+ * y cortinas. La piel del látex de las paredes y la capa de detalle
  * quedan para escritorio.
  */
 export interface SurfaceQuality {
@@ -63,7 +66,8 @@ const LITE_RELIEF = new Set<SurfaceKind>([
   'rubber',
   'block',
   'brick',
-  'corrugated',
+  // La chapa ya no: su relieve en el visor era el moiré de techos y bóveda
+  // (auditoría 2050, ítem 2). Sin él, la bandeja lisa se lee por el color.
   'fabric',
   'treadPlate',
 ]);
@@ -84,6 +88,8 @@ export class Materials {
   /** Plugins de viento instalados, para avanzarles el reloj cada cuadro. */
   private readonly winds: WindPlugin[] = [];
   private readonly textures: Textures;
+  /** Texturas propias de un material (la tarjeta del espejo), para soltarlas. */
+  private readonly ownTextures: Texture[] = [];
   private readonly rng = new Rng(0x5eed);
 
   constructor(
@@ -120,13 +126,18 @@ export class Materials {
     // gastadas y más mates. Lisos, en el visor (que no paga la capa macro) se
     // leían como un plástico gris continuo de punta a punta de la calle.
     const ground = kind === 'pavementXL' || kind === 'aggregate';
-    const [tone, rough] = ground
+    const [tone0, rough] = ground
       ? [0.085, 0.2]
       : opts.detail === 'floor'
         ? [0.05, 0.18]
         : opts.detail === 'wall'
           ? [0.035, 0.08]
           : [0.03, 0.06];
+    // Escuela 2050 (ítem 13): en exteriores y techos, el tono de gran escala
+    // a la mitad. Sobre el revoque blanco, ±3,5 % cada 6-12 m más la
+    // oclusión macro se leían como hollín y manchones de humedad; una ciudad
+    // 2050 se ve mantenida, no abandonada. Los pisos y calles lo conservan.
+    const tone = exterior && !ground ? tone0 * 0.5 : tone0;
     new MetricUVPlugin(mat, tone, rough, exterior && !ground);
     if (kind && hasRelief(kind) && (q.normals === 'all' || (q.normals === 'lite' && LITE_RELIEF.has(kind)))) {
       // Relieve por el mapa de DETALLE, no por normalTexture: ver reliefMap
@@ -143,7 +154,9 @@ export class Materials {
       // varían cada pocos metros. La oclusión en el rojo no viene activa en
       // PBRMetallicRoughnessMaterial (sí rugosidad y metal): se enciende el
       // campo de la base, como `calibratePbr`.
-      mat.metallicRoughnessTexture = this.textures.macro(opts.detail === 'floor');
+      // Exterior: la variante suave (oclusión y rugosidad a la mitad, ver
+      // `paintMacro`), por lo mismo que el tono.
+      mat.metallicRoughnessTexture = this.textures.macro(opts.detail === 'floor', exterior && !ground);
       (mat as unknown as { _useAmbientOcclusionFromMetallicTextureRed: boolean })._useAmbientOcclusionFromMetallicTextureRed = true;
     }
   }
@@ -294,7 +307,7 @@ export class Materials {
    * instrucciones en los píxeles del espejo: sin cámara espejo (otra pasada
    * de toda la escena por cuadro, impagable en el visor).
    */
-  mirror(): PBRMetallicRoughnessMaterial {
+  mirror(card?: (ctx: CanvasRenderingContext2D, w: number, h: number) => void): PBRMetallicRoughnessMaterial {
     const key = 'mirror';
     const hit = this.cache.get(key);
     if (hit) return hit as PBRMetallicRoughnessMaterial;
@@ -305,7 +318,19 @@ export class Materials {
     mat.baseColor = new Color3(0.5, 0.53, 0.54);
     mat.metallic = 1;
     mat.roughness = 0.04;
-    new MirrorPlugin(mat);
+    // Escuela 2050 (ítem 22): con una tarjeta pintada de la sala (la pared
+    // de enfrente), el reflejo es el salón y no un ambiente genérico.
+    let tex: DynamicTexture | null = null;
+    if (card) {
+      tex = new DynamicTexture('mirrorCard', { width: 1024, height: 256 }, this.scene, true);
+      card(tex.getContext() as unknown as CanvasRenderingContext2D, 1024, 256);
+      tex.update(true);
+      tex.wrapU = Texture.WRAP_ADDRESSMODE;
+      tex.wrapV = Texture.CLAMP_ADDRESSMODE;
+      tex.anisotropicFilteringLevel = 4;
+      this.ownTextures.push(tex);
+    }
+    new MirrorPlugin(mat, tex);
     this.cache.set(key, mat);
     return mat;
   }
@@ -419,10 +444,18 @@ export class Materials {
     if (hit) return hit as StandardMaterial;
 
     const mat = new StandardMaterial(key, this.scene);
-    mat.diffuseColor = color.scale(STANDARD_SUN_COMP * 1.05);
+    // Auditoría 2050, ítem 14: con sólo el emisivo de 0,22, el césped en
+    // sombra TOTAL (el patio cerrado de la vivienda de enfrente, un cantero
+    // al pie de un muro norte) salía negro: el StandardMaterial no ve el IBL
+    // y la hemisférica está calibrada para PBR (0,07), así que en sombra no
+    // le llegaba cielo. Ahora recibe un relleno de cielo (`GrassFillPlugin`)
+    // como el follaje, y el difuso baja para que al sol dé lo mismo:
+    // 0,45 × 0,85 × 2,4 + 0,22 + 0,28 ≈ 1,42 × color (antes 1,35).
+    mat.diffuseColor = color.scale(STANDARD_SUN_COMP * 0.85);
     mat.specularColor = Color3.Black();
     mat.emissiveColor = color.scale(0.22);
     mat.diffuseTexture = this.textures.get('grass');
+    new GrassFillPlugin(mat, color);
     this.cache.set(key, mat);
     return mat;
   }
@@ -504,6 +537,8 @@ export class Materials {
     for (const mat of this.cache.values()) mat.dispose();
     this.cache.clear();
     this.winds.length = 0;
+    for (const t of this.ownTextures) t.dispose();
+    this.ownTextures.length = 0;
     this.textures.dispose();
   }
 }
@@ -719,7 +754,8 @@ class MetricUVPlugin extends MaterialPluginBase {
           float gWall = 1.0 - smoothstep(0.35, 0.6, abs(vNormalW.y));
           float gAlong = abs(vNormalW.x) > abs(vNormalW.z) ? vPositionW.z : vPositionW.x;
           float gEdge = 0.5 + 0.22 * sin(gAlong * 3.1 + sin(gAlong * 1.3) * 1.7);
-          surfaceAlbedo *= 1.0 - gWall * 0.09 * (1.0 - smoothstep(0.08, gEdge, vPositionW.y));
+          // 5 % (era 9 %): una vereda 2050 barrida, no una fachada sucia.
+          surfaceAlbedo *= 1.0 - gWall * 0.05 * (1.0 - smoothstep(0.08, gEdge, vPositionW.y));
         }
         #endif
       `,
@@ -745,23 +781,101 @@ function softRatio(second: number, main: number): number {
   return Math.min(1.25, Math.max(0.72, second / Math.max(main, 0.02)));
 }
 
+/**
+ * Relleno de cielo del césped (StandardMaterial): el color de la hierba por
+ * la luz del cielo que ve una superficie que mira hacia arriba, teñida con el
+ * horizonte de la hora (`scene.fogColor`, igual que el follaje en
+ * `WindPlugin`): a la mañana, verde apenas frío; al atardecer, más tenue; de
+ * noche casi nada. Se suma en gamma después de la luz (como el emisivo), así
+ * que en sombra total el césped queda verde oscuro y no negro, y al sol casi
+ * no cambia (el difuso se bajó para compensar, ver `Materials.grass`).
+ */
+class GrassFillPlugin extends MaterialPluginBase {
+  constructor(
+    material: Material,
+    private readonly tint: Color3,
+  ) {
+    super(material, 'GrassFill', 120, { GRASSFILL: false }, true, true);
+  }
+
+  override getClassName(): string {
+    return 'GrassFillPlugin';
+  }
+
+  override isCompatible(): boolean {
+    return true;
+  }
+
+  override prepareDefines(defines: Record<string, unknown>): void {
+    defines.GRASSFILL = true;
+  }
+
+  override getUniforms() {
+    return {
+      ubo: [{ name: 'grassFill', size: 3, type: 'vec3' }],
+      fragment: `
+        #ifdef GRASSFILL
+        uniform vec3 grassFill;
+        #endif
+      `,
+    };
+  }
+
+  override bindForSubMesh(uniformBuffer: UniformBuffer, scene: Scene): void {
+    // 0,28 del color a la mañana (horizonte ≈ 0,77, ver WindPlugin.SKY_REF).
+    const f = scene.fogColor;
+    const k = GRASS_SKY_FILL / 0.77;
+    uniformBuffer.updateFloat3('grassFill', this.tint.r * f.r * k, this.tint.g * f.g * k, this.tint.b * f.b * k);
+  }
+
+  override getCustomCode(shaderType: string): Nullable<Record<string, string>> {
+    if (shaderType !== 'fragment') return null;
+    return {
+      CUSTOM_FRAGMENT_BEFORE_FOG: `
+        #ifdef GRASSFILL
+        {
+          // Sólo lo que mira al cielo (canteros, techos verdes); los costados
+          // de un cantero reciben la mitad.
+          float gUp = 0.5 + 0.5 * clamp(normalW.y, 0.0, 1.0);
+          color.rgb += grassFill * baseColor.rgb * gUp;
+        }
+        #endif
+      `,
+    };
+  }
+}
+
+/** Relleno de cielo del césped, en fracción de su color (ver `GrassFillPlugin`). */
+const GRASS_SKY_FILL = 0.28;
+
 /** Cilindros y conos de la granja (`cylinder|…`, `cylinderHi|…`, `cone|…`). */
 function isTurnedMesh(mesh: AbstractMesh): boolean {
   return mesh.name.startsWith('cylinder|') || mesh.name.startsWith('cone|') || mesh.name.startsWith('cylinderHi|');
 }
 
 /**
- * Reflejo de "ambiente" procedural de los espejos (ver `Materials.mirror`).
+ * Reflejo de los espejos (ver `Materials.mirror`).
  *
- * Con la dirección reflejada se arma una habitación genérica: piso oscuro
- * cálido abajo, paredes a media luz con paños que alternan (puertas,
- * ventanas, la barra) a la altura de la vista y cielorraso claro con
- * luminarias. No reproduce el lugar exacto ni a la gente, pero se mueve como
- * un reflejo: al acercarse o agacharse, el piso sube o baja en el espejo.
+ * Sin tarjeta, el "ambiente" genérico de antes: piso oscuro abajo, paredes
+ * con paños que alternan y cielorraso claro con luminarias, según la
+ * dirección reflejada.
+ *
+ * Con tarjeta (Escuela 2050, ítem 22), una sala de verdad: el rayo reflejado
+ * se corta contra una caja virtual —la pared de enfrente a 7 m, el piso del
+ * nivel y el cielorraso a 3 m— y se pinta lo que toca: la pared con la
+ * tarjeta (bloque, columnas rojas, ventanas, barra), el piso con el parquet
+ * del salón y el cielorraso con sus líneas de luz. Como la pared está a
+ * distancia finita, el reflejo se corre con cada paso de quien mira
+ * (paralaje) y el piso sube o baja al agacharse. Unas 40 instrucciones en
+ * los píxeles del espejo, sin otra pasada de la escena (impagable en el
+ * visor); no refleja gente.
  */
 class MirrorPlugin extends MaterialPluginBase {
-  constructor(material: Material) {
-    super(material, 'Mirror', 130, { MIRRORROOM: false }, true, true);
+  constructor(
+    material: Material,
+    private readonly card: BaseTexture | null = null,
+  ) {
+    super(material, 'Mirror', 130, { MIRRORROOM: false, MIRRORCARD: false }, true, true);
   }
 
   override getClassName(): string {
@@ -774,13 +888,65 @@ class MirrorPlugin extends MaterialPluginBase {
 
   override prepareDefines(defines: Record<string, unknown>): void {
     defines.MIRRORROOM = true;
+    defines.MIRRORCARD = this.card !== null;
+  }
+
+  override getSamplers(samplers: string[]): void {
+    samplers.push('mirrorCard');
+  }
+
+  override bindForSubMesh(uniformBuffer: UniformBuffer): void {
+    if (this.card) uniformBuffer.setTexture('mirrorCard', this.card);
   }
 
   override getCustomCode(shaderType: string): Nullable<Record<string, string>> {
     if (shaderType !== 'fragment') return null;
     return {
+      CUSTOM_FRAGMENT_DEFINITIONS: `
+        #ifdef MIRRORCARD
+        uniform sampler2D mirrorCard;
+        #endif
+      `,
       CUSTOM_FRAGMENT_BEFORE_FOG: `
-        #ifdef MIRRORROOM
+        #if defined(MIRRORROOM) && defined(MIRRORCARD)
+        {
+          vec3 mR = reflect(-viewDirectionW, normalW);
+          vec3 mP = vPositionW;
+          // Piso del nivel (cotas 0,12 / 3,42 / 6,72) y cielorraso a 3 m.
+          float mFl = 0.12 + 3.3 * floor((mP.y - 0.07) / 3.3);
+          float mCe = mFl + 3.0;
+          vec3 mN = normalize(vec3(normalW.x, 0.0, normalW.z));
+          vec3 mT = vec3(-mN.z, 0.0, mN.x);
+          float mTw = 7.0 / max(dot(mR, mN), 0.02);
+          float mTf = mR.y < -0.001 ? (mFl - mP.y) / mR.y : 1e5;
+          float mTc = mR.y > 0.001 ? (mCe - mP.y) / mR.y : 1e5;
+          float mT0 = min(mTw, min(mTf, mTc));
+          vec3 mH = mP + mR * mT0;
+          float mS = dot(mH.xz, mT.xz);
+          float mQ = dot(mH.xz, mN.xz);
+          vec3 room;
+          if (mT0 == mTw) {
+            vec2 mUV = vec2(fract(mS / 12.0), clamp((mH.y - mFl) / 3.0, 0.002, 0.998));
+            room = toLinearSpace(texture2D(mirrorCard, mUV).rgb) * 0.62;
+          } else if (mT0 == mTf) {
+            // Parquet del salón: tablillas de 12 cm a lo largo, con su tono.
+            float mK = floor(mQ / 0.12);
+            float mTone = 0.82 + 0.18 * fract(sin(mK * 12.9898 + floor(mS / 0.6) * 4.1) * 43758.5);
+            float mSeam = smoothstep(0.0, 0.08, fract(mQ / 0.12)) * smoothstep(1.0, 0.92, fract(mQ / 0.12));
+            room = vec3(0.2, 0.085, 0.05) * mTone * (0.75 + 0.25 * mSeam);
+            // Brillo de las ventanas sobre el piso, hacia la pared.
+            room += vec3(0.05, 0.055, 0.06) * smoothstep(2.0, 6.5, mQ - dot(mP.xz, mN.xz));
+          } else {
+            // Cielorraso claro con líneas de luz cada 2,4 m (a lo largo).
+            room = vec3(0.42, 0.42, 0.4);
+            float mL = 1.0 - smoothstep(0.03, 0.06, abs(fract(mQ / 2.4) - 0.5));
+            room += vec3(3.2, 3.0, 2.7) * mL;
+          }
+          // Se apaga un poco con la distancia recorrida y se tiñe del vidrio.
+          room *= mix(1.0, 0.8, smoothstep(3.0, 12.0, mT0)) * vec3(0.94, 0.98, 0.97);
+          finalColor.rgb = mix(finalColor.rgb, room, 0.9);
+        }
+        #elif defined(MIRRORROOM)
         {
           vec3 mR = reflect(-viewDirectionW, normalW);
           float up = mR.y;

@@ -84,7 +84,8 @@ function ringChairs(it: Item): Box[] {
 
 /**
  * Volumen de cada objeto, en metros sobre el piso de su nivel. Copia las
- * medidas de `SchoolBuilder.item` (si cambia una, cambia la otra).
+ * medidas de `SchoolItems.item` y `SchoolOutdoor.item` (en
+ * `src/world/builders/school/`): si cambia una, cambia la otra.
  */
 function boxes(it: Item): Box[] {
   const { u, v, w, d } = it;
@@ -320,6 +321,25 @@ function boxes(it: Item): Box[] {
       return [all((y ?? 3.6) - 0.04, (y ?? 3.6) + 0.55)];
     case 'hedge':
       return [all(0, 1.6)];
+    // Escuela 2050: ítems nuevos. El dibujo lo suman los paquetes B
+    // (`SchoolItems`) y C (`SchoolOutdoor`) con ESTAS medidas.
+    case 'solarTree': {
+      // Caño de 16 cm y la copa de hojas fotovoltaicas (w × d) arriba.
+      const top = h ?? 3.4;
+      return [box(u, v, 0.16, 0.16, 0, top - 0.4, 'trunk'), all(top - 0.4, top, 'canopy')];
+    }
+    case 'ledLine': {
+      // Perfil de 5 cm al ras del cielorraso de su ambiente (o desde `y`).
+      const r = roomAt(u, v, level(it));
+      const y0 = y ?? (r ? ceilingHeight(r) : 3.1) - 0.05;
+      return [all(y0, y0 + 0.05)];
+    }
+    case 'infoScreen':
+      return [thin(0.06, y ?? 1.2, (y ?? 1.2) + (h ?? 0.9))];
+    case 'vitrine':
+      return [all(0, h ?? 1.9)];
+    case 'acousticPanels':
+      return [thin(0.05, y ?? 1.0, (y ?? 1.0) + (h ?? 1.2))];
   }
   return [all(0, 1)];
 }
@@ -340,6 +360,8 @@ const WALL_MOUNTED = new Set<Item['kind']>([
   'wallMat',
   'trophyShelf',
   'mirror',
+  'infoScreen',
+  'acousticPanels',
 ]);
 
 /** Fuera de los ambientes a propósito: en la fachada o sobre una azotea. */
@@ -622,7 +644,7 @@ describe('QA del equipamiento de la escuela', () => {
   it('nada atraviesa el cielorraso de su ambiente', () => {
     const bad: string[] = [];
     for (const it of ITEMS) {
-      if (OUTSIDE.has(it.kind) || it.kind === 'palm' || it.kind === 'tree' || it.kind === 'bareTree' || it.kind === 'slimTree') continue;
+      if (OUTSIDE.has(it.kind) || it.kind === 'palm' || it.kind === 'tree' || it.kind === 'bareTree' || it.kind === 'slimTree' || it.kind === 'solarTree') continue;
       const r = roomAt(it.u, it.v, level(it));
       if (!r || !r.roofed) continue;
       const ceil = ceilingHeight(r);
@@ -1154,5 +1176,17 @@ describe('QA de orientación', () => {
       if (front < 0.1 && back > 0.1) bad.push(`${name(it)} mira al muro (frente a ${(front * 100).toFixed(0)} cm)`);
     }
     expect(bad).toEqual([]);
+  });
+});
+
+describe('Escuela 2050: ítems nuevos', () => {
+  it('cada ítem nuevo tiene su volumen modelado (no el genérico de 1 m)', () => {
+    const kinds: Item['kind'][] = ['solarTree', 'ledLine', 'infoScreen', 'vitrine', 'acousticPanels'];
+    for (const kind of kinds) {
+      const it: Item = { kind, u: 0, v: 0, w: 1, d: 0.1, face: 's', solid: false };
+      const bs = boxes(it);
+      const generic = bs.length === 1 && bs[0].y0 === 0 && bs[0].y1 === 1;
+      expect(generic, kind).toBe(false);
+    }
   });
 });

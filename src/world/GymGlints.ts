@@ -11,6 +11,7 @@ import { Constants } from '@babylonjs/core/Engines/constants';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { GYM_PILASTERS, SCHOOL, U, V, toWorld, type SchoolFrame } from './SchoolLayout';
+import type { LampFixture } from './builders/school/SchoolKit';
 
 /**
  * Reflejos de las luminarias en el piso pulido del polideportivo (video 2026,
@@ -22,33 +23,63 @@ import { GYM_PILASTERS, SCHOOL, U, V, toWorld, type SchoolFrame } from './School
  * el uniforme del ojo al dibujar (lo hace cada ojo en VR). Lo que caería
  * fuera de la cancha se descarta.
  */
-export function createGymGlints(scene: Scene, frame: SchoolFrame): { mesh: Mesh; dispose(): void } {
+export function createGymGlints(
+  scene: Scene,
+  frame: SchoolFrame,
+  fixtures?: readonly LampFixture[],
+): { mesh: Mesh; dispose(): void } {
   const floorY = SCHOOL.floorY + 0.012;
-  const lampY = SCHOOL.gymWall - 0.6;
-  const vc = V.gymTop / 2;
-  const lamps: Array<[number, number]> = [];
-  for (const u of GYM_PILASTERS) for (const v of [vc - 5.5, vc, vc + 5.5]) lamps.push([u, v]);
+  // Luminarias de la bóveda: las que anotó el constructor (`kind: 'gym'`,
+  // con su largo: las barras LED de la Escuela 2050) o, sin datos, la grilla
+  // de siempre (una por pilastra y tres a lo ancho).
+  type Lamp = { x: number; y: number; z: number; ax: number; az: number };
+  let lamps: Lamp[] = (fixtures ?? [])
+    .filter((f) => f.kind === 'gym')
+    .map((f) => {
+      // Media longitud de la barra a lo largo de su eje (el lado mayor de la
+      // huella; 0 si es una luminaria puntual).
+      const along = Math.max(f.sx, f.sz);
+      const half = along > 0.8 ? along / 2 : 0;
+      return { x: f.x, y: f.y, z: f.z, ax: f.sx >= f.sz ? half : 0, az: f.sx >= f.sz ? 0 : half };
+    });
+  if (lamps.length === 0) {
+    const vc = V.gymTop / 2;
+    lamps = [];
+    for (const u of GYM_PILASTERS) {
+      for (const v of [vc - 5.5, vc, vc + 5.5]) {
+        const p = toWorld(frame, u, v);
+        lamps.push({ x: p.x, y: SCHOOL.gymWall - 0.6, z: p.z, ax: 0, az: 0 });
+      }
+    }
+  }
 
   const pos: number[] = [];
   const uvs: number[] = [];
+  const uvs2: number[] = [];
   const idx: number[] = [];
-  lamps.forEach(([u, v], k) => {
-    const p = toWorld(frame, u, v);
+  let lampTop = 0;
+  lamps.forEach((L, k) => {
+    lampTop = Math.max(lampTop, L.y);
     for (const [a, b] of [
       [0, 0],
       [1, 0],
       [1, 1],
       [0, 1],
     ]) {
-      pos.push(p.x, lampY, p.z);
+      pos.push(L.x, L.y, L.z);
       uvs.push(a, b);
+      // Eje de la barra (media longitud, en mundo): el reflejo de una
+      // luminaria lineal es una franja a lo largo de ella.
+      uvs2.push(L.ax, L.az);
     }
     idx.push(4 * k, 4 * k + 1, 4 * k + 2, 4 * k, 4 * k + 2, 4 * k + 3);
   });
+  const lampY = lampTop;
   const mesh = new Mesh('gymGlints', scene);
   const vd = new VertexData();
   vd.positions = pos;
   vd.uvs = uvs;
+  vd.uvs2 = uvs2;
   vd.indices = idx;
   vd.applyToMesh(mesh);
   // La caja de la cancha: los vértices se mueven en el shader.
@@ -76,7 +107,9 @@ export function createGymGlints(scene: Scene, frame: SchoolFrame): { mesh: Mesh;
   mat.diffuseColor = Color3.Black();
   mat.specularColor = Color3.Black();
   mat.emissiveTexture = tex;
-  mat.emissiveColor = new Color3(0.5, 0.5, 0.48);
+  // Alfa 0,25 (Escuela 2050, ítem 6): el piso es pulido, no espejo. Con
+  // 0,5 y sin atenuar, en el visor las de los pies eran óvalos blancos.
+  mat.emissiveColor = new Color3(0.25, 0.25, 0.24);
   mat.alpha = 0.999;
   mat.alphaMode = Constants.ALPHA_ADD;
   mat.disableDepthWrite = true;
@@ -122,6 +155,7 @@ class GymGlintPlugin extends MaterialPluginBase {
     const decl = `#ifdef GYMGLINT
 uniform vec4 ggEye;
 uniform vec4 ggBox;
+varying float vGlintFade;
 #endif`;
     return {
       ubo: [
@@ -157,11 +191,21 @@ uniform vec4 ggBox;
   vec2 toEye = dist > 0.001 ? d / dist : vec2(0.0, 1.0);
   vec2 side = vec2(-toEye.y, toEye.x);
   vec2 c = uv * 2.0 - 1.0;
-  // Más largo cuanto más rasante (reflejo difuso estirado hacia el ojo).
-  float halfLen = 0.25 + 0.18 * dist;
-  P.xz += side * c.x * 0.18 + toEye * c.y * halfLen;
+  // Franja fina estirada hacia el ojo, en relación 1:6 (un reflejo difuso
+  // sobre un piso pulido se alarga en la dirección de la mirada), más larga
+  // cuanto más rasante. Una barra LED suma su propio largo (uv2).
+  float halfW = 0.05 + 0.012 * dist;
+  float halfLen = 6.0 * halfW;
+  P.xz += side * c.x * halfW + toEye * c.y * halfLen;
+#ifdef UV2
+  P.xz += uv2 * c.x;
+#endif
   P.y = fy;
   positionUpdated = P;
+  // Se apaga cerca del ojo (de 2 a 6 m sobre el piso): a los pies del que
+  // mira el reflejo real casi no existe (ángulo cerrado) y en el visor era
+  // lo primero que se veía.
+  vGlintFade = smoothstep(2.0, 6.0, dist);
 }
 #endif`,
       };
@@ -176,7 +220,7 @@ if (vPositionW.x < ggBox.x || vPositionW.x > ggBox.y || vPositionW.z < ggBox.z |
 {
   vec2 gc = vMainUV1 * 2.0 - 1.0;
   float gq = dot(gc, gc);
-  color.rgb *= (0.8 * exp(-5.0 * gq) + 0.2 * max(0.0, 1.0 - gq)) * step(gq, 1.0);
+  color.rgb *= (0.8 * exp(-5.0 * gq) + 0.2 * max(0.0, 1.0 - gq)) * step(gq, 1.0) * vGlintFade;
 }
 #endif`,
       };

@@ -40,7 +40,8 @@ export interface PostSettings {
  *     12-16 muestras y el desenfoque heredado eso se convertía en manchas
  *     grises grandes y blandas sobre toda superficie lisa. Ahora el SSAO es
  *     sólo de CONTACTO (radio ~0,55 m): el pie de sillas y mesas, zócalos,
- *     marcos. La oclusión a escala de ambiente —rincones, el fondo de un
+ *     marcos (desde la Escuela 2050, radio 0,35 y fuerza 1,2: con 2,2 los
+ *     marcos de fachada dejaban halos negros). La oclusión a escala de ambiente —rincones, el fondo de un
  *     aula, bajo las mesas y escaleras— la da el mapa de luz natural de la
  *     escuela (Environment.bakeSchoolDaylight), que también ve el visor. Con
  *     el radio de 1 m y fuerza 1,4 el efecto no se veía (se aplica después
@@ -78,7 +79,7 @@ export const POST_SETTINGS: Record<Exclude<RenderQuality, 'off'>, PostSettings> 
     vignette: 0.8,
     // Filtro bilateral también acá: el heredado dejaba manchas grises
     // moteadas a lo largo de los encuentros de muro y cielorraso.
-    ssao: { ratio: 0.5, samples: 12, radius: 0.6, strength: 1.8, base: 0.04, maxZ: 120, bilateral: true },
+    ssao: { ratio: 0.5, samples: 12, radius: 0.4, strength: 1.1, base: 0.04, maxZ: 120, bilateral: true },
   },
   high: {
     bloomThreshold: 1.6,
@@ -91,7 +92,11 @@ export const POST_SETTINGS: Record<Exclude<RenderQuality, 'off'>, PostSettings> 
     fxaa: false,
     sharpen: 0.15,
     vignette: 0.8,
-    ssao: { ratio: 0.5, samples: 16, radius: 0.55, strength: 2.2, base: 0, maxZ: 140, bilateral: true },
+    // Escuela 2050 (ítem 13): radio 0,35 y fuerza 1,2. Con 0,55 / 2,2 cada
+    // marco de ventana, reja o equipo dejaba un halo negro de medio metro en
+    // el revoque blanco de las fachadas (manchones que se leían como hollín).
+    // Más corto, sigue apoyando patas y zócalos sin ensuciar los muros.
+    ssao: { ratio: 0.5, samples: 16, radius: 0.35, strength: 1.2, base: 0, maxZ: 140, bilateral: true },
   },
 };
 

@@ -77,7 +77,7 @@ export const PAINTED_KINDS: readonly PaintedKind[] = [
  * Metros que cubre UNA repetición de cada textura cuando se aplica en
  * coordenadas de mundo (materiales "métricos" de la escuela, ver
  * `Materials`). Es el tamaño real de las piezas: granito de 40 cm (4 por
- * lado), bloque de 40 × 20, ladrillo de 26 × 6,5, chapa con onda cada 7,6 cm.
+ * lado), bloque de 40 × 20, ladrillo de 26 × 6,5, chapa con junta cada 35 cm.
  * Con él se convierte la altura (mm) en pendiente para el mapa de normales.
  */
 export const PERIOD_M: Record<PaintedKind, number> = {
@@ -89,7 +89,8 @@ export const PERIOD_M: Record<PaintedKind, number> = {
   ceramic: 0.66,
   marble: 1.2,
   block: 0.8,
-  corrugated: 0.912,
+  // Cuatro bandejas de 35 cm (junta alzada, ver el pintor).
+  corrugated: 1.4,
   brick: 0.52,
   panels: 0.6,
   timber: 1.2,
@@ -441,20 +442,35 @@ function painters(size: number, seed: number, out: { h: number }): Record<Painte
     },
 
     /**
-     * Chapa acanalada vertical: la onda da luz y sombra propias aunque la
-     * superficie sea plana, y unas chorreaduras verticales la ensucian.
+     * Chapa de junta alzada (Escuela 2050, auditoría ítem 2): bandejas lisas
+     * de 35 cm con una nervadura trapezoidal angosta y dos pliegues de
+     * rigidez apenas marcados. La onda de 7,6 cm de antes, con ±16 % de
+     * sombreado pintado, era más fina que un píxel a 10-20 m y en todos los
+     * techos y en la bóveda se veían anillos y bandas que titilaban (moiré).
+     * Con la bandeja lisa el valor medio casi no cambia entre la nervadura y
+     * el fondo, así que el mipmap lo promedia sin dibujar nada; la forma la
+     * lee el relieve (sólo en escritorio, ver `Materials.LITE_RELIEF`).
      */
     corrugated: (x, y) => {
       const u = x / s;
       const v = y / s;
-      const rib = Math.cos(u * 12 * Math.PI * 2);
-      // La onda está también en el relieve (18 mm de alto): el sombreado
-      // pintado se modera para no contarla dos veces donde hay normales.
-      let val = 0.84 + 0.16 * rib + 0.05 * Math.max(0, rib) ** 8;
-      out.h = rib * 9;
-      // Chorreaduras: ruido de 16 celdas a lo ancho y 2 a lo alto.
-      val *= 0.94 + 0.06 * mid.noise(u * 16, v * 2, 16, 2);
-      val += (hash(x, y, seed) - 0.5) * 0.04;
+      // Posición dentro de la bandeja (4 por repetición de 1,4 m), 0..1, con
+      // la nervadura centrada en 0.
+      const p = (u * 4) % 1;
+      const r = Math.min(p, 1 - p);
+      // Trapecio: cresta de 3 cm (r < 0,045) y flancos de 2,5 cm.
+      const rise = smooth(0.115, 0.045, r);
+      out.h = rise * 22;
+      // Flanco en sombra de un lado y apenas más claro del otro: un toque,
+      // la luz de verdad la pone el relieve.
+      const flank = rise > 0.02 && rise < 0.98 ? (p < 0.5 ? -0.05 : 0.025) : 0;
+      // Pliegues de rigidez a un tercio de la bandeja.
+      const stiff = Math.abs(r - 0.33) < 0.006 ? -0.02 : 0;
+      out.h += stiff * 25;
+      let val = 0.9 + rise * 0.04 + flank + stiff;
+      // Chorreaduras muy leves (chapa prepintada, no galvanizado viejo).
+      val *= 0.975 + 0.025 * mid.noise(u * 16, v * 2, 16, 2);
+      val += (hash(x, y, seed) - 0.5) * 0.02;
       return val;
     },
 
@@ -746,9 +762,12 @@ export function reliefMap(kind: PaintedKind, height: Float32Array, size: number)
  * `Textures.MACRO_PERIOD_M`), así cada paño cae sobre otra parte de él: zonas
  * apenas más apagadas (la luz ambiente llega menos limpia) y zonas más o
  * menos lustrosas. `traffic` agrega las marcas de uso de un piso: rayones de
- * suela, más lisos (la goma deja su brillo) y apenas más oscuros.
+ * suela, más lisos (la goma deja su brillo) y apenas más oscuros. `amount`
+ * escala la variación (0,5 en exteriores y techos).
  */
-export function paintMacro(size: number, traffic: boolean): Uint8ClampedArray {
+export function paintMacro(size: number, traffic: boolean, amount = 1): Uint8ClampedArray {
+  // La semilla no depende de `amount`: la variante suave es la misma mancha,
+  // más tenue.
   const seed = seedFromString(traffic ? 'macro:floor' : 'macro:wall');
   const big = new TileableNoise(seed, 3);
   const midN = new TileableNoise(seed ^ 0x77, 7);
@@ -760,8 +779,8 @@ export function paintMacro(size: number, traffic: boolean): Uint8ClampedArray {
       const v = y / size;
       const a = big.fbm(u * 3, v * 3, 3);
       const b = midN.noise(u * 7, v * 7);
-      let ao = 0.95 + (a - 0.5) * 0.12 + (b - 0.5) * 0.04;
-      let rough = 0.9 + (a - 0.5) * 0.18 + (b - 0.5) * 0.12;
+      let ao = 0.95 + ((a - 0.5) * 0.12 + (b - 0.5) * 0.04) * amount;
+      let rough = 0.9 + ((a - 0.5) * 0.18 + (b - 0.5) * 0.12) * amount;
       if (traffic) {
         // Trazos finos y largos en dos direcciones.
         const s1 = streak.noise(u * 24, v * 3, 24, 3);

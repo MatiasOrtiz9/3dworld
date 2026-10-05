@@ -4,7 +4,7 @@ import { CreateCylinder } from '@babylonjs/core/Meshes/Builders/cylinderBuilder'
 import { CreateIcoSphere } from '@babylonjs/core/Meshes/Builders/icoSphereBuilder';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
-import { GYM_MID, ITEMS, LEVEL_Y, U, schoolSolidLocal, setDynamicSolid, toWorld, type SchoolFrame } from '../../world/SchoolLayout';
+import { GYM_MID, ITEMS, LEVEL_Y, U, schoolSolidLocal, setDynamicSolid, toLocal, toWorld, type SchoolFrame } from '../../world/SchoolLayout';
 import { STANDARD_SUN_COMP } from '../../world/Materials';
 import type { Resolved } from '../story/anchors';
 import type { LockDef } from '../story/types';
@@ -81,6 +81,21 @@ interface LockVis {
 /** Tiempo de apertura de una puerta, en segundos. */
 const OPEN_TIME = 0.9;
 
+/** Radio de la pelota (la malla es una esfera de 0,5 escalada a 0,19). */
+const BALL_R = 0.095;
+/** Altura del centro de la pelota apoyada (un pelo más que el radio: no se hunde en el piso). */
+const BALL_REST_Y = 0.1;
+/**
+ * Topes de un lanzamiento con la mano (m/s). Un manotazo con el mando puede
+ * medir 12 m/s o más en un cuadro: sin tope la pelota cruzaba el gimnasio de
+ * una y atravesaba la pared antes del rebote (se prueba un punto por cuadro).
+ */
+const THROW_MAX_H = 8;
+const THROW_MAX_UP = 5.5;
+const GRAVITY = 9.8;
+/** Techo para el vuelo: sin cielorraso a mano, la altura de un aula. */
+const BALL_CEILING = 3;
+
 export class GameProps {
   private readonly material: StandardMaterial;
   private readonly box: ThinSet;
@@ -110,6 +125,11 @@ export class GameProps {
   private ballIndex = -1;
   private ballPos = { u: 0, v: 0, y: 0.12 };
   private ballVel = { u: 0, v: 0 };
+  /** Velocidad vertical (m/s) mientras vuela después de soltarla con la mano. */
+  private ballVy = 0;
+  private ballAir = false;
+  /** La sostiene la mano del jugador en el visor: ni rueda ni cae. */
+  private ballHeld = false;
   private ballRest: { u: number; v: number };
   private shot: ShotState | null = null;
 
@@ -449,10 +469,72 @@ export class GameProps {
     this.ballVel = { u: (du / l) * speed, v: (dv / l) * speed };
   }
 
+  /** Centro de la pelota en el mundo (para agarrarla con la mano en el visor). */
+  ballWorld(): { x: number; y: number; z: number } {
+    const W = this.w(this.ballPos.u, this.ballPos.v);
+    return { x: W.x, y: LEVEL_Y[0] + this.ballPos.y, z: W.z };
+  }
+
+  /** ¿La tiene la mano del jugador? */
+  get ballInHand(): boolean {
+    return this.ballHeld;
+  }
+
+  /**
+   * La pelota en la mano (visor): sigue a la empuñadura en cada cuadro.
+   * `null` la suelta ahí mismo y cae. Durante los penales no se toca: la
+   * mueve el lanzamiento.
+   */
+  holdBall(world: { x: number; y: number; z: number } | null): void {
+    if (this.shot) return;
+    if (!world) {
+      if (!this.ballHeld) return;
+      this.ballHeld = false;
+      this.ballVy = 0;
+      this.ballAir = this.ballPos.y > BALL_REST_Y + 0.01;
+      return;
+    }
+    const { u, v } = toLocal(this.frame, world.x, world.z);
+    this.ballHeld = true;
+    this.ballAir = false;
+    this.ballVel = { u: 0, v: 0 };
+    this.ballVy = 0;
+    // Nunca por debajo del piso: con la mano en el suelo, queda apoyada.
+    this.ballPos = { u, v, y: Math.max(BALL_REST_Y, world.y - LEVEL_Y[0]) };
+    this.poseBall();
+  }
+
+  /**
+   * Suelta la pelota en `at` con la velocidad de la mano: vuela con
+   * gravedad, pica en el piso del gimnasio y después rueda con el mismo
+   * código que un empujón (rebota contra los muros y frena sola).
+   */
+  throwBall(at: { x: number; y: number; z: number }, vel: { x: number; y: number; z: number }): void {
+    if (this.shot) return;
+    const { u, v } = toLocal(this.frame, at.x, at.z);
+    this.ballHeld = false;
+    this.ballPos = { u, v, y: Math.max(BALL_REST_Y, at.y - LEVEL_Y[0]) };
+    // Mundo → plano: u = ox − x, v = z − oz (ver toLocal).
+    let du = -vel.x;
+    let dv = vel.z;
+    const h = Math.hypot(du, dv);
+    if (h > THROW_MAX_H) {
+      du *= THROW_MAX_H / h;
+      dv *= THROW_MAX_H / h;
+    }
+    this.ballVel = { u: du, v: dv };
+    this.ballVy = Math.max(-THROW_MAX_UP, Math.min(THROW_MAX_UP, vel.y));
+    this.ballAir = this.ballPos.y > BALL_REST_Y + 0.01 || this.ballVy > 0;
+    this.poseBall();
+  }
+
   /** Lanzamiento de los penales (null: pelota al punto de siete metros, quieta). */
   setShot(shot: ShotState | null): void {
     this.shot = shot;
     this.ballVel = { u: 0, v: 0 };
+    this.ballVy = 0;
+    this.ballAir = false;
+    this.ballHeld = false;
     if (!shot) {
       this.ballPos = { u: PENALTY_SPOT.u, v: PENALTY_SPOT.v, y: 0.1 };
       this.poseBall();
@@ -463,6 +545,9 @@ export class GameProps {
   resetBall(): void {
     this.shot = null;
     this.ballVel = { u: 0, v: 0 };
+    this.ballVy = 0;
+    this.ballAir = false;
+    this.ballHeld = false;
     this.ballPos = { u: this.ballRest.u, v: this.ballRest.v, y: 0.1 };
     this.poseBall();
   }
@@ -511,6 +596,40 @@ export class GameProps {
     const decay = Math.exp(-1.1 * dt);
     v.u *= decay;
     v.v *= decay;
+    this.poseBall();
+  }
+
+  /**
+   * Vuelo después de soltarla: cae con gravedad, choca contra los muros como
+   * al rodar (por ejes) y al tocar el piso pica, cada vez más bajo, hasta
+   * quedarse rodando con lo que le quede de velocidad horizontal.
+   */
+  private updateAir(dt: number): void {
+    const v = this.ballVel;
+    const nu = this.ballPos.u + v.u * dt;
+    const nv = this.ballPos.v + v.v * dt;
+    if (schoolSolidLocal(nu, this.ballPos.v, LEVEL_Y[0])) v.u *= -0.55;
+    else this.ballPos.u = nu;
+    if (schoolSolidLocal(this.ballPos.u, nv, LEVEL_Y[0])) v.v *= -0.55;
+    else this.ballPos.v = nv;
+    this.ballVy -= GRAVITY * dt;
+    this.ballPos.y += this.ballVy * dt;
+    if (this.ballPos.y <= BALL_REST_Y) {
+      this.ballPos.y = BALL_REST_Y;
+      if (this.ballVy < -1.4) {
+        // Pique de handball: devuelve algo menos de la mitad.
+        this.ballVy = -this.ballVy * 0.45;
+        v.u *= 0.85;
+        v.v *= 0.85;
+      } else {
+        this.ballVy = 0;
+        this.ballAir = false;
+      }
+    }
+    if (this.ballPos.y > BALL_CEILING - BALL_R) {
+      this.ballPos.y = BALL_CEILING - BALL_R;
+      if (this.ballVy > 0) this.ballVy = -this.ballVy * 0.3;
+    }
     this.poseBall();
   }
 
@@ -569,7 +688,8 @@ export class GameProps {
       this.poseBell();
     }
     if (this.shot) this.updateShot();
-    else this.updateRoll(dt);
+    else if (this.ballAir) this.updateAir(dt);
+    else if (!this.ballHeld) this.updateRoll(dt);
     this.updatePrint(dt);
     this.flush();
   }

@@ -4,11 +4,14 @@ import type { TargetCamera } from '@babylonjs/core/Cameras/targetCamera';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Ray } from '@babylonjs/core/Culling/ray';
-import { PointerEventTypes, type PointerInfo } from '@babylonjs/core/Events/pointerEvents';
 import type { Observer } from '@babylonjs/core/Misc/observable';
 import type { WebXRDefaultExperience } from '@babylonjs/core/XR/webXRDefaultExperience';
-import type { WebXRInputSource } from '@babylonjs/core/XR/webXRInputSource';
 import { WebXRState } from '@babylonjs/core/XR/webXRTypes';
+// Sólo tipos del visor: WebXR y sus módulos se cargan dinámicamente (main.ts).
+import type { HapticPattern, XRButtonEvent, XRHand, XRInput, XRReleaseEvent } from '../vr/XRInput';
+import type { PointerState, XRPointer } from '../vr/XRPointer';
+import type { ComfortSettings } from '../vr/XRComfort';
+import type { HudInfo } from '../vr/XRWristPanel';
 import type { CityIndex } from '../world/CityIndex';
 import {
   ITEMS,
@@ -47,9 +50,10 @@ import { GameProps, PENALTY_SPOT, GOAL_MOUTH_U } from './world/GameProps';
 import { Doors } from './world/Doors';
 import { Lights } from './world/Lights';
 import type { Fixture } from '../world/SchoolLights';
-import { Markers, type Glow, type Proxy } from './world/Markers';
+import { Markers, type Glow } from './world/Markers';
 import { Screens, type ScreenSpec } from './world/Screens';
-import type { GamePanel3D, PanelModel } from './xr/GamePanel3D';
+import type { GamePanel3D, PanelModel, PanelScreen } from './xr/GamePanel3D';
+import type { StickRepeat, XRMenuHost, XRMenus } from './xr/XRGameUI';
 
 /**
  * Director del juego "Recorrido 40".
@@ -86,10 +90,46 @@ export interface GameDirectorDeps {
   onRoomLights?: (roomId: string, on: boolean) => void;
 }
 
+/**
+ * Lo que el juego usa del visor (un subconjunto de `XRControls`, ver
+ * `vr/XRSetup.ts`): la entrada cruda de los mandos, el láser, la caminata,
+ * la muñeca, el confort, los rótulos de los mandos, el fundido y la salida.
+ */
 export interface XRGameControls {
+  readonly input: XRInput;
+  readonly pointer: XRPointer;
+  /** Caminar, girar y teletransporte. */
   setLocomotionEnabled(enabled: boolean): void;
-  setHud(info: { place: string; progress: string }): void;
+  setHud(info: HudInfo): void;
+  /** Flecha de la muñeca hacia el objetivo (null la oculta). */
+  setObjectiveTarget(p: { x: number; y: number; z: number } | null): void;
+  getComfort(): ComfortSettings;
+  setComfort(s: ComfortSettings): void;
+  /** Rótulos con la función de cada botón junto a los mandos. */
+  setHints(on: boolean): void;
+  /** Fundido a negro dentro del visor (el `#fade` del HTML no se ve ahí). */
+  fade(toBlack: boolean, ms?: number): Promise<void>;
+  exit(): Promise<void>;
 }
+
+const HANDS: readonly XRHand[] = ['right', 'left'];
+/** Gatillo apenas tocado (0–1): el dedo empezó a apretar y el láser queda fijo en su botón. */
+const PULL_START = 0.12;
+/** Un apretón de verdad llega al fondo en menos que esto (ms). */
+const PULL_MS = 400;
+const otherHand = (h: XRHand): XRHand => (h === 'right' ? 'left' : 'right');
+const FORWARD = new Vector3(0, 0, 1);
+/** A qué distancia de la empuñadura se agarra la pelota (y cuánto puede errarle el láser). */
+const GRAB_REACH = 0.45;
+const GRAB_AIM = 0.3;
+const GRAB_AIM_RANGE = 4;
+/** Velocidad de la mano (en planta) a partir de la cual soltar la pelota es lanzarla. */
+const THROW_MIN = 1.2;
+/** Segundos fuera del predio tras los que la pelota vuelve a su lugar. */
+const BALL_AWAY_RESET = 4;
+/** Rótulos de los mandos a la vista al empezar a jugar (ms). */
+const HINTS_AFTER_START = 12000;
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 // ================================================================ sesión
 
@@ -105,6 +145,13 @@ const automated = typeof navigator !== 'undefined' && navigator.webdriver === tr
  */
 const SESSION = {
   started: false,
+  /**
+   * La pantalla de inicio está abierta (la del escritorio o la del visor).
+   * Una reconstrucción (cambio de calidad, salir del visor) la vuelve a
+   * mostrar aunque la partida ya haya empezado: "Volver al inicio" del
+   * visor deja `started` en true.
+   */
+  atTitle: false,
   skipTitle: params.get('titulo') === '0' || (automated && params.get('titulo') !== '1'),
   freeRoam: params.get('libre') === '1' || (automated && params.get('libre') !== '0'),
   // Con herramientas automáticas, sin HUD salvo que se pida (`?hud=1`): las
@@ -208,7 +255,6 @@ export class GameDirector {
   private readonly stationSpots = new Map<StationDef, { spot: Spot; yaw: number }>();
 
   private readonly beforeRender: Observer<Scene>;
-  private readonly pointerObs: Observer<PointerInfo>;
 
   private mode: 'title' | 'play' = 'play';
   private modal: 'dialogue' | 'activity' | 'card' | 'cutscene' | null = null;
@@ -230,7 +276,6 @@ export class GameDirector {
   private readonly newsNpcs = new Set<string>();
   /** Pies del jugador en este cuadro. */
   private feet: WorldPoint = { x: 0, y: 0, z: 0 };
-  private proxyKeys: string[] = [];
   private activity: ActiveActivity | null = null;
   private actDrawn = 0;
   private pendingActivity: ActivityId | null = null;
@@ -262,11 +307,63 @@ export class GameDirector {
   private inXR = false;
   /** Lo que muestra el panel/HUD ahora, para re-mostrarlo al entrar o salir del visor. */
   private shown: { model: PanelModel; pick: (i: number) => void; toward?: { x: number; z: number } } | null = null;
-  private xrMenu = false;
+  /** Inicio y menú del juego del visor (se cargan con el panel, sólo si hay visor). */
+  private menus: XRMenus | null = null;
+  private stickNav: StickRepeat | null = null;
+  private hintFor: ((phrases: boolean) => string) | null = null;
+  /** Suscripciones a los botones de los mandos (se sueltan al reconectar y al desarmar). */
+  private xrSubs: Array<() => void> = [];
+  /**
+   * Ya se desarmó: `connectXR` espera un import dinámico y, si la escuela se
+   * reconstruye mientras tanto, el director viejo no debe crear un panel ni
+   * suscribirse a los botones (cada pulsación se procesaba dos veces).
+   */
+  private disposed = false;
+  /** El inicio del visor se abrió con la partida en curso: "Continuar" sólo lo cierra. */
+  private xrTitleInPlace = false;
+  /** Un fundido del visor en curso: los botones no hacen nada. */
+  private xrBusy = false;
+  /** Lo que el láser de cada mano señala en el mundo, y en qué zona del panel está (null: no lo toca). */
+  private readonly handFocus: Record<XRHand, Candidate | null> = { left: null, right: null };
+  private readonly onPanel: Record<XRHand, number | null> = { left: null, right: null };
+  /**
+   * Botón que apuntaba cada mano ANTES de empezar a apretar el gatillo (−1
+   * ninguno). Al tirar del gatillo el mando cabecea unos grados y el láser
+   * baja medio botón: sin esto el clic caía en el de abajo o en el hueco.
+   */
+  private readonly preZone: Record<XRHand, number> = { left: -1, right: -1 };
+  /** Desde cuándo (ms) cada gatillo está apenas tocado, sin llegar a apretarse. */
+  private readonly pullSince: Record<XRHand, number> = { left: 0, right: 0 };
+  /** Gatillo apretado sobre un botón del panel: se elige al soltar sobre el mismo. */
+  private pressed: { hand: XRHand; zone: number } | null = null;
+  private dragHand: XRHand | null = null;
+  private ballHand: XRHand | null = null;
+  /**
+   * El candidato de la pelota sigue a la pelota: con el agarre del visor se la
+   * lleva (o se la lanza) a cualquier lugar de planta baja, y el rótulo y el
+   * "Patear" quedaban flotando en su lugar original.
+   */
+  private ballCand: Candidate | null = null;
+  /** Altura del rótulo sobre el centro de la pelota (la del ancla, con la pelota en reposo). */
+  private ballCandLift = 0;
+  /** Segundos que la pelota lleva fuera del predio: pasado un rato vuelve a su lugar. */
+  private ballAway = 0;
+  private lastFocusKey = '';
+  private hoverSoundAt = 0;
+  private menuHints = false;
+  private hintsOn = false;
+  private hintsUntil = 0;
+  private panelSize: 'normal' | 'large' = 'normal';
+  /**
+   * Contenido nuevo en el panel: el primer cuadro el láser sólo registra
+   * dónde está, sin mover el resaltado. Así el foco que trae la pantalla
+   * (en una confirmación, "Volver") no salta al botón que el láser tenía
+   * debajo por casualidad.
+   */
+  private seedLaser = false;
   private wristKey = '';
+  private targetKey = '';
   private readonly ray = new Ray(Vector3.Zero(), new Vector3(0, 0, 1), 20);
-  /** Tiempo que el panel lleva fuera de la vista (se vuelve a poner delante). */
-  private panelAway = 0;
   private readonly tmpDir = new Vector3();
 
   constructor(private readonly deps: GameDirectorDeps) {
@@ -319,17 +416,7 @@ export class GameDirector {
     this.hud.bind({
       onPause: () => this.applyPause(),
       onReset: () => this.newGame(),
-      onFreeRoam: (on) => {
-        SESSION.freeRoam = on;
-        if (on) {
-          this.applyLocks(true);
-          this.locksDirty = false;
-        } else {
-          // Volver a cerrar con el jugador arriba lo dejaría encerrado: se
-          // espera a que esté en planta baja, fuera del jardín.
-          this.locksDirty = true;
-        }
-      },
+      onFreeRoam: (on) => this.setFreeRoam(on),
       passport: () => this.passport(),
     });
     this.hud.setFreeRoam(SESSION.freeRoam);
@@ -337,10 +424,9 @@ export class GameDirector {
     this.hud.setPhrases(SESSION.phrases);
 
     this.beforeRender = this.scene.onBeforeRenderObservable.add(this.update);
-    this.pointerObs = this.scene.onPointerObservable.add(this.onPointer);
     window.addEventListener('keydown', this.onKey);
 
-    if (SESSION.started || SESSION.skipTitle) {
+    if (SESSION.skipTitle || (SESSION.started && !SESSION.atTitle)) {
       SESSION.started = true;
       this.resume(false);
     } else {
@@ -377,24 +463,74 @@ export class GameDirector {
     return this.greeted;
   }
 
-  /** Conecta el panel 3D, el láser y la muñeca del visor. */
+  /**
+   * Mirador de la pantalla de inicio en el visor: el punto central del paneo
+   * del título de escritorio (`titleCamera`), de pie sobre la vereda de
+   * enfrente de Laprida, mirando la fachada. `main.ts` aparece ahí al entrar
+   * al visor desde el título.
+   */
+  get xrLookout(): { eye: WorldPoint; look: WorldPoint } {
+    const e = toWorld(this.frame, ...fromPlan(44, 9.5));
+    const l = toWorld(this.frame, ...fromPlan(38, -3));
+    let ground = 0;
+    try {
+      ground = this.deps.index.groundHeight(e.x, e.z);
+    } catch {
+      // Sin índice: la vereda está a nivel de calle.
+    }
+    return { eye: { x: e.x, y: ground + 1.7, z: e.z }, look: { x: l.x, y: 3.8, z: l.z } };
+  }
+
+  /** Conecta el panel 3D, el láser, los botones y la muñeca del visor. */
   async connectXR(experience: WebXRDefaultExperience, controls: XRGameControls): Promise<void> {
-    if (this.xr && this.xrStateObs) this.xr.baseExperience.onStateChangedObservable.remove(this.xrStateObs);
+    this.disconnectXR();
+    if (this.disposed) return;
+    if (!this.panel) {
+      const [{ GamePanel3D }, ui] = await Promise.all([import('./xr/GamePanel3D'), import('./xr/XRGameUI')]);
+      // Desarmado durante la espera: nada que crear ni a qué suscribirse.
+      if (this.disposed) return;
+      // Dos conexiones seguidas: la primera que vuelve crea el panel.
+      if (!this.panel) {
+        this.panel = new GamePanel3D(this.scene);
+        this.menus = new ui.XRMenus(this.menuHost());
+        this.stickNav = new ui.StickRepeat();
+        this.hintFor = ui.controlsHint;
+      }
+    }
+    // Otra conexión pudo suscribirse durante la espera: se queda la última.
+    this.disconnectXR();
     this.xr = experience;
     this.xrControls = controls;
-    if (!this.panel) {
-      const { GamePanel3D } = await import('./xr/GamePanel3D');
-      this.panel = new GamePanel3D(this.scene);
-    }
+    // Una sola entrada para los botones: `XRInput` lee el gamepad crudo de
+    // los dos mandos (el puntero de Babylon no se habilita: en el Quest no
+    // siempre entregaba el clic y no permite elegir al soltar).
+    const press = controls.input.onPress.add((e) => this.onXRPress(e));
+    const release = controls.input.onRelease.add((e) => this.onXRRelease(e));
+    this.xrSubs = [() => controls.input.onPress.remove(press), () => controls.input.onRelease.remove(release)];
     this.xrStateObs = experience.baseExperience.onStateChangedObservable.add((s) => this.onXRState(s));
     this.onXRState(experience.baseExperience.state);
+    this.applyPause();
+  }
+
+  private disconnectXR(): void {
+    for (const off of this.xrSubs) off();
+    this.xrSubs = [];
+    if (this.xr && this.xrStateObs) this.xr.baseExperience.onStateChangedObservable.remove(this.xrStateObs);
+    this.xrStateObs = null;
   }
 
   dispose(): void {
+    this.disposed = true;
     window.removeEventListener('keydown', this.onKey);
     this.scene.onBeforeRenderObservable.remove(this.beforeRender);
-    this.scene.onPointerObservable.remove(this.pointerObs);
-    if (this.xr && this.xrStateObs) this.xr.baseExperience.onStateChangedObservable.remove(this.xrStateObs);
+    this.disconnectXR();
+    if (this.hintsOn) this.xrControls?.setHints(false);
+    this.xrControls?.setObjectiveTarget(null);
+    // El láser no se queda con el largo y el color del último cuadro (una
+    // reconstrucción tarda varios): el director nuevo vuelve a decirle dónde
+    // termina cada rayo.
+    for (const hand of HANDS) this.xrControls?.pointer.setHit(hand, null);
+    this.xrControls?.pointer.setEnabled(true);
     this.xrControls?.setLocomotionEnabled(true);
     this.save();
     this.hud.hideDialogue();
@@ -417,6 +553,7 @@ export class GameDirector {
 
   private showTitle(): void {
     this.mode = 'title';
+    SESSION.atTitle = true;
     this.applyPause();
     this.music('intro');
     const has = this.engine.data.done.length > 0;
@@ -451,9 +588,12 @@ export class GameDirector {
 
   private resume(fromTitle: boolean): void {
     SESSION.started = true;
+    SESSION.atTitle = false;
     this.mode = 'play';
     this.hud.hideTitle();
-    this.xrMenu = false;
+    this.menus?.close();
+    this.menuHints = false;
+    this.xrTitleInPlace = false;
     this.panel?.hide();
     // El modo libre sólo saca las cerraduras: no toca la partida guardada.
     this.applyLocks(false);
@@ -500,7 +640,9 @@ export class GameDirector {
 
   private update = (): void => {
     const dt = Math.min(this.scene.getEngine().getDeltaTime() / 1000, 0.1);
-    const paused = this.hud.paused;
+    // El menú del visor (inicio o pausa) detiene el reloj de la historia,
+    // como el menú de pausa del escritorio.
+    const paused = this.hud.paused || this.xrMenuOpen;
     if (!paused) {
       this.clock += dt;
       if (this.mode === 'play' && SESSION.started) this.engine.tick(dt);
@@ -508,13 +650,13 @@ export class GameDirector {
     this.props.update(dt);
     this.screens.flush();
     this.panel?.update(dt);
-    if (this.inXR) this.keepPanelInView(dt);
     this.runTimers();
-    this.pollXRButtons();
+    if (this.inXR) this.xrFrame(dt);
 
     if (this.mode === 'title') {
       this.titleCamera(dt);
       this.markers.setDiamonds([]);
+      if (this.inXR) this.xrWorldHits(false);
       return;
     }
 
@@ -586,12 +728,35 @@ export class GameDirector {
       this.distanceText = text;
       this.hud.setDistance(text);
     }
-    if (this.inXR && this.xrControls) {
-      const key = `${this.roomName}|${this.progressText}`;
-      if (key !== this.wristKey) {
-        this.wristKey = key;
-        this.xrControls.setHud({ place: this.roomName, progress: this.progressText });
-      }
+    if (this.inXR && this.xrControls) this.updateWrist();
+  }
+
+  /** Muñeca del visor: lugar, capítulo, objetivo, distancia y sellos (sólo al cambiar), y la flecha al objetivo. */
+  private updateWrist(): void {
+    const c = this.xrControls;
+    if (!c) return;
+    const o = this.engine.mainObjectives()[0];
+    const info: HudInfo = {
+      // Fuera de los ambientes con nombre: la escuela o la calle (no la marca: no es un lugar).
+      place: this.roomName || (inLot(this.feetLocal.u, this.feetLocal.v) ? 'Escuela CIMDIP' : ''),
+      progress: this.progressText,
+      objective: o ? this.engine.objectiveTitle(o) : 'Recorrido completo',
+      distance: this.distanceText,
+      stamps: `${this.engine.stamps}/${TOTAL_STAMPS} sellos`,
+      chapter: chapter(this.engine.currentChapter()).kicker,
+    };
+    const key = `${info.place}|${info.progress}|${info.objective}|${info.distance}|${info.stamps}|${info.chapter}`;
+    if (key !== this.wristKey) {
+      this.wristKey = key;
+      c.setHud(info);
+    }
+    // En otro piso, la flecha lleva a la escalera (como el rombo del objetivo).
+    const raw = this.targetOf(o);
+    const t = raw ? this.guideTo(raw).world : null;
+    const tKey = t ? `${Math.round(t.x * 4)},${Math.round(t.y * 4)},${Math.round(t.z * 4)}` : '';
+    if (tKey !== this.targetKey) {
+      this.targetKey = tKey;
+      c.setObjectiveTarget(t);
     }
   }
 
@@ -798,6 +963,19 @@ export class GameDirector {
     for (const l of DOOR_LOCKS) {
       const locked = SESSION.started && !SESSION.freeRoam && !this.engine.zone(l.zone);
       this.doors.setLocked(l.door.id, locked, !animate);
+    }
+  }
+
+  /** Modo libre (menú de escritorio o del visor): saca las cerraduras sin tocar la partida. */
+  private setFreeRoam(on: boolean): void {
+    SESSION.freeRoam = on;
+    if (on) {
+      this.applyLocks(true);
+      this.locksDirty = false;
+    } else {
+      // Volver a cerrar con el jugador arriba lo dejaría encerrado: se
+      // espera a que esté en planta baja, fuera del jardín.
+      this.locksDirty = true;
     }
   }
 
@@ -1085,8 +1263,16 @@ export class GameDirector {
       c.baseY = LEVEL_Y[s.level];
       c.y = c.baseY + 1.35;
     }
+    const ball = this.ballCand;
+    if (ball) {
+      const b = this.props.ballWorld();
+      ball.x = b.x;
+      ball.y = b.y + this.ballCandLift;
+      ball.z = b.z;
+    }
     this.candList.length = 0;
-    for (const c of this.itemCandsVisible) this.candList.push(c);
+    // En la mano no se ofrece "Patear": soltarla (o lanzarla) ya la usa.
+    for (const c of this.itemCandsVisible) if (c !== ball || !this.ballHand) this.candList.push(c);
     for (const c of this.npcCands) this.candList.push(c);
     for (const c of this.lockCandsVisible) this.candList.push(c);
     for (const c of this.doorCands) this.candList.push(c);
@@ -1098,7 +1284,13 @@ export class GameDirector {
   private refreshCandidates(): void {
     if (this.itemCands.length === 0) {
       for (const it of this.items) {
-        this.itemCands.push({ key: `it:${it.def.id}`, x: it.x, y: it.y, z: it.z, radius: it.radius, range: it.def.range ?? 2.6, baseY: it.baseY });
+        const c: Candidate = { key: `it:${it.def.id}`, x: it.x, y: it.y, z: it.z, radius: it.radius, range: it.def.range ?? 2.6, baseY: it.baseY };
+        this.itemCands.push(c);
+        if (it.def.id === 'pelota') {
+          this.ballCand = c;
+          // La pelota descansa con el centro a 0,1 m del piso (GameProps).
+          this.ballCandLift = it.y - (it.baseY + 0.1);
+        }
       }
       for (const n of this.npcs) this.npcCands.push({ key: `npc:${n.def.id}`, x: 0, y: 0, z: 0, radius: 0.35, range: TALK_RANGE, baseY: 0 });
       for (const l of LOCKS) {
@@ -1123,25 +1315,30 @@ export class GameDirector {
 
   private updateFocus(feet: WorldPoint, eye: WorldPoint): void {
     this.candidates = this.buildCandidates();
-    const blocked = this.mode !== 'play' || this.modal !== null || (!this.inXR && this.hud.modal) || this.xrMenu;
+    const blocked = this.mode !== 'play' || this.modal !== null || (!this.inXR && this.hud.modal) || this.xrMenuOpen || this.xrBusy;
+    if (this.inXR) this.xrWorldHits(!blocked);
     if (blocked) {
       this.setFocus(null);
+      this.lastFocusKey = '';
       return;
     }
     let f: Candidate | null = null;
     if (this.inXR) {
-      // El control que tiene el láser primero, después el otro; si ninguno
-      // apunta a nada, alcanza con mirar a quien está cerca (como en la
-      // computadora): hablar con un profe no exige puntería.
-      const first = this.pointerController();
-      const sources = [first, ...(this.xr?.input.controllers ?? []).filter((c) => c !== first)];
-      for (const src of sources) {
-        if (!src || f) continue;
-        src.getWorldPointerRayToRef(this.ray);
-        f = focusByRay(this.candidates, this.ray.origin, this.ray.direction, feet);
+      // La mano del láser primero, después la otra; si ninguna apunta a
+      // nada, alcanza con mirar a quien está cerca (como en la computadora):
+      // hablar con un profe no exige puntería.
+      const active = this.xrControls?.pointer.activeHand ?? 'right';
+      const byHand = this.handFocus[active] ? active : this.handFocus[otherHand(active)] ? otherHand(active) : null;
+      f = byHand ? this.handFocus[byHand] : focusByGaze(this.candidates, eye, this.player.forward(), feet, (c) => this.occluded(c, feet));
+      // Algo nuevo bajo el láser (o la mirada): un tic en la mano. Con el
+      // láser también un clic muy suave; con la mirada sola, sin sonido
+      // (mirar alrededor no debería hacer ruido).
+      const key = f?.key ?? '';
+      if (key && key !== this.lastFocusKey) {
+        this.fx('hover', byHand ?? active);
+        if (byHand) this.hoverSound();
       }
-      if (!f) f = focusByGaze(this.candidates, eye, this.player.forward(), feet, (c) => this.occluded(c, feet));
-      this.updateProxies();
+      this.lastFocusKey = key;
     } else if (this.deps.canInteract?.() ?? true) {
       const dir = this.player.forward();
       f = focusByGaze(this.candidates, eye, dir, feet, (c) => this.occluded(c, feet));
@@ -1180,7 +1377,8 @@ export class GameDirector {
     const { verb, target, locked } = this.describe(f.key);
     if (this.inXR) {
       this.hud.setPrompt(null);
-      this.panel?.setLabel(target, `Gatillo o A · ${verb}`, { x: f.x, y: f.y + 0.75, z: f.z });
+      // Cerrado: el rótulo lo dice solo (no hay nada que apretar).
+      this.panel?.setLabel(target, locked ? 'Cerrado' : `Gatillo o A · ${verb}`, { x: f.x, y: f.y + 0.75, z: f.z });
     } else {
       this.hud.setPrompt({ verb, target, locked }, () => this.interact(f.key));
     }
@@ -1256,43 +1454,6 @@ export class GameDirector {
     if (!f || this.occluded(f, this.feet)) return false;
     this.interact(f.key);
     return true;
-  }
-
-  /** Gatillo en el visor: lo que toca el láser (cajas de selección) o, si no, lo enfocado. */
-  private onPointer = (info: PointerInfo): void => {
-    if (!this.inXR || info.type !== PointerEventTypes.POINTERDOWN) return;
-    if (this.panel?.visible) return;
-    // Primero el foco: lo calcula la geometría con el rayo del control y es
-    // lo que el jugador ve rotulado. En el Quest Browser el índice de thin
-    // instance del picking no siempre es fiable (comprobado en el visor).
-    if (this.focus) {
-      this.interact(this.focus.key);
-      return;
-    }
-    const pick = info.pickInfo;
-    if (pick?.hit && pick.pickedMesh === this.markers.proxyMesh && pick.thinInstanceIndex >= 0) {
-      const key = this.proxyKeys[pick.thinInstanceIndex];
-      if (key) this.interact(key);
-    }
-  };
-
-  private pointerController(): WebXRInputSource | null {
-    const list = this.xr?.input.controllers ?? [];
-    return list.find((c) => c.inputSource.handedness === 'right') ?? list[0] ?? null;
-  }
-
-  private updateProxies(): void {
-    const list: Proxy[] = [];
-    this.proxyKeys = [];
-    for (const c of this.candidates) {
-      if (Math.abs(this.feet.y - c.baseY) > 1.3) continue;
-      const npc = c.key.startsWith('npc:');
-      const it = c.key.startsWith('it:') ? this.items.find((i) => `it:${i.def.id}` === c.key) : null;
-      const size = it?.def.size ?? (npc ? [0.7, 1.8, 0.7] : [1.0, 2.0, 1.0]);
-      list.push({ x: c.x, y: npc ? c.baseY + 0.9 : c.y, z: c.z, sx: size[0], sy: size[1], sz: size[2] });
-      this.proxyKeys.push(c.key);
-    }
-    this.markers.setProxies(list);
   }
 
   // ===================================================================== diálogos
@@ -1408,17 +1569,26 @@ export class GameDirector {
   }
 
   /** Dibuja lo que hay que mostrar en la interfaz que corresponde (HUD o visor). */
-  private present(placePanel = true): void {
+  private present(): void {
     const s = this.shown;
     if (!s) return;
     if (this.inXR && this.panel && this.xr) {
       this.hud.hideDialogue();
       this.hud.hideActivity();
-      if (placePanel) {
+      // El menú del visor está encima: lo de abajo vuelve al cerrarlo (closeXRMenu).
+      if (this.xrMenuOpen) return;
+      const fresh = !this.panel.visible || this.panelSize !== 'normal' || this.panel.kind !== s.model.kind;
+      if (fresh) {
         const cam = this.xr.baseExperience.camera;
-        const f = cam.getDirection(new Vector3(0, 0, 1));
-        this.panel.place(cam.globalPosition, { x: f.x, z: f.z }, s.toward);
+        cam.getDirectionToRef(FORWARD, this.tmpDir);
+        this.panel.place(cam.globalPosition, { x: this.tmpDir.x, z: this.tmpDir.z }, s.toward);
+        // Contenido nuevo: un gatillo apretado sobre lo anterior no elige nada
+        // de esto. (Una actividad que sólo se redibuja conserva el gesto.)
+        this.cancelPanelGestures();
       }
+      this.panelSize = 'normal';
+      // Una actividad que se redibuja mientras anima no es contenido nuevo.
+      if (fresh || s.model.kind !== 'activity') this.seedLaser = true;
       this.panel.show(s.model, s.pick);
       return;
     }
@@ -1567,9 +1737,8 @@ export class GameDirector {
     a.version = a.act.version;
     const view = a.act.view();
     const toward = a.host ? this.worldOf(this.npcSpot(this.npc(a.host)!)) : undefined;
-    const placePanel = !this.shown || this.shown.model.kind !== 'activity';
     this.shown = { model: { kind: 'activity', view }, pick: (i) => this.onActivityPick(i), toward: toward ? { x: toward.x, z: toward.z } : undefined };
-    this.present(placePanel);
+    this.present();
   }
 
   private onActivityPick(i: number): void {
@@ -2093,17 +2262,25 @@ export class GameDirector {
   }
 
   private applyPause(): void {
-    const paused = this.mode === 'title' || this.modal !== null || this.hud.paused || this.xrMenu;
+    const menu = this.xrMenuOpen;
+    const paused = this.mode === 'title' || this.modal !== null || this.hud.paused || menu;
     try {
       this.player.setPaused(paused);
     } catch {
       // Jugador no disponible.
     }
-    // En el visor la caminata nunca queda trabada por un panel abierto: si el
-    // clic no entraba, el jugador quedaba quieto sin poder cerrarlo (lo que
-    // se reportó con el visor puesto). Sólo se frena en las escenas guionadas,
-    // cuando la historia mueve al jugador.
-    this.xrControls?.setLocomotionEnabled(this.modal !== 'cutscene');
+    // En el visor la caminata nunca queda trabada por un diálogo, cartel o
+    // actividad: si el clic no entraba, el jugador quedaba quieto sin poder
+    // cerrarlo (lo que se reportó con el visor puesto). Se frena en las
+    // escenas guionadas (la historia mueve al jugador), con el inicio o el
+    // menú del juego abiertos (ahí el stick mueve el resaltado) y durante un
+    // fundido del visor: caminar a ciegas mientras se salta marea.
+    this.xrControls?.setLocomotionEnabled(this.mode === 'play' && this.modal !== 'cutscene' && !menu && !this.xrBusy);
+  }
+
+  /** ¿Está abierto el inicio o el menú del juego del visor? */
+  private get xrMenuOpen(): boolean {
+    return this.inXR && (this.menus?.open ?? false);
   }
 
   private wait(seconds: number): Promise<void> {
@@ -2165,109 +2342,665 @@ export class GameDirector {
 
   // ========================================================================== VR
 
+  /**
+   * Entrar o salir del visor. Al entrar SIEMPRE aparece primero la pantalla
+   * de inicio (la misma del escritorio, adaptada): desde el título, en el
+   * mirador de Laprida; con la partida en curso, donde está el jugador. Antes
+   * se jugaba directo y se aparecía frente a la escuela sin haber elegido
+   * nada.
+   */
   private onXRState(state: WebXRState): void {
     const now = state === WebXRState.IN_XR;
     if (now === this.inXR) return;
     this.inXR = now;
-    this.markers.setPickable(now);
+    this.resetHands();
     if (now) {
       this.hud.setPrompt(null);
-      // Al entrar, el visor reubica al jugador en este mismo cuadro: el panel
-      // se ubica después de dibujarlo, cuando la cámara ya está en su lugar.
+      this.wristKey = '';
+      this.targetKey = '';
+      this.hintsOn = false;
+      // Al entrar, el visor reubica al jugador en este mismo cuadro: el
+      // inicio se ubica después de dibujarlo, cuando la cámara ya está en su
+      // lugar.
       this.scene.onAfterRenderObservable.addOnce(() => {
-        if (this.mode === 'title') this.startInXR();
-        else if (this.shown) this.present(true);
+        if (this.inXR) this.openXRTitle(this.mode !== 'title');
       });
     } else {
+      const inTitle = this.menus?.root === 'title';
+      this.menus?.close();
+      this.menuHints = false;
+      this.hintsOn = false;
+      this.xrBusy = false;
       this.panel?.hide();
       this.panel?.setLabel(null);
-      this.xrMenu = false;
-      if (this.mode === 'title') this.showTitle();
-      else if (this.shown) this.present(true);
+      // Saliendo desde el inicio, el escritorio vuelve a su título HTML (salvo
+      // que haya algo a medio contestar debajo: eso sigue en la pantalla).
+      if (this.mode === 'title' || (inTitle && this.modal === null)) this.showTitle();
+      else if (this.shown) this.present();
       this.applyPause();
     }
   }
 
-  /**
-   * En el visor el panel queda fijo en el mundo (no pegado a la cara, que
-   * marea), pero si el jugador gira o se aleja, a la media segundo vuelve a
-   * ponerse delante. También corrige la primera ubicación al entrar, cuando
-   * la pose de la cabeza todavía no es la definitiva.
-   */
-  private keepPanelInView(dt: number): void {
+  // ------------------------------------------------------------ inicio y menú
+
+  /** Pantalla de inicio del visor. `inPlace`: la partida ya estaba en curso (no se mueve al jugador). */
+  private openXRTitle(inPlace: boolean): void {
+    this.xrTitleInPlace = inPlace;
+    this.hud.hideTitle();
+    if (!inPlace) {
+      SESSION.atTitle = true;
+      this.music('intro');
+    }
+    this.openXRMenu('title');
+  }
+
+  private openXRMenu(root: 'title' | 'pause'): void {
+    if (!this.menus || !this.panel) return;
+    this.resetHands();
+    this.stickNav?.reset();
+    this.setFocus(null);
+    this.menus.openRoot(root);
+    this.applyPause();
+  }
+
+  private closeXRMenu(): void {
+    if (!this.menus?.open) return;
+    this.menus.close();
+    this.menuHints = false;
+    this.cancelPanelGestures();
+    this.panel?.hide();
+    this.applyPause();
+    // Lo que estaba abierto debajo (diálogo, actividad, ficha) vuelve delante.
+    if (this.shown) this.present();
+  }
+
+  /** Una pantalla del menú en el panel: se reubica delante sólo al abrirse o al cambiar de tamaño. */
+  private showXRScreen(screen: PanelScreen, onPick: (i: number) => void, large: boolean): void {
     const panel = this.panel;
-    if (!panel?.visible || !this.xr) {
-      this.panelAway = 0;
+    const xr = this.xr;
+    if (!panel || !xr) return;
+    const size = large ? 'large' : 'normal';
+    if (!panel.visible || panel.kind !== 'screen' || size !== this.panelSize) {
+      const cam = xr.baseExperience.camera;
+      cam.getDirectionToRef(FORWARD, this.tmpDir);
+      panel.place(cam.globalPosition, { x: this.tmpDir.x, z: this.tmpDir.z });
+      this.cancelPanelGestures();
+    }
+    this.panelSize = size;
+    panel.setLabel(null);
+    this.seedLaser = true;
+    panel.show({ kind: 'screen', screen }, onPick, { size });
+  }
+
+  /** Lo que los menús del visor (`XRMenus`) le piden al juego. */
+  private menuHost(): XRMenuHost {
+    const progress = (): string => `${chapter(this.engine.currentChapter()).kicker} · ${this.engine.stamps}/${TOTAL_STAMPS} sellos`;
+    return {
+      phrases: SESSION.phrases,
+      canContinue: () => this.xrTitleInPlace || SESSION.started || this.engine.data.done.length > 0,
+      hasProgress: () => this.engine.data.done.length > 0,
+      progressLabel: progress,
+      chapterLabel: () => {
+        const ch = chapter(this.engine.currentChapter());
+        return `${ch.kicker} · ${ch.title}`;
+      },
+      objectiveLabel: () => {
+        const o = this.engine.mainObjectives()[0];
+        if (!o) return 'Recorrido completo: la escuela queda abierta para explorar.';
+        return `Objetivo: ${this.engine.objectiveTitle(o)}${this.distanceText ? ` (${this.distanceText})` : ''}`;
+      },
+      passport: () => this.passport(),
+      comfort: () => this.xrControls!.getComfort(),
+      setComfort: (s) => this.xrControls?.setComfort(s),
+      muted: () => {
+        try {
+          return this.audio.isMuted;
+        } catch {
+          return true;
+        }
+      },
+      toggleMute: () => {
+        try {
+          this.audio.toggleMute();
+        } catch {
+          // Audio opcional.
+        }
+      },
+      freeRoam: () => SESSION.freeRoam,
+      setFreeRoam: (on) => {
+        this.setFreeRoam(on);
+        this.hud.setFreeRoam(on);
+      },
+      canLeaveToTitle: () => this.canLeaveToTitle(),
+      continueGame: () => void this.startFromXRTitle(false),
+      startNewGame: () => void this.startFromXRTitle(true),
+      backToTitle: () => void this.backToXRTitle(),
+      exitVR: () => {
+        const c = this.xrControls;
+        if (!c) return;
+        // Al salir, `onXRState` cierra el menú (y vuelve al título si se salió desde el inicio).
+        this.xrBusy = true;
+        c.exit().catch(() => {
+          this.xrBusy = false;
+        });
+      },
+      closeMenu: () => {
+        this.closeXRMenu();
+        this.sfx('close');
+      },
+      show: (screen, onPick, large) => this.showXRScreen(screen, onPick, large),
+      setHints: (on) => {
+        this.menuHints = on;
+      },
+      toggled: () => this.click(1500),
+    };
+  }
+
+  private canLeaveToTitle(): boolean {
+    return this.mode === 'play' && this.modal === null && !this.activity && !this.xrBusy;
+  }
+
+  /**
+   * "Continuar" o "Nueva partida" en el inicio del visor. Desde el mirador:
+   * fundido a negro, arranca la partida, el jugador aparece frente al portal
+   * (como el prólogo) y entra a la escuela caminando. Con la partida ya en
+   * curso, "Continuar" sólo cierra el inicio.
+   */
+  private async startFromXRTitle(fresh: boolean): Promise<void> {
+    const c = this.xrControls;
+    if (!c || this.xrBusy) return;
+    if (this.mode !== 'title' && !fresh) {
+      this.xrTitleInPlace = false;
+      this.closeXRMenu();
+      this.sfx('close');
       return;
     }
-    const cam = this.xr.baseExperience.camera;
-    cam.getDirectionToRef(Vector3.Forward(), this.tmpDir);
-    const head = cam.globalPosition;
-    const p = panel.position;
-    const dx = p.x - head.x;
-    const dz = p.z - head.z;
-    const d = Math.hypot(dx, dz) || 1;
-    const fl = Math.hypot(this.tmpDir.x, this.tmpDir.z) || 1;
-    const cos = (this.tmpDir.x * dx + this.tmpDir.z * dz) / (fl * d);
-    const away = d > 2.6 || cos < 0.45 || Math.abs(p.y - (head.y - 0.16)) > 0.8;
-    this.panelAway = away ? this.panelAway + dt : 0;
-    if (this.panelAway > 0.5) {
-      this.panelAway = 0;
-      panel.place(head, { x: this.tmpDir.x, z: this.tmpDir.z });
+    this.xrBusy = true;
+    this.closeXRMenu();
+    try {
+      await c.fade(true, 380);
+      if (!this.inXR) return;
+      if (fresh) this.newGame();
+      else this.resume(true);
+      // Una partida nueva (o sin nada hecho) pasa por el prólogo, que ya lleva
+      // al jugador frente al portal; una retomada también arranca ahí.
+      if (this.engine.data.done.length > 0) {
+        const feet = this.worldOf({ u: START.feet.u, v: START.feet.v, level: 0 });
+        const look = toWorld(this.frame, START.look.u, START.look.v);
+        this.player.teleport(feet, { x: look.x, y: START.look.y, z: look.z });
+        this.syncStations(true);
+        const ch = chapter(this.engine.currentChapter());
+        this.after(1.2, () => this.vrToast(ch.kicker, ch.title));
+      }
+      // El salto del visor se aplica en el cuadro siguiente: se espera a
+      // verlo en su lugar antes de aclarar.
+      await sleep(650);
+      await c.fade(false, 700);
+    } finally {
+      this.xrBusy = false;
+      this.applyPause();
+    }
+    // Los rótulos de los mandos acompañan los primeros pasos, y a los pocos
+    // segundos un recordatorio de lo básico.
+    this.hintsUntil = performance.now() + HINTS_AFTER_START;
+    const hint = this.hintFor?.(SESSION.phrases);
+    if (hint) this.after(5, () => this.vrToast('Controles', hint));
+  }
+
+  /** "Volver al inicio" del menú del juego: se guarda y se vuelve al mirador de Laprida. */
+  private async backToXRTitle(): Promise<void> {
+    const c = this.xrControls;
+    if (!c || this.xrBusy || !this.canLeaveToTitle()) return;
+    this.xrBusy = true;
+    this.closeXRMenu();
+    try {
+      await c.fade(true, 380);
+      if (!this.inXR) return;
+      this.save();
+      this.resetHands();
+      this.mode = 'title';
+      SESSION.atTitle = true;
+      this.setFocus(null);
+      this.markers.setRing(null);
+      const L = this.xrLookout;
+      this.player.teleport({ x: L.eye.x, y: L.eye.y - 1.7, z: L.eye.z }, L.look);
+      this.applyPause();
+      // El panel se ubica con la cabeza ya en el mirador.
+      await sleep(250);
+      if (!this.inXR) return;
+      this.openXRTitle(false);
+      await c.fade(false, 650);
+    } finally {
+      this.xrBusy = false;
+      this.applyPause();
     }
   }
 
-  /** Inicio dentro del visor: el título HTML no existe ahí. */
-  /**
-   * Al entrar al visor desde el título se juega directo (continúa la partida
-   * guardada o empieza una nueva): antes aparecía un menú que había que
-   * apuntar con el láser, y con el clic sin entrar el jugador quedaba quieto.
-   */
-  private startInXR(): void {
-    this.hud.hideTitle();
-    this.xrMenu = false;
-    this.resume(true);
-    const hint = SESSION.phrases ? 'Stick izq.: caminar · A o gatillo: hablar, seguir y elegir' : 'Stick izq.: caminar · A o gatillo: saludar, usar y elegir';
-    this.after(5, () => this.vrToast('Controles', hint));
-  }
+  // ------------------------------------------------------------------ mandos
 
-  /** Botones del visor del cuadro anterior, por control (gatillo, A/X, B/Y). */
-  private readonly xrButtons = new Map<string, boolean[]>();
-
-  /**
-   * Botones leídos del gamepad crudo (mapeo xr-standard: 0 gatillo, 4 A/X,
-   * 5 B/Y), en los dos controles. No dependen del perfil del navegador ni del
-   * puntero de Babylon, que en el Quest no siempre entregaba el clic.
-   */
-  private pollXRButtons(): void {
-    if (!this.inXR || !this.xr) return;
-    for (const c of this.xr.input.controllers) {
-      const pad = c.inputSource.gamepad;
-      if (!pad) continue;
-      const now = [0, 4, 5].map((i) => Boolean(pad.buttons[i]?.pressed));
-      const before = this.xrButtons.get(c.uniqueId) ?? [false, false, false];
-      this.xrButtons.set(c.uniqueId, now);
-      if (now[0] && !before[0]) this.xrPress('trigger', c);
-      if (now[1] && !before[1]) this.xrPress('primary', c);
-      if (now[2] && !before[2]) this.xrPress('secondary', c);
+  /** Vibración en una mano (la del láser si no se dice). */
+  private fx(pattern: HapticPattern, hand?: XRHand): void {
+    const c = this.xrControls;
+    if (!c || !this.inXR) return;
+    try {
+      c.input.haptic(hand ?? c.pointer.activeHand, pattern);
+    } catch {
+      // Sin vibración en este mando.
     }
   }
 
-  private xrPress(kind: 'trigger' | 'primary' | 'secondary', c: WebXRInputSource): void {
-    if (this.mode !== 'play') return;
+  /** Clic agudo y muy corto al pasar por un botón u objeto (con un tope para no tartamudear). */
+  private hoverSound(): void {
+    const now = performance.now();
+    if (now - this.hoverSoundAt < 90) return;
+    this.hoverSoundAt = now;
+    this.click(1900);
+  }
+
+  /** Se eligió algo en el panel: vibración de confirmación y un clic. */
+  private pickedFx(hand: XRHand): void {
+    this.fx('confirm', hand);
+    this.click(1320);
+  }
+
+  /**
+   * Por cuadro, en el visor: rótulos de los mandos, láser encendido o no,
+   * panel que sigue a la vista (o arrastrado con el grip), la pelota en la
+   * mano, el stick en los menús y cada mano contra el panel.
+   */
+  private xrFrame(dt: number): void {
+    const c = this.xrControls;
     const panel = this.panel;
-    if (panel?.visible) {
-      if (kind === 'secondary') {
-        panel.cancel();
+    const xr = this.xr;
+    if (!c || !panel || !xr) return;
+    const input = c.input;
+    const pointer = c.pointer;
+    const cam = xr.baseExperience.camera;
+    cam.getDirectionToRef(FORWARD, this.tmpDir);
+
+    // Rótulos de los mandos: en el inicio, en Controles y los primeros segundos de juego.
+    const hints = this.menuHints || performance.now() < this.hintsUntil;
+    if (hints !== this.hintsOn) {
+      this.hintsOn = hints;
+      c.setHints(hints);
+    }
+
+    // Láser apagado durante los fundidos y en las escenas guionadas sin panel.
+    pointer.setEnabled(!this.xrBusy && !(this.modal === 'cutscene' && !panel.visible));
+
+    // El panel queda fijo en el mundo (pegado a la cara marea); si sale de
+    // la vista un rato, vuelve solo delante. Agarrado con el grip, sigue al rayo.
+    if (this.dragHand) {
+      if (panel.visible && input.rayOf(this.dragHand, this.ray)) panel.dragTo(this.ray);
+      else this.endPanelDrag();
+    } else if (panel.visible) {
+      panel.follow(cam.globalPosition, this.tmpDir, dt);
+    }
+
+    if (this.ballHand) {
+      const g = input.gripPosition(this.ballHand);
+      if (!g || this.mode !== 'play' || this.modal !== null || this.level !== 0) this.releaseBall(false);
+      else this.props.holdBall({ x: g.x, y: g.y, z: g.z });
+      this.ballAway = 0;
+    } else {
+      // Lanzada o dejada fuera del predio (la vereda, la calle): a los pocos
+      // segundos vuelve al gimnasio, para que no se pierda una pieza que la
+      // historia puede pedir.
+      const p = this.props.ballPosition();
+      this.ballAway = inLot(p.u, p.v) ? 0 : this.ballAway + dt;
+      if (this.ballAway > BALL_AWAY_RESET) {
+        this.ballAway = 0;
+        this.props.resetBall();
+      }
+    }
+
+    // Inicio y menú del juego: el stick (cualquiera) mueve el resaltado.
+    if (this.xrMenuOpen && this.stickNav && !this.xrBusy) {
+      const l = input.stick('left');
+      const r = input.stick('right');
+      const s = Math.hypot(l.x, l.y) >= Math.hypot(r.x, r.y) ? l : r;
+      const step = this.stickNav.update(s.x, s.y, dt);
+      if (step && panel.navigate(step.dx, step.dy)) {
+        this.fx('hover');
+        this.hoverSound();
+      }
+    } else {
+      this.stickNav?.reset();
+    }
+
+    // Cada mano contra el panel: el láser termina en él, y el resaltado lo
+    // lleva la mano activa (o la otra, si sólo ella está encima de un botón).
+    // El láser mueve el resaltado sólo cuando PASA a otro botón: un láser
+    // quieto sobre el panel no deshace lo que se eligió con el stick
+    // (comprobado en el emulador: el resaltado volvía solo al botón apuntado).
+    let over: XRHand | null = null;
+    let overZone = -1;
+    for (const hand of HANDS) {
+      const before = this.onPanel[hand];
+      this.onPanel[hand] = null;
+      // El dedo empezó a apretar: desde acá el láser ya no cambia de botón.
+      // Un dedo apoyado en el gatillo sin apretar (más de PULL_MS) no congela nada.
+      const touched = input.analog(hand, 'trigger') >= PULL_START;
+      if (!touched) this.pullSince[hand] = 0;
+      else if (this.pullSince[hand] === 0) this.pullSince[hand] = performance.now();
+      const pulling = touched && performance.now() - this.pullSince[hand] < PULL_MS && !input.isDown(hand, 'trigger');
+      if (!pulling) this.preZone[hand] = -1;
+      if (!panel.visible || this.xrBusy || !input.has(hand) || !input.rayOf(hand, this.ray)) continue;
+      const hit = panel.hitTest(this.ray);
+      if (!hit) continue;
+      this.onPanel[hand] = hit.zone;
+      if (!pulling) this.preZone[hand] = hit.zone;
+      const holding = this.pressed?.hand === hand;
+      const state: PointerState = holding ? 'press' : hit.zone < 0 ? 'idle' : input.isDown(hand, 'trigger') ? 'press' : 'hover';
+      pointer.setHit(hand, { distance: hit.distance, state, onTop: true });
+      if (hit.zone >= 0 && hit.zone !== before && !pulling && !holding && !this.seedLaser && (over === null || hand === pointer.activeHand)) {
+        over = hand;
+        overZone = hit.zone;
+      }
+    }
+    if (panel.visible) this.seedLaser = false;
+    if (over && panel.setHighlight(overZone)) {
+      this.fx('hover', over);
+      this.hoverSound();
+    }
+  }
+
+  /**
+   * Lo que cada láser señala en el mundo (las manos que no están sobre el
+   * panel). Es la misma regla que el foco (`focusByRay`): geometría contra
+   * los candidatos, sin picking contra la escuela.
+   */
+  private xrWorldHits(allowed: boolean): void {
+    const c = this.xrControls;
+    if (!c) return;
+    for (const hand of HANDS) {
+      this.handFocus[hand] = null;
+      if (this.onPanel[hand] !== null) continue;
+      if (!allowed || this.xrBusy || !c.input.has(hand) || !c.input.rayOf(hand, this.ray)) {
+        c.pointer.setHit(hand, null);
+        continue;
+      }
+      const o = this.ray.origin;
+      const d = this.ray.direction;
+      const dl = d.length() || 1;
+      const f = focusByRay(this.candidates, o, d, this.feet);
+      this.handFocus[hand] = f;
+      const press = c.input.isDown(hand, 'trigger');
+      if (f) {
+        // Hasta el punto del rayo más cercano al objeto.
+        const t = ((f.x - o.x) * d.x + (f.y - o.y) * d.y + (f.z - o.z) * d.z) / dl;
+        c.pointer.setHit(hand, { distance: Math.max(0.15, t), state: press ? 'press' : 'hover' });
+      } else {
+        const t = this.ballAim(hand);
+        c.pointer.setHit(hand, t > 0 ? { distance: t, state: press ? 'press' : 'hover' } : null);
+      }
+    }
+  }
+
+  /** Sueltan todo lo que las manos tenían (al entrar o salir del visor y al abrir un menú). */
+  private resetHands(): void {
+    this.cancelPanelGestures();
+    if (this.ballHand) this.releaseBall(false);
+    this.handFocus.left = null;
+    this.handFocus.right = null;
+    this.onPanel.left = null;
+    this.onPanel.right = null;
+    this.lastFocusKey = '';
+  }
+
+  private cancelPanelGestures(): void {
+    if (this.pressed) {
+      this.pressed = null;
+      this.panel?.cancelPress();
+    }
+    this.endPanelDrag(true);
+  }
+
+  private endPanelDrag(silent = false): void {
+    const hand = this.dragHand;
+    if (!hand) return;
+    this.dragHand = null;
+    this.panel?.endDrag();
+    if (!silent) this.fx('release', hand);
+  }
+
+  /**
+   * Botones del Quest 3 (mapeo acordado, ver `XRGameUI.CONTROL_MAP`):
+   * gatillo elige con el láser; A/X usa o acepta; B vuelve; Y abre y cierra
+   * el menú del juego; grip agarra (el panel, la pelota) o usa lo apuntado;
+   * clic del stick derecho trae el panel delante o recuerda el objetivo. El
+   * clic del stick izquierdo (correr) y los sticks los maneja la caminata.
+   */
+  private onXRPress(e: XRButtonEvent): void {
+    if (!this.inXR || this.xrBusy || !this.xrControls) return;
+    switch (e.button) {
+      case 'trigger':
+        // La mano que aprieta el gatillo pasa a ser la del láser.
+        this.xrControls.pointer.activeHand = e.hand;
+        this.xrTrigger(e.hand);
+        return;
+      case 'primary':
+        this.xrAccept(e.hand);
+        return;
+      case 'secondary':
+        if (e.hand === 'left') this.toggleXRMenu(e.hand);
+        else this.xrBack(e.hand);
+        return;
+      case 'grip':
+        this.xrGrip(e.hand);
+        return;
+      case 'stick':
+        if (e.hand === 'right') this.xrRecenter();
+        return;
+    }
+  }
+
+  private onXRRelease(e: XRReleaseEvent): void {
+    if (e.button === 'trigger' && this.pressed?.hand === e.hand) {
+      // Se elige al SOLTAR sobre el mismo botón: apretar, arrepentirse y
+      // correr el láser fuera no elige nada (y un roce del gatillo al
+      // caminar tampoco, porque el panel recién abierto no está armado).
+      this.pressed = null;
+      const panel = this.panel;
+      const c = this.xrControls;
+      if (!panel?.visible || !c || !this.inXR || this.xrBusy) {
+        panel?.cancelPress();
         return;
       }
-      // La opción a la que apunta ESTE control; si no apunta al panel y hay
-      // una sola (Continuar, Cerrar), cualquier botón la elige.
-      c.getWorldPointerRayToRef(this.ray);
-      if (panel.clickRay(this.ray) || panel.pickSingle()) return;
-      if (kind === 'primary') panel.pickFirstChoice();
+      // Tolera el cabeceo del mando al aflojar el dedo (ver `releaseRay`).
+      const picked = panel.releaseRay(c.input.rayOf(e.hand, this.ray) ? this.ray : null);
+      if (picked >= 0) this.pickedFx(e.hand);
+      else panel.cancelPress();
       return;
     }
-    if (kind !== 'secondary' && this.modal === null && this.focus) this.interact(this.focus.key);
+    if (e.button === 'grip') {
+      if (this.dragHand === e.hand) this.endPanelDrag();
+      if (this.ballHand === e.hand) this.releaseBall(this.inXR);
+    }
+  }
+
+  /** Gatillo: sobre el panel, aprieta el botón (se elige al soltar); en el mundo, usa lo apuntado. */
+  private xrTrigger(hand: XRHand): void {
+    const panel = this.panel;
+    const c = this.xrControls;
+    if (!c) return;
+    if (panel?.visible && c.input.rayOf(hand, this.ray)) {
+      const hit = panel.hitTest(this.ray);
+      // El botón apuntado cuando el dedo empezó a apretar, aunque el
+      // cabeceo del mando haya llevado el láser al hueco, al vecino o
+      // apenas fuera del borde de abajo.
+      const pre = this.preZone[hand];
+      const zone = pre >= 0 ? pre : hit ? hit.zone : -1;
+      if (hit || pre >= 0) {
+        // Recién abierto, el panel no está armado: un gatillo que venía
+        // apretado (o un roce al caminar) no aprieta nada.
+        if (zone >= 0 && panel.armed) {
+          panel.setHighlight(zone);
+          panel.press(zone);
+          this.pressed = { hand, zone };
+          this.fx('press', hand);
+        }
+        return;
+      }
+    }
+    if (this.xrMenuOpen) return;
+    this.useFocus(hand, this.handFocus[hand] ?? this.focus);
+  }
+
+  /** A / X: en un panel, elige lo resaltado (o la única opción, o la primera de un diálogo); si no, usa lo señalado. */
+  private xrAccept(hand: XRHand): void {
+    const panel = this.panel;
+    if (panel?.visible) {
+      if (panel.confirm()) this.pickedFx(hand);
+      else this.fx('tick', hand);
+      return;
+    }
+    if (this.xrMenuOpen) return;
+    this.useFocus(hand, this.focus);
+  }
+
+  /** B: vuelve un nivel (submenú, menú) o cierra la ficha. */
+  private xrBack(hand: XRHand): void {
+    const panel = this.panel;
+    if (!panel?.visible) return;
+    if (panel.back()) {
+      this.fx('confirm', hand);
+      this.click(1100);
+    } else {
+      this.fx('tick', hand);
+    }
+  }
+
+  /** Y: abre o cierra el menú del juego. En el inicio no hace nada (no hay juego que pausar). */
+  private toggleXRMenu(hand: XRHand): void {
+    if (this.xrMenuOpen) {
+      if (this.menus?.root === 'pause') {
+        this.closeXRMenu();
+        this.fx('confirm', hand);
+        this.sfx('close');
+      } else {
+        this.fx('tick', hand);
+      }
+      return;
+    }
+    if (this.mode !== 'play' || this.modal === 'cutscene') {
+      this.fx('error', hand);
+      return;
+    }
+    this.openXRMenu('pause');
+    this.fx('confirm', hand);
+    this.sfx('open');
+  }
+
+  /** Clic del stick derecho: trae el panel delante; sin panel, recuerda el objetivo y la distancia. */
+  private xrRecenter(): void {
+    const panel = this.panel;
+    const xr = this.xr;
+    if (!panel || !xr) return;
+    const cam = xr.baseExperience.camera;
+    cam.getDirectionToRef(FORWARD, this.tmpDir);
+    if (panel.visible) {
+      panel.recenter(cam.globalPosition, this.tmpDir);
+      this.fx('tick', 'right');
+      return;
+    }
+    if (this.mode !== 'play') return;
+    const o = this.engine.mainObjectives()[0];
+    const ch = chapter(this.engine.currentChapter());
+    const title = o ? this.engine.objectiveTitle(o) : 'Recorrido completo';
+    this.vrToast(title, this.distanceText ? `${ch.kicker} · ${this.distanceText}` : ch.kicker);
+    this.fx('tick', 'right');
+  }
+
+  /** Grip: sobre el panel lo arrastra; cerca de la pelota (o apuntándola) la toma; si no, usa lo que apunta esa mano. */
+  private xrGrip(hand: XRHand): void {
+    const panel = this.panel;
+    const c = this.xrControls;
+    if (!c) return;
+    if (panel?.visible && !this.dragHand && c.input.rayOf(hand, this.ray) && panel.hitTest(this.ray)) {
+      if (panel.beginDrag(this.ray)) {
+        if (this.pressed?.hand === hand) this.cancelPanelGestures();
+        this.dragHand = hand;
+        this.fx('grab', hand);
+      }
+      return;
+    }
+    if (this.xrMenuOpen) return;
+    if (this.grabBall(hand)) return;
+    // Sólo lo que apunta ESA mano (no la mirada): apoyar los dedos en el grip
+    // sin querer no debería abrir una puerta.
+    this.useFocus(hand, this.handFocus[hand]);
+  }
+
+  private useFocus(hand: XRHand, f: Candidate | null): void {
+    if (!f || this.mode !== 'play' || this.modal !== null) return;
+    const { locked } = this.describe(f.key);
+    this.fx(locked ? 'error' : 'confirm', hand);
+    this.interact(f.key);
+  }
+
+  // ------------------------------------------------------------------ pelota
+
+  /** Distancia por el láser de esa mano hasta la pelota si le apunta (dentro de 4 m), o −1. */
+  private ballAim(hand: XRHand): number {
+    const c = this.xrControls;
+    if (!c || this.mode !== 'play' || this.modal !== null || this.level !== 0 || this.ballHand) return -1;
+    if (!c.input.rayOf(hand, this.ray)) return -1;
+    const b = this.props.ballWorld();
+    const o = this.ray.origin;
+    const d = this.ray.direction;
+    const dl = d.length() || 1;
+    const vx = b.x - o.x;
+    const vy = b.y - o.y;
+    const vz = b.z - o.z;
+    const t = (vx * d.x + vy * d.y + vz * d.z) / dl;
+    if (t <= 0 || t > GRAB_AIM_RANGE) return -1;
+    const miss = Math.sqrt(Math.max(0, vx * vx + vy * vy + vz * vz - t * t));
+    return miss < GRAB_AIM ? t : -1;
+  }
+
+  private grabBall(hand: XRHand): boolean {
+    const c = this.xrControls;
+    if (!c || this.ballHand || this.mode !== 'play' || this.modal !== null || this.level !== 0) return false;
+    const g = c.input.gripPosition(hand);
+    if (!g) return false;
+    const b = this.props.ballWorld();
+    const near = Math.hypot(g.x - b.x, g.y - b.y, g.z - b.z) < GRAB_REACH;
+    if (!near && this.ballAim(hand) < 0) return false;
+    this.ballHand = hand;
+    this.props.holdBall({ x: g.x, y: g.y, z: g.z });
+    this.fx('grab', hand);
+    this.click(240);
+    return true;
+  }
+
+  /**
+   * Soltar la pelota: con la mano quieta cae ahí; con un movimiento, sale
+   * con la velocidad de la mano (y cuenta como usarla, igual que patearla).
+   */
+  private releaseBall(throwIt: boolean): void {
+    const hand = this.ballHand;
+    if (!hand) return;
+    this.ballHand = null;
+    if (this.level !== 0) {
+      // Llevada a un piso alto: vuelve a su lugar (cae sólo al piso del gimnasio).
+      this.props.resetBall();
+      return;
+    }
+    const c = this.xrControls;
+    const g = c?.input.gripPosition(hand) ?? null;
+    if (!throwIt || !c || !g) {
+      this.props.holdBall(null);
+      return;
+    }
+    const v = c.input.handVelocity(hand);
+    this.props.throwBall({ x: g.x, y: g.y, z: g.z }, { x: v.x, y: v.y, z: v.z });
+    this.fx('release', hand);
+    if (Math.hypot(v.x, v.z) < THROW_MIN) return;
+    this.click(180);
+    const it = this.items.find((i) => i.def.id === 'pelota');
+    if (it && this.mode === 'play' && this.modal === null && this.engine.interactableVisible(it.def) && this.engine.interactableReady(it.def)) {
+      this.react(this.engine.interact('pelota'));
+    }
   }
 }

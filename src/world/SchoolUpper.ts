@@ -842,6 +842,9 @@ const I1: Item[] = [
   ).map(([u, w], k) => ({
     ...item('lockers', u, V.corrS + (u < U1.gallery ? 0.405 : 0.355), w, 0.5, 's'),
     color: (['navy', 'black', 'sage'] as const)[k % 3],
+    // Escuela 2050: bajo las ventanas del patio (las cuatro primeras), bajos
+    // de 1,35 m con tapa de madera: con 1,8 m tapaban el antepecho (1,85).
+    ...(w === 2.2 ? { h: 1.35 } : {}),
   })),
   item('extinguisher', 12.0, V.classTop - 0.19, 0.17, 0.17, 'n', false),
   item('extinguisher', 30.3, V.classTop - 0.19, 0.17, 0.17, 'n', false),
@@ -965,6 +968,34 @@ const I1: Item[] = [
   ...bareRoom([U.bufW - 0.12, -34.2], 'w', 2.4, [25.4, -34.2]),
   ...bareRoom([U.bufW + 0.12, -33.6], 'e', 2.4, [28.3, -33.6]),
   ...bareRoom([U1.neW + 0.17, -29.5], 'e', 2.4, [35.6, -29.5]),
+  // Escuela 2050: las aulas que el video no recorrió dejan de estar vacías.
+  // Mesas hexagonales de trabajo en grupo (cuatro sillas cada una), la
+  // pantalla (la pizarra) y un jardín vertical o paneles acústicos, con un
+  // tope de ~1,5 mil triángulos por aula en el visor.
+  // Aula del vértice: cuatro mesas en dos filas lejos de las tres puertas
+  // del sur, y el jardín vertical entre la puerta doble y la de los baños.
+  ...(
+    [
+      [16.9, -34.0],
+      [20.0, -33.9],
+      [19.4, -36.4],
+      [22.7, -35.6],
+    ] as const
+  ).map(([u, v]) => ({ ...item('hexTable', u, v, 1.4, 1.4), color: 'timber' })),
+  { ...item('greenWall', 20.2, V1.northRow - SCHOOL.wallT / 2 - 0.04, 2.0, 0.08, 'n', false), y: 0.35, h: 2.0 },
+  // Aula del fondo (N2): una mesa y paneles acústicos entre la puerta y el
+  // rincón del este.
+  { ...item('hexTable', 30.4, -33.9, 1.4, 1.4), color: 'timber' },
+  { ...item('acousticPanels', 31.2, V1.northRow - SCHOOL.wallT / 2 - 0.025, 2.0, 0.05, 'n', false), y: 0.9, h: 1.3 },
+  // Aula NE: dos mesas en el ala este (la de la pizarra queda libre) y
+  // paneles acústicos en el muro este, al norte de su ventana.
+  ...(
+    [
+      [37.1, -26.9],
+      [37.0, -31.6],
+    ] as const
+  ).map(([u, v]) => ({ ...item('hexTable', u, v, 1.4, 1.4), color: 'timber' })),
+  { ...item('acousticPanels', 38.5 - SCHOOL.extT / 2 - 0.025, -31.4, 0.05, 2.4, 'w', false), y: 0.9, h: 1.3 },
 
   // Ala oeste: escalera, PR, aula y Dirección de secundaria.
   // PR: escritorio blanco con monitor contra el fondo y biblioteca.

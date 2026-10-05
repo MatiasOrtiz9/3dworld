@@ -209,6 +209,16 @@ export const PORTAL_RAILS: readonly (readonly [P, P])[] = [
   ],
 ];
 
+/**
+ * Columnas de luz de la vereda de Laprida (Escuela 2050), en el borde del
+ * cordón: donde estaban los postes de hormigón y su cableado (posiciones del
+ * plano). Las dibuja el constructor y son macizas para el jugador y la gente
+ * (`CityIndex`): están fuera del predio, en la vereda.
+ */
+export const STREET_LIGHTS: readonly P[] = [-4, 12.1, 20, 44, 66].map((u): P => [u * SC, SCHOOL.front + 3.2]);
+/** Radio macizo de una columna de luz (la columna mide 12 cm; la base, 22). */
+export const STREET_LIGHT_R = 0.13;
+
 /** Bandera en el mástil inclinado del portal (como en la fachada real). */
 export const FLAG = { u: PORTAL.u0 + 0.8, v: 1.9 * SC, y: 5.25 } as const;
 

@@ -231,6 +231,88 @@ export function drawIcon(ctx: Ctx, icon: IconId, cx: number, cy: number, s: numb
       ctx.arc(0, 0, h * 0.3, 0, Math.PI * 2);
       ctx.fill();
       break;
+    case 'gear':
+      // Engranaje: ocho dientes cortos alrededor de un aro.
+      for (let k = 0; k < 8; k++) {
+        const a = (k * Math.PI) / 4;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * h * 0.5, Math.sin(a) * h * 0.5);
+        ctx.lineTo(Math.cos(a) * h * 0.82, Math.sin(a) * h * 0.82);
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(0, 0, h * 0.52, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, h * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case 'pad':
+      // Joystick: cuerpo, cruz a la izquierda y dos botones a la derecha.
+      roundRect(ctx, -h * 0.85, -h * 0.45, h * 1.7, h * 0.95, h * 0.4);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-h * 0.62, 0);
+      ctx.lineTo(-h * 0.22, 0);
+      ctx.moveTo(-h * 0.42, -h * 0.2);
+      ctx.lineTo(-h * 0.42, h * 0.2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(h * 0.3, h * 0.08, h * 0.1, 0, Math.PI * 2);
+      ctx.arc(h * 0.55, -h * 0.12, h * 0.1, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case 'stamp':
+      // Sello de goma: mango, cuello y base, con la marca debajo.
+      ctx.beginPath();
+      ctx.arc(0, -h * 0.55, h * 0.22, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-h * 0.1, -h * 0.33);
+      ctx.lineTo(-h * 0.12, h * 0.05);
+      ctx.moveTo(h * 0.1, -h * 0.33);
+      ctx.lineTo(h * 0.12, h * 0.05);
+      ctx.stroke();
+      roundRect(ctx, -h * 0.6, h * 0.05, h * 1.2, h * 0.38, h * 0.08);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-h * 0.7, h * 0.72);
+      ctx.lineTo(h * 0.7, h * 0.72);
+      ctx.stroke();
+      break;
+    case 'home':
+      ctx.beginPath();
+      ctx.moveTo(-h * 0.8, -h * 0.05);
+      ctx.lineTo(0, -h * 0.75);
+      ctx.lineTo(h * 0.8, -h * 0.05);
+      ctx.moveTo(-h * 0.55, -h * 0.25);
+      ctx.lineTo(-h * 0.55, h * 0.7);
+      ctx.lineTo(h * 0.55, h * 0.7);
+      ctx.lineTo(h * 0.55, -h * 0.25);
+      ctx.moveTo(-h * 0.15, h * 0.7);
+      ctx.lineTo(-h * 0.15, h * 0.25);
+      ctx.lineTo(h * 0.15, h * 0.25);
+      ctx.lineTo(h * 0.15, h * 0.7);
+      ctx.stroke();
+      break;
+    case 'sound':
+      // Parlante con dos ondas.
+      ctx.beginPath();
+      ctx.moveTo(-h * 0.75, -h * 0.25);
+      ctx.lineTo(-h * 0.4, -h * 0.25);
+      ctx.lineTo(0, -h * 0.6);
+      ctx.lineTo(0, h * 0.6);
+      ctx.lineTo(-h * 0.4, h * 0.25);
+      ctx.lineTo(-h * 0.75, h * 0.25);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(h * 0.05, 0, h * 0.35, -Math.PI / 4, Math.PI / 4);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(h * 0.05, 0, h * 0.7, -Math.PI / 4, Math.PI / 4);
+      ctx.stroke();
+      break;
   }
   ctx.restore();
 }

@@ -568,7 +568,16 @@ export type ItemKind =
   | 'slimTree' // arbolito de troncos finos en su cazuela (alto en `h`)
   | 'roundPlanter' // cantero redondo escalonado de tres anillos azules (diámetro exterior `w`), con plantas arriba
   | 'bike' // bicicleta apoyada: cuadro, dos ruedas y manubrio (largo en `d` si mira al este/oeste)
-  | 'bunting'; // guirnalda de banderines de colores (a lo largo de u, a la altura `y`)
+  | 'bunting' // guirnalda de banderines de colores (a lo largo de u, a la altura `y`)
+  // Escuela 2050 (auditoría 2050): ítems nuevos. El volumen de cada uno ya
+  // está modelado en `tests/schoolProps.test.ts`; el dibujo lo suman los
+  // paquetes B (`SchoolItems`) y C (`SchoolOutdoor`).
+  | 'solarTree' // árbol solar: caño blanco y 6 hojas fotovoltaicas; copa de `w` × `d` arriba, alto total en `h` (3,4 m)
+  | 'ledLine' // luz lineal continua de pasillo, a lo largo del lado largo de w × d, al ras del cielorraso (o a `y`)
+  | 'infoScreen' // pantalla de pared con marco grafito fino: borde inferior a `y` (1,2 m), alto `h` (0,9 m)
+  | 'vitrine' // vitrina de pie con fondo emisivo y estantes de vidrio, alto `h` (1,9 m)
+  | 'acousticPanels' // paneles acústicos de pared (fieltro y listones): borde inferior a `y` (1,0 m), alto `h` (1,2 m)
+  | 'spotBar'; // barra de focos colgada del cielorraso (Teatro): caño a `h` (0,45 m) bajo el cielorraso, focos inclinados hacia `face`
 
 /** Hacia dónde mira el frente del objeto (o la cara útil de algo contra un muro). */
 export type Facing = 'n' | 's' | 'e' | 'w';

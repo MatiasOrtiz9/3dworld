@@ -14,8 +14,15 @@ const RINGS = [
 const SEGMENTS = 40;
 /** Distancia a los ojos. Más cerca que el plano de recorte (0,1 m) no se vería. */
 const DISTANCE = 0.4;
-/** Opacidad con el stick a fondo: oscurece la periferia sin apagarla. */
+/** Opacidad por defecto con el stick a fondo: oscurece la periferia sin apagarla. */
 const MAX_OPACITY = 0.72;
+/**
+ * Escala del anillo con poco movimiento: el borde transparente se abre de 34°
+ * a ~42° y la viñeta se cierra recién al ir rápido. Caminar despacio hacia un
+ * cartel casi no recorta la vista; correr o girar, sí. Es sólo la escala del
+ * nodo: nada se regenera.
+ */
+const OPEN_SCALE = 1.35;
 
 /**
  * Viñeta de confort: oscurece la periferia mientras el stick mueve al jugador.
@@ -33,6 +40,7 @@ export class ComfortVignette {
   private readonly mesh: Mesh;
   private readonly material: StandardMaterial;
   private level = 0;
+  private maxOpacity = MAX_OPACITY;
 
   constructor(scene: Scene, camera: Camera) {
     const positions: number[] = [];
@@ -81,18 +89,32 @@ export class ComfortVignette {
     this.mesh.setEnabled(false);
   }
 
+  /**
+   * Opacidad con el movimiento a fondo, del ajuste de confort
+   * (`vignetteOpacity`). 0 = la viñeta no aparece nunca.
+   */
+  setMaxOpacity(v: number): void {
+    this.maxOpacity = Math.max(0, Math.min(1, v));
+    if (this.maxOpacity === 0) this.hide();
+  }
+
   /** `target` entre 0 y 1: cuánto movimiento artificial hay en este cuadro. */
   update(target: number, dt: number): void {
+    if (this.maxOpacity === 0) return;
     // Aparece rápido (antes de que el cerebro note el desfase) y se va despacio.
-    const rate = target > this.level ? 8 : 3;
-    this.level += (target - this.level) * Math.min(1, dt * rate);
+    const t = Math.max(0, Math.min(1, target));
+    const rate = t > this.level ? 8 : 3;
+    this.level += (t - this.level) * Math.min(1, dt * rate);
     if (this.level < 0.01) {
       this.level = 0;
       if (this.mesh.isEnabled()) this.mesh.setEnabled(false);
       return;
     }
     if (!this.mesh.isEnabled()) this.mesh.setEnabled(true);
-    this.mesh.visibility = this.level * MAX_OPACITY;
+    this.mesh.visibility = this.level * this.maxOpacity;
+    const scale = OPEN_SCALE + (1 - OPEN_SCALE) * this.level;
+    this.mesh.scaling.x = scale;
+    this.mesh.scaling.y = scale;
   }
 
   hide(): void {

@@ -30,7 +30,7 @@ describe('vegetación de los patios', () => {
   });
 
   for (const t of trees) {
-    // Alcance horizontal de la copa (ver SchoolBuilder.palm y NatureBuilder.broadleaf).
+    // Alcance horizontal de la copa (ver SchoolOutdoor.palm y NatureBuilder.broadleaf).
     // `slimTree`: copa chica de 1 m o penacho corto de hojas paradas (~0,6 m).
     const reach = t.kind === 'palm' ? 3.3 * 0.95 * Math.min(1, (t.h ?? 6) / 6) : t.kind === 'slimTree' ? 0.6 : 2.6;
     it(`${t.kind} en (${t.u}, ${t.v}) no asoma dentro de un ambiente techado`, () => {
@@ -51,7 +51,7 @@ describe('vegetación de los patios', () => {
   /**
    * Las frondas de una palmera alta pasan a la altura de las plantas altas:
    * ninguna puede entrar en un volumen alto (por su muro o su cielorraso) ni
-   * atravesar su pretil. Se arma cada hoja como la dibuja `SchoolBuilder.palm`
+   * atravesar su pretil. Se arma cada hoja como la dibuja `SchoolOutdoor.palm`
    * (caja de 2,8–3,3 m × h/6, centrada a 0,45 de su largo, caída 0,6–0,9 rad)
    * en los dos extremos de cada rango y se muestrea a lo largo.
    */

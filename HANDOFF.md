@@ -91,9 +91,13 @@ npm run build
 `E` interactuar (saludar, abrir, usar), `Esc` menú (pasaporte, ajustes,
 controles), `F` caminar/volar (volando, `E`/`Q` suben y bajan).
 
-**Controles VR**: stick izquierdo camina (clic: correr), stick derecho gira de
-a 30° / teletransporta / paso atrás, gatillo elige con el láser. Panel de
-muñeca con el lugar y el objetivo.
+**Controles VR** (Quest 3, ver 62): al entrar aparece la pantalla de inicio
+del visor. Stick izquierdo camina (clic: correr), stick derecho gira (pasos
+30°/45° o continuo) / teletransporta / paso atrás (clic: panel delante u
+objetivo), gatillo apunta y elige al soltar, A/X usa y acepta, B vuelve, Y
+abre el menú del juego, grip agarra (mueve el panel, toma y lanza la pelota).
+En los menús el stick mueve el resaltado. Muñeca con lugar, objetivo, sellos
+y flecha al objetivo.
 
 **Controles de celular** (pantalla horizontal; ver 56–61): joystick flotante
 en la mitad izquierda (analógico), deslizar en la mitad derecha para mirar
@@ -151,7 +155,8 @@ src/
 │   │                       # personajes, anclas, cerraduras, guardado
 │   ├── activities/         # robot, menú, reciclaje, trivia, danza, penales
 │   ├── world/              # GameProps, Doors, Lights, Markers, Screens, ThinSet
-│   └── xr/GamePanel3D.ts   # panel del juego dentro del visor
+│   └── xr/                 # visor: GamePanel3D (panel), XRGameUI (inicio y
+│                           # menú del juego), panelNav (stick en la grilla)
 ├── audio/                  # Soundscape (AudioApi) + mix, synth, dsp, speech,
 │                           # music, schoolAcoustics
 ├── ui/                     # Hud (DOM), Minimap, draw, input
@@ -160,8 +165,9 @@ src/
 │   └── device.ts           #   modo táctil, gama, resolución, FOV, tope de cuadros
 ├── player/                 # FlyCamera, PlayerController (caminar/volar),
 │                           # VirtualInput (lo que escriben los controles táctiles)
-├── vr/                     # XRSetup, XRLocomotion, XRWristPanel,
-│                           # XRComfortVignette, XRControllerModels
+├── vr/                     # XRSetup (sesión), XRInput (botones), XRPointer (láser),
+│                           # XRLocomotion, XRComfort (+ viñeta), XRFade,
+│                           # XRWristPanel, XRControllerModels
 └── utils/rng.ts            # mulberry32 con semilla
 ```
 
@@ -449,6 +455,16 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     (y `SchoolGround` de los otros dos): si importaran de `SchoolLayout`
     habría un ciclo. Fuera de esos seis, todo importa de `SchoolLayout` y
     nunca coordenadas de los módulos de datos.
+    - **El constructor está partido** (paso 0 de la auditoría 2050):
+      `builders/SchoolBuilder.ts` es la envolvente y el orden de armado
+      (`build`); en `builders/school/` están `SchoolKit` (granja, materiales,
+      generador, marco, `detailed`, `fy`, primitivas `box/cyl/piece/yaw/mat`
+      y las luminarias anotadas en `fixtures`), `SchoolMaterials` (tabla
+      `m` y `STYLES`), `SchoolItems` (equipamiento, sillas, luminarias,
+      cielorrasos) y `SchoolOutdoor` (terreno, frente, vegetación, patios y
+      gimnasio; `OUTDOOR_KINDS` decide qué ítems dibuja). Un solo `SchoolKit`
+      por escuela: el orden de `build` es el de la granja y del generador de
+      la escuela, y no se reordena.
 
 31. **La planta alta sale del CAD del primer piso y del plano de planta
     alta anotado a mano.** El CAD da muros, puertas, escaleras y baños; el
@@ -693,36 +709,92 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     él). La pantalla completa y el bloqueo horizontal se piden al
     LEVANTAR el dedo (con toque, `pointerdown` no cuenta como gesto).
 
-62. **En el visor nada traba la caminata ni exige puntería** (reportado con
-    el Quest puesto: "no puedo caminar y es raro interactuar con los profes"):
-    - Al entrar al visor desde el título se juega directo (`startInXR`):
-      antes aparecía un menú que había que apuntar con el láser, y la
-      caminata quedaba desactivada mientras estuviera abierto.
+62. **El visor: inicio propio, botones con una sola entrada y nada que se
+    elija sin querer** (primero reportado con el Quest puesto: "no puedo
+    caminar y es raro interactuar con los profes"; después, el pedido de que
+    el visor muestre la misma pantalla de inicio que la PC):
+    - **Al entrar al visor aparece SIEMPRE la pantalla de inicio** (`XRMenus`
+      en `game/xr/XRGameUI.ts`, estilo `'title'` de `GamePanel3D`: sello 40,
+      "Recorrido 40", Continuar / Nueva partida, confort, controles, salir).
+      Desde el título se aparece en el mirador de Laprida
+      (`director.xrLookout`, el centro del paneo del título de escritorio);
+      con la partida en curso, donde está el jugador ("Continuar" sólo
+      cierra). Empezar hace un fundido (`XRFade`), deja al jugador frente al
+      portal y muestra los rótulos de los mandos 12 s. Ya NO se juega
+      directo al entrar (era `startInXR`, se sacó): elegir es explícito, y
+      el inicio se navega sin puntería (stick + A). Salir de VR desde el
+      inicio vuelve al título HTML.
+    - **Una sola entrada para los botones: `XRInput`** lee el gamepad crudo
+      de los dos mandos (xr-standard: 0 gatillo, 1 grip, 3 clic del stick,
+      4 A/X, 5 B/Y; gatillo y grip analógicos con histéresis 0,6/0,3) y
+      emite `onPress`/`onRelease`; las manos sin mando, por los eventos de
+      sesión select/squeeze. Al salir de XR o perder un mando suelta lo
+      apretado. El puntero de Babylon (`POINTER_SELECTION`) ya no se
+      habilita: no siempre entregaba el clic en el Quest y sólo sabe elegir
+      al apretar. El láser lo dibuja `XRPointer` (idle / hover dorado /
+      press) con lo que el director le informa por cuadro.
+    - **Mapeo** (`XRGameUI.CONTROL_MAP`, rótulos de `ControllerModels`):
+      stick izq. camina, clic corre; stick der. gira / arco / paso atrás,
+      clic trae el panel delante (sin panel, aviso con objetivo y
+      distancia); gatillo apunta y elige (la mano que lo aprieta toma el
+      láser); A/X usa o acepta; B vuelve o cierra; Y abre y cierra el menú
+      del juego (pausa el reloj y la caminata); grip arrastra el panel (queda
+      fijo hasta el próximo), toma la pelota cerca o apuntada y la lanza con
+      la velocidad de la mano, o usa lo que apunta ESA mano (nunca la
+      mirada: apoyar los dedos no abre puertas). El botón ≡ izquierdo y el
+      de Meta no llegan a WebXR.
+    - **Contra elecciones accidentales** (`GamePanel3D`): 280 ms de armado
+      tras abrir contenido nuevo; el gatillo elige al SOLTAR; histéresis de
+      24 px sobre el resaltado; antirrebote de 200 ms entre gatillo y A.
+    - **Fácil de clickear** (pedido del usuario): al tirar del gatillo el
+      mando cabecea y el láser baja medio botón, así que el clic caía en el
+      de abajo o en el hueco. Ahora (1) el botón se fija cuando el gatillo
+      apenas se toca (`PULL_START` 0,12, `preZone` en el director, vía
+      `XRInput.analog`) y ese es el que se aprieta; (2) al soltar cuenta
+      aunque el láser se haya corrido hasta 96 px del botón (44 px si quedó
+      sobre un vecino) — `releaseRay` mide sobre el plano infinito
+      (`canvasPoint`); (3) imán de 46 px: el hueco y el borde eligen el botón
+      más cercano (`aimZone` en `panelNav`); (4) el panel no se desliza
+      mientras se lo apunta o hay algo apretado. Un dedo apoyado en el
+      gatillo más de 400 ms sin apretar no congela el resaltado.
+      `test-vr.mjs` lo prueba (cabeceo sobre el vecino, hueco, arrepentirse). El láser mueve el resaltado sólo al PASAR a otro
+      botón (uno quieto no deshace lo elegido con el stick) y el primer
+      cuadro de contenido nuevo sólo registra dónde está. Un refresco del
+      mismo contenido (actividad animándose, ajuste que cambió) conserva
+      armado, resaltado y posición. El panel sigue a la vista si queda
+      afuera más de 0,6 s. Durante los fundidos no se camina.
     - Con un diálogo, cartel o actividad abiertos se puede caminar; sólo se
-      frena en las escenas guionadas (`modal === 'cutscene'`).
-    - Los botones se leen del gamepad crudo en los dos controles
-      (`pollXRButtons`, mapeo xr-standard: 0 gatillo, 4 A/X, 5 B/Y), sin
-      depender del puntero de Babylon. Gatillo: elige lo que apunta ese
-      control. A/X: sin frases, saluda a quien está señalado (aplica su
-      charla en silencio); con `?frases=1`, sigue el diálogo, elige la
-      primera opción si no se apunta a ninguna o habla con quien está
-      señalado. B/Y: cierra carteles. Con
-      una sola opción (Continuar, Cerrar) cualquier botón la elige.
-      `GamePanel3D` tiene antirrebote de 300 ms: el gatillo llega también por
-      el puntero de Babylon en el mismo cuadro.
-    - Para señalar a alguien alcanza con mirarlo de cerca (la mirada es el
-      respaldo si ningún control apunta a nada), y el rayo acepta cualquier
-      parte del cuerpo, de la cadera a la cabeza.
-    - El giro por pasos de 30° lo hace `XRLocomotion` leyendo el gamepad
-      crudo del control derecho (el de Babylon queda en 0 grados): dependía
-      de que el perfil del navegador expusiera el stick.
+      frena en las escenas guionadas (`modal === 'cutscene'`), con el inicio
+      o el menú del juego abiertos y durante un fundido.
+    - A/X sin frases saluda a quien está señalado (aplica su charla en
+      silencio); con `?frases=1` sigue el diálogo o elige la primera opción.
+      Para señalar a alguien alcanza con mirarlo de cerca (la mirada es el
+      respaldo si ningún láser apunta a nada).
+    - **Confort** (`vr/XRComfort.ts`, `cimdip-vr-comfort-v1`): giro por
+      pasos 30°/45° o continuo (90–180°/s), velocidad lenta/normal/rápida,
+      caminar hacia donde se mira o hacia donde apunta el mando izquierdo,
+      viñeta apagada/suave/fuerte y modo sentado. Se aplica al instante. La
+      caminata acelera en ~0,16 s y frena en ~0,1 s (sin patinar); el giro
+      se bloquea con el stick adelante/atrás (arco o paso atrás) hasta que
+      vuelve al centro. El giro rota la cámara sobre el eje Y del MUNDO
+      (`yawWorld`, r·q como el teletransporte de Babylon): con q·r giraba
+      sobre el eje de la cabeza y, mirando al piso, inclinaba el horizonte.
+    - **Paso atrás propio** (`XRLocomotion.backStep`, 0,8 m): el de Babylon
+      (`backwardsMovementEnabled`, apagado) no miraba `teleportationEnabled`
+      (bajar el resaltado de un menú con el stick derecho alejaba al
+      jugador) ni las paredes. Éste usa `slideMove` en tramos de 5 cm y no
+      corre con la locomoción apagada. Apagar la locomoción con el arco
+      apuntado lo cancela (`detach`/`attach` del teletransporte): si no,
+      quedaba dibujado y saltaba solo al próximo roce del stick.
+    - La pelota llevada con el grip: su rótulo y su "Patear" la siguen
+      (`ballCand`), no se ofrecen con ella en la mano, y si queda más de
+      4 s fuera del predio vuelve a su lugar.
     - En el emulador IWER la cámara no respeta el espacio de referencia
       desplazado: la caminata calcula la velocidad (`__xr().motion` = 1) y
       escribe la posición, pero el emulador la pisa. En el visor real ese
       mecanismo es el mismo de la teletransportación de Babylon.
-      `tools/test-vr.mjs` prueba el resto con botones emulados (arranque sin
-      menú, caminata habilitada, la A sobre Rubén abre el portal sin panel
-      con líneas ni voz).
+      `tools/test-vr.mjs` prueba el resto con botones y poses emulados (ver
+      8); caminar, girar y teletransportar salen como `LIM`.
 
 63. **El SSAO va último en la cadena de post-proceso.** Cambiar
     samples/FXAA/bloom/nitidez del `DefaultRenderingPipeline` lo reconstruye y
@@ -1305,8 +1377,13 @@ los imprime por vista.
 - Puertas y luces interactivas, carteles, actividades
 - HUD nuevo (objetivo, minimapa, avisos, menú de pausa con pasaporte y ajustes)
 - Audio procedural por zona, voces y música
-- VR: menú del juego en el visor, láser, panel de muñeca, caminata con stick,
-  giro, teletransporte, viñeta de confort
+- VR: pantalla de inicio propia al entrar (Continuar / Nueva partida), menú
+  del juego con la Y (pasaporte, confort, sonido, controles, volver al
+  inicio, salir), todos los botones del Quest 3 con función (62), láser con
+  estados y elección al soltar, stick en los menús, grip para mover el panel
+  y lanzar la pelota, vibración y clics, rótulos en los mandos, muñeca con
+  flecha al objetivo, caminata con aceleración, correr, giro por pasos o
+  continuo, teletransporte, viñeta, modo sentado y fundidos
 - Celular en horizontal: joysticks, tocar para usar, botones, HUD y menús
   acomodados, aviso de girar, perfil 'Móvil', tope de cuadros parejo, audio
   suspendido en segundo plano. Probado en un teléfono EMULADO (Chrome con
@@ -1322,15 +1399,19 @@ El VR **no se probó en un Quest real** desde la transformación en juego. En el
 emulador IWER la cámara XR vuelve al origen en cada cuadro (no respeta el
 espacio de referencia desplazado), así que en `tools/test-vr.mjs` fallan
 "el stick camina", "gira" y "teletransporta" — también fallaban antes de los
-cambios; es una limitación del emulador. Todo lo demás pasa (entrar, menú del
-juego delante, mandos, colores, salir, sin errores).
+cambios; es una limitación del emulador (salen como `LIM`). Todo lo demás
+pasa (inicio del visor, stick, gatillo al soltar, A, B, Y, grip, confort,
+mandos, colores, salir desde el menú, sin errores).
 
 ---
 
 ## 7. Qué mejorar, por prioridad
 
-1. **Probar en un Quest real**: caminata, giro, teletransporte, legibilidad del
-   panel y del HUD de muñeca, fps con la escuela llena (`adb reverse` o HTTPS).
+1. **Probar en un Quest real**: caminata, giro (por pasos y continuo),
+   teletransporte, dónde cae el mirador del inicio, legibilidad del panel, de
+   los rótulos de los mandos y del HUD de muñeca, lanzar la pelota, la
+   vibración, el umbral que esconde el láser al apuntar el arco (−0,6) y fps
+   con la escuela llena (`adb reverse` o HTTPS).
 2. **Pasada de escucha del audio**: el balance se hizo midiendo niveles; los
    valores están en `ZONE_RECIPES` (`audio/mix.ts`) y `BED_TRIM` /
    `EVENT_LEVEL` (`Soundscape.ts`).
@@ -1374,10 +1455,16 @@ node tools/school-shots.mjs "<url>&quality=high|vr" <carpeta> <vistas.json>
   gente, personajes, pájaros, sin HUD), modo jugador (título, partida nueva,
   objetivo, menú de pausa, saludar a Rubén sin frases) y una tercera con
   `&frases=1` (diálogo y voz). Sale con 1 si algo falla.
-- `test-vr.mjs`: entra desde el título, verifica el menú del juego en el
-  visor, empieza la partida y prueba locomoción (ver la limitación del
-  emulador en 6), paredes, mandos, saludar a Rubén con la A sin frases,
-  salida y consola.
+- `test-vr.mjs`: entra desde el título y verifica la pantalla de inicio del
+  visor (sin caminar, rótulos), el stick en el menú, el gatillo apuntado con
+  el láser (orienta el mando emulado hasta que `hitTest` cae en el botón) que
+  elige al soltar, un ajuste de confort que se guarda, A, B, Controles,
+  "Nueva partida" con la A (panel cerrado, se camina), saludar a Rubén con
+  la A sin frases, Y (pausa: sin caminar, reloj quieto), pasaporte y vuelta
+  con B, grip que arrastra el panel, clic del stick derecho, "Volver al
+  inicio" y "Continuar", locomoción (ver la limitación del emulador en 6:
+  `LIM` no cuenta como falla), correr, paredes, salir de VR desde el menú y
+  consola.
 - `test-mobile.mjs`: un Android emulado de 844 × 390 jugando con los dedos
   (`Input.dispatchTouchEvent`, varios a la vez): detección y perfil,
   joystick analógico, mirar, dos pulgares, saltar, correr, tocar a una

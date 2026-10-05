@@ -6,6 +6,8 @@ import {
   schoolFrame,
   schoolSolidLocal,
   SCHOOL,
+  STREET_LIGHTS,
+  STREET_LIGHT_R,
   toLocal,
   type SchoolFrame,
 } from './SchoolLayout';
@@ -125,7 +127,7 @@ export class CityIndex {
    */
   isSolid(x: number, z: number, feetY?: number): boolean {
     const b = this.blockAt(x, z);
-    if (!b) return this.backdropSolid(x, z);
+    if (!b) return this.streetLightAt(x, z) || this.backdropSolid(x, z);
     if (b.landmark && this.school) {
       const { u, v } = toLocal(this.school, x, z);
       return schoolSolidLocal(u, v, feetY ?? SCHOOL.floorY);
@@ -184,6 +186,17 @@ export class CityIndex {
     for (const m of bd.masses) {
       if (m.layer === 2 && Math.abs(x - m.x) <= m.w / 2 && Math.abs(z - m.z) <= m.d / 2) return true;
     }
+    return false;
+  }
+
+  /**
+   * ¿Sobre una columna de luz de la vereda de la escuela (Escuela 2050)? Están
+   * fuera del predio, en la calle: la escuela no las ve, se miran acá.
+   */
+  private streetLightAt(x: number, z: number): boolean {
+    if (!this.school) return false;
+    const { u, v } = toLocal(this.school, x, z);
+    for (const [lu, lv] of STREET_LIGHTS) if (Math.hypot(u - lu, v - lv) < STREET_LIGHT_R) return true;
     return false;
   }
 
@@ -320,7 +333,7 @@ export class CityIndex {
     if (Math.abs(x) > this.plan.extent || Math.abs(z) > this.plan.extent) return true;
     if (this.outsideFence(x, z)) return true;
     const b = this.blockAt(x, z);
-    if (!b) return false;
+    if (!b) return this.streetLightAt(x, z);
     if (b.kind === 'water') return true;
     // La multitud se queda en planta baja y no usa las escaleras.
     if (b.landmark && this.school) {

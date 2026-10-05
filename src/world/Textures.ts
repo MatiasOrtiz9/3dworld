@@ -111,7 +111,7 @@ const UV_SCALE: Record<SurfaceKind, number> = {
   // da piezas de mármol de ~60 cm y bloques de ~40 × 20 cm en muros comunes.
   marble: 3,
   block: 5,
-  // Onda de chapa cada ~8 cm y ladrillo de ~25 × 7,5 cm en tramos de muro comunes.
+  // Chapa (sólo fuera de la escuela, que va en metros) y ladrillo de ~25 × 7,5 cm en tramos de muro comunes.
   corrugated: 4,
   brick: 3,
   plaster: 3,
@@ -129,7 +129,7 @@ const CANVAS_PERIOD_M: Partial<Record<SurfaceKind, number>> = {
   grass: 2,
   solar: 1.6,
   metal: 1,
-  lattice: 0.5,
+  lattice: 0.6,
 };
 
 /**
@@ -236,8 +236,17 @@ export class Textures {
     // superficie. Antes cada material clonaba la textura para ponerle su escala:
     // con ~110 materiales eso eran 110 clones de un canvas de 256x256, un coste
     // enorme y completamente evitable, ya que todos usaban el mismo valor.
-    this.finish(tex, key, this.scaleOf(kind, metric), FLOOR_KINDS.has(kind) ? 8 : 4, t0);
+    this.finish(tex, key, this.scaleOf(kind, metric), Textures.aniso(drawKind, kind), t0);
     return tex;
+  }
+
+  /**
+   * Filtrado anisotrópico: 8× en pisos, en la chapa y en los listones del
+   * cielorraso (se miran siempre en ángulo rasante: con 4× las juntas
+   * volvían a hacer moiré a 20 m), 4× en el resto.
+   */
+  private static aniso(drawKind: SurfaceKind, kind: SurfaceKind): number {
+    return FLOOR_KINDS.has(kind) || drawKind === 'corrugated' || drawKind === 'lattice' ? 8 : 4;
   }
 
   /**
@@ -268,17 +277,18 @@ export class Textures {
     // El látex no tiene juntas, así que color y relieve no necesitan
     // coincidir (el color sigue a 1/1,8 m).
     const tile = drawKind === 'plaster' ? 2.5 : 1;
-    this.finish(tex, key, this.scaleOf(kind, true) * tile, FLOOR_KINDS.has(drawKind) ? 8 : 4, t0);
+    this.finish(tex, key, this.scaleOf(kind, true) * tile, Textures.aniso(drawKind, drawKind), t0);
     return tex;
   }
 
   /**
    * Capa de gran escala en formato ORM (oclusión ambiente y rugosidad, ver
    * `paintMacro`), en metros y compartida por los materiales métricos.
-   * `traffic`: la variante de pisos, con marcas de uso.
+   * `traffic`: la variante de pisos, con marcas de uso. `soft`: la de
+   * exteriores y techos, con la mitad de variación (Escuela 2050).
    */
-  macro(traffic: boolean): Texture {
-    const key = traffic ? 'macro:floor' : 'macro:wall';
+  macro(traffic: boolean, soft = false): Texture {
+    const key = `${traffic ? 'macro:floor' : 'macro:wall'}${soft ? ':soft' : ''}`;
     const hit = this.cache.get(key);
     if (hit) return hit;
     const t0 = performance.now();
@@ -286,7 +296,7 @@ export class Textures {
     const tex = new DynamicTexture(`tex_${key}`, { width: size, height: size }, this.scene, true);
     const ctx = tex.getContext() as unknown as CanvasRenderingContext2D;
     const image = ctx.createImageData(size, size);
-    image.data.set(paintMacro(size, traffic));
+    image.data.set(paintMacro(size, traffic, soft ? 0.5 : 1));
     ctx.putImageData(image, 0, 0);
     tex.gammaSpace = false;
     this.finish(tex, key, 1 / MACRO_PERIOD_M, 4, t0);
@@ -370,21 +380,32 @@ export class Textures {
     }
   }
 
-  /** Cielorraso de listones de madera en retícula (comedor). */
+  /**
+   * Cielorraso de listones de madera (comedor; Escuela 2050, ítem 11 de la
+   * revisión D): listones paralelos de 9 cm con 3 cm de sombra entre ellos,
+   * a lo largo del ambiente. La retícula de 25 cm de antes, con su cruce
+   * oscuro, se volvía un damero titilante a pocos metros.
+   */
   private drawLattice(ctx: CanvasRenderingContext2D, size: number): void {
-    ctx.fillStyle = 'rgb(40,32,26)';
+    // Fondo: el negro acústico entre listones, no negro puro (rebote).
+    ctx.fillStyle = 'rgb(58,48,40)';
     ctx.fillRect(0, 0, size, size);
-    const cell = size / 2;
-    const bar = cell * 0.32;
-    ctx.fillStyle = '#ffffff';
-    for (let i = 0; i < 2; i++) {
-      ctx.fillRect(i * cell, 0, bar, size);
-      ctx.fillRect(0, i * cell, size, bar);
-    }
-    ctx.fillStyle = 'rgba(200,170,140,0.5)';
-    for (let i = 0; i < 2; i++) {
-      ctx.fillRect(i * cell + bar * 0.15, 0, bar * 0.2, size);
-      ctx.fillRect(0, i * cell + bar * 0.15, size, bar * 0.2);
+    const slats = 5;
+    const pitch = size / slats;
+    const slat = pitch * 0.75;
+    for (let i = 0; i < slats; i++) {
+      const x = i * pitch + (pitch - slat) / 2;
+      // Cada listón con su tono (madera natural, no impresa).
+      const t = 236 + ((i * 37) % 5) * 4;
+      ctx.fillStyle = `rgb(${t},${t},${t})`;
+      ctx.fillRect(x, 0, slat, size);
+      // Veta: dos líneas finas a lo largo, apenas más oscuras.
+      ctx.fillStyle = 'rgba(160,130,100,0.18)';
+      ctx.fillRect(x + slat * 0.3, 0, 1.2, size);
+      ctx.fillRect(x + slat * 0.68, 0, 1, size);
+      // Canto apenas en sombra (el listón tiene espesor).
+      ctx.fillStyle = 'rgba(0,0,0,0.12)';
+      ctx.fillRect(x + slat - 2, 0, 2, size);
     }
   }
 

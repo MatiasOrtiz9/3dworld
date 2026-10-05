@@ -6,7 +6,7 @@ import { SCHOOL, WALLS, type Level, type P } from './SchoolLayout';
  *
  * Puro: qué aulas tienen interruptor y dónde está (junto a la puerta, del
  * lado del picaporte y adentro del aula). Las luminarias las ubica el
- * constructor de la escuela (`SchoolBuilder.lights`) con su grilla de
+ * constructor de la escuela (`SchoolItems.lights`) con su grilla de
  * siempre; para estas aulas dibuja sólo el marco y deja anotada cada
  * luminaria en `switchable`, que el juego enciende o apaga.
  */

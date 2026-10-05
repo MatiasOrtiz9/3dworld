@@ -971,6 +971,11 @@ const ITEMS_PB: Item[] = [
   item('board', U.east1 - 0.12, -26.8, 0.04, 2.4, 'w', false),
   item('teacherDesk', U.east1 - 1.3, -26.8, 0.7, 1.3, 'w'),
   item('chair', U.east1 - 0.75, -26.8, 0.45, 0.45, 'w', false),
+  // Escuela 2050: dos mesas hexagonales de trabajo en grupo, lejos del
+  // barrido de las dos puertas dobles, y un jardín vertical en el muro del
+  // depósito (al sur de su puerta).
+  ...[-25.45, -28.1].map((v) => ({ ...item('hexTable', 29.3, v, 1.4, 1.4), color: 'timber' })),
+  { ...item('greenWall', U.stairE + SCHOOL.wallT / 2 + 0.04, -26.0, 0.08, 2.4, 'e', false), y: 0.35, h: 2.0 },
 
   // E.P
   item('table', 16.9, -26.8, 2.0, 1.1),
@@ -1259,14 +1264,20 @@ const ITEMS_PB: Item[] = [
   // Frente rojo brillante del mostrador corrido de la recepción y su tapa
   // blanca de 30 cm (video 2026, 0:03), bajo la ventanilla y el vidriado.
   { ...item('wallPanel', U.recW - 0.115, -4.36, 0.03, 2.35, 'w', false), y: 0, h: 1.03, color: 'red' },
-  { ...item('wallPanel', U.recW - 0.24, -4.36, 0.28, 2.4, 'w', false), y: 1.03, h: 0.04, color: 'frame' },
+  // Escuela 2050: la tapa tiene 8,5 cm (1,03–1,115 m) y tapa entero el
+  // tablón de la ventanilla (`counter`, 1,05–1,10), que antes asomaba 3 cm
+  // sobre la tapa blanca. En su canto, una línea de luz cálida.
+  { ...item('wallPanel', U.recW - 0.24, -4.36, 0.28, 2.4, 'w', false), y: 1.03, h: 0.085, color: 'frame' },
+  { ...item('wallPanel', U.recW - 0.383, -4.36, 0.008, 2.36, 'w', false), y: 1.065, h: 0.014, color: 'ledWarm' },
   // Portería: escritorio con monitor y su silla al fondo de la celda, contra
   // el tabique de la oficina norte (lejos de la ventanilla, donde atiende el
   // portero, y del barrido de las dos puertas). Estaba vacía.
   { ...item('desk2', 39.65, V.recN + 0.42, 1.4, 0.6, 'n'), color: 'oak' },
   { ...item('chair', 39.65, V.recN + 1.07, 0.5, 0.5, 'n', false), color: 'metalDark' },
-  { ...item('speaker', U.east1 + 0.22, -3.2, 0.22, 0.26, 'e', false), y: 2.68 },
-  { ...item('ac', U.east1 + 0.23, -5.35, 0.22, 0.86, 'e', false), y: 2.75 },
+  // Parlante y split corridos a los costados del mural de San Martín
+  // (auditoría 2050: tapaban sus esquinas de arriba).
+  { ...item('speaker', U.east1 + 0.22, -2.9, 0.22, 0.26, 'e', false), y: 2.68 },
+  { ...item('ac', U.east1 + 0.23, -6.0, 0.22, 0.86, 'e', false), y: 2.75 },
   { ...item('floorPatch', 35.235, -5.45, 1.2, 6.2, 's', false), color: 'charcoal' },
   { ...item('floorPatch', 37.2, -9.8, 6.4, 0.5, 's', false), color: 'charcoal' },
 
@@ -1332,14 +1343,12 @@ const ITEMS_PB: Item[] = [
     ] as const
   ).map(([a, b, h]) => ({ ...item('wallMat', (a + b) / 2, -20.65, b - a, 0.1, 's', false), color: 'red', h })),
   // Aro de básquet (1:37): poste rojo acolchado contra el testero este, al
-  // norte del arco, tablero blanco con borde rojo y aro naranja a 3,05 m.
-  { ...item('wallPanel', 66.99, -15.5, 0.3, 0.3, 'w', false), h: 3.6, color: 'red' },
-  // Tablero blanco de 1,8 × 1,05 m con su borde rojo.
-  { ...item('wallPanel', 66.845, -15.5, 0.03, 1.9, 'w', false), y: 2.65, h: 1.15, color: 'red' },
-  { ...item('wallPanel', 66.82, -15.5, 0.04, 1.8, 'w', false), y: 2.7, h: 1.05, color: 'frame' },
-  { ...item('wallPanel', 66.72, -15.5, 0.16, 0.04, 'w', false), y: 3.02, h: 0.03, color: 'orange' },
-  ...[-15.3, -15.7].map((v) => ({ ...item('wallPanel', 66.47, v, 0.44, 0.02, 'w', false), y: 3.03, h: 0.02, color: 'orange' })),
-  ...[66.27, 66.67].map((u) => ({ ...item('wallPanel', u, -15.5, 0.02, 0.44, 'w', false), y: 3.03, h: 0.02, color: 'orange' })),
+  // norte del arco, tablero blanco de 1,8 × 1,05 m con borde rojo y aro
+  // naranja a 3,05 m. Escuela 2050: un solo ítem `hoop` (antes, ocho
+  // `wallPanel`: el aro era un cuadrado de tablitas sin red). Con `y` es el
+  // aro de cancha: `y` es la altura del aro, `h` la del poste y `w` = `d` el
+  // ancho del tablero; el ítem apoya contra el muro (lo dibuja `SchoolOutdoor`).
+  { ...item('hoop', 67.22, -15.5, 1.8, 1.8, 'w', false), y: 3.05, h: 3.6 },
 
   // Arte y Teatro. Video 2026 (1:13–1:18): Arte tiene filas de mesas largas
   // de tapa roja con un banco a cada lado, de oeste a este (como el comedor),
@@ -1357,6 +1366,12 @@ const ITEMS_PB: Item[] = [
     { ...item('boxBench', 55.85, v, 2.0, 0.7, 'e'), color: 'red', legs: 'blue', h: 0.72 },
     { ...item('boxBench', 55.85, v - 0.6, 2.0, 0.35, 's'), color: 'red', legs: 'blue', h: 0.42 },
   ]),
+  // Escuela 2050: en Arte, dos pantallas con los dibujos de los chicos en el
+  // muro de Teatro (lleno); en Teatro, la barra de focos frente a la pizarra
+  // y paneles acústicos en el muro de Arte, junto a la puerta.
+  ...[-24.6, -27.7].map((v) => ({ ...item('infoScreen', U.artE - SCHOOL.wallT / 2 - 0.03, v, 0.06, 1.5, 'w', false), y: 1.15, h: 0.9 })),
+  { ...item('spotBar', U.teaE - 1.5, -26.3, 0.06, 3.0, 'e', false), h: 0.45 },
+  { ...item('acousticPanels', U.artE + SCHOOL.wallT / 2 + 0.025, -23.95, 0.05, 2.4, 'e', false), y: 0.9, h: 1.4 },
   { ...item('shelf', U.artE + 0.34, -26.6, 0.45, 1.8, 'e'), color: 'timber' },
   item('board', U.teaE - 0.135, -26.3, 0.04, 2.4, 'w', false),
   { ...item('desk2', U.teaE - 0.45, -23.7, 0.6, 1.4, 'w'), color: 'frame' },

@@ -1,5 +1,5 @@
 import type { Scene } from '@babylonjs/core/scene';
-import type { Mesh } from '@babylonjs/core/Meshes/mesh';
+import { Mesh } from '@babylonjs/core/Meshes/mesh';
 import type { Material } from '@babylonjs/core/Materials/material';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { CreateBox } from '@babylonjs/core/Meshes/Builders/boxBuilder';
@@ -11,6 +11,58 @@ import { VertexBuffer } from '@babylonjs/core/Buffers/buffer';
 import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData';
 
 export type Primitive = 'box' | 'post' | 'cylinder' | 'cylinderHi' | 'cone' | 'sphere' | 'plane' | 'blob' | 'blobHi';
+
+/**
+ * Zona de una copia según su caja en el mundo (centro y medio lado por eje).
+ * 0 es "el resto": lo que no se puede esconder por zonas. Ver `setPartition`.
+ */
+export type ZoneOf = (x: number, y: number, z: number, hx: number, hy: number, hz: number) => number;
+
+/** Un trozo de una malla de la granja: las copias de una zona. */
+export interface FarmChunk {
+  readonly mesh: Mesh;
+  readonly zone: number;
+  readonly tris: number;
+}
+
+/**
+ * Una combinación primitiva/material partida en zonas. La malla `global`
+ * (todas las copias, la de siempre) sigue existiendo: es la que proyecta
+ * sombra y la que conviene dibujar cuando casi todo está a la vista; los
+ * trozos son las mismas copias repartidas, para esconder las que no se ven.
+ */
+export interface FarmPart {
+  readonly key: string;
+  readonly global: Mesh;
+  readonly tris: number;
+  readonly chunks: readonly FarmChunk[];
+}
+
+/**
+ * Agrupa las copias por zona. Las zonas con menos de `minTris` triángulos
+ * van al resto (0): un trozo es un draw call y no vale la pena por una
+ * maceta. Devuelve null si todo quedó en el resto (no hay nada que partir).
+ */
+export function groupByZone(zones: ArrayLike<number>, trisEach: number, minTris: number): Map<number, number[]> | null {
+  const groups = new Map<number, number[]>();
+  for (let i = 0; i < zones.length; i++) {
+    const z = zones[i];
+    let g = groups.get(z);
+    if (!g) groups.set(z, (g = []));
+    g.push(i);
+  }
+  const rest = groups.get(0) ?? [];
+  for (const [z, g] of groups) {
+    if (z !== 0 && g.length * trisEach < minTris) {
+      for (const i of g) rest.push(i);
+      groups.delete(z);
+    }
+  }
+  if (rest.length) groups.set(0, rest.sort((a, b) => a - b));
+  else groups.delete(0);
+  if (groups.size === 1 && groups.has(0)) return null;
+  return groups;
+}
 
 /**
  * Granja de instancias finas (thin instances).
@@ -31,9 +83,12 @@ export type Primitive = 'box' | 'post' | 'cylinder' | 'cylinderHi' | 'cone' | 's
 export class InstanceFarm {
   private readonly farms = new Map<
     string,
-    { mesh: Mesh; matrices: number[]; count: number }
+    { mesh: Mesh; prim: Primitive; matrices: number[]; count: number }
   >();
   private committed = false;
+  private zoneOf: ZoneOf | null = null;
+  private minChunkTris = 60;
+  private readonly partsList: FarmPart[] = [];
 
   constructor(private readonly scene: Scene) {}
 
@@ -60,7 +115,7 @@ export class InstanceFarm {
     const key = prim === 'post' ? `box|post|${material.name}` : `${prim}|${material.name}`;
     let farm = this.farms.get(key);
     if (!farm) {
-      farm = { mesh: this.createSource(prim, key, material), matrices: [], count: 0 };
+      farm = { mesh: this.createSource(prim, key, material), prim, matrices: [], count: 0 };
       this.farms.set(key, farm);
     }
 
@@ -91,15 +146,34 @@ export class InstanceFarm {
     );
   }
 
+  /**
+   * Partición espacial (antes de `commit`): cada copia va a la zona que diga
+   * `zoneOf` y, además de la malla de siempre, se arma una malla por zona con
+   * sus copias. Sin esto el volumen de cada malla es la ciudad entera y la
+   * cámara nunca descarta nada: un baño cerrado pagaba los pupitres de toda
+   * la escuela. Quién decide qué trozos se dibujan es `ZoneCulling`.
+   */
+  setPartition(zoneOf: ZoneOf, minChunkTris = 60): void {
+    if (this.committed) throw new Error('InstanceFarm: la partición va antes de commit()');
+    this.zoneOf = zoneOf;
+    this.minChunkTris = minChunkTris;
+  }
+
+  /** Combinaciones partidas en zonas (vacío sin `setPartition`). */
+  get parts(): readonly FarmPart[] {
+    return this.partsList;
+  }
+
   /** Sube todos los buffers a la GPU. Se llama una sola vez. */
   commit(): void {
     if (this.committed) return;
-    for (const farm of this.farms.values()) {
+    for (const [key, farm] of this.farms) {
       if (farm.count === 0) {
         farm.mesh.dispose();
         continue;
       }
       const buffer = new Float32Array(farm.matrices);
+      if (this.zoneOf) this.split(key, farm.mesh, farm.prim, buffer, farm.count);
       // staticBuffer = true: prometemos no volver a modificarlo, la GPU lo aloja mejor.
       farm.mesh.thinInstanceSetBuffer('matrix', buffer, 16, true);
       // Con staticBuffer hay que recalcular el bounding a mano. Si no se hace,
@@ -110,6 +184,55 @@ export class InstanceFarm {
       farm.matrices.length = 0; // liberamos la copia en JS
     }
     this.committed = true;
+  }
+
+  /** Arma los trozos de una combinación (ver `setPartition`). */
+  private split(key: string, global: Mesh, prim: Primitive, buffer: Float32Array, count: number): void {
+    const zoneOf = this.zoneOf!;
+    // Medio lado de la caja de cada copia: la primitiva unitaria mide 1 (las
+    // copas abolladas sobresalen hasta un 20 %).
+    const k = prim === 'blob' || prim === 'blobHi' ? 0.6 : 0.5;
+    const zones = new Int32Array(count);
+    const b = buffer;
+    for (let i = 0; i < count; i++) {
+      const o = i * 16;
+      zones[i] = zoneOf(
+        b[o + 12],
+        b[o + 13],
+        b[o + 14],
+        k * (Math.abs(b[o]) + Math.abs(b[o + 4]) + Math.abs(b[o + 8])),
+        k * (Math.abs(b[o + 1]) + Math.abs(b[o + 5]) + Math.abs(b[o + 9])),
+        k * (Math.abs(b[o + 2]) + Math.abs(b[o + 6]) + Math.abs(b[o + 10])),
+      );
+    }
+    const trisEach = global.getTotalIndices() / 3;
+    const groups = groupByZone(zones, trisEach, this.minChunkTris);
+    if (!groups) return;
+    const geometry = global.geometry;
+    const material = global.material;
+    if (!geometry || !material) return;
+    const chunks: FarmChunk[] = [];
+    for (const [zone, idx] of groups) {
+      // Comparte la geometría y el material de la malla de siempre: mismo
+      // shader (el nombre conserva el prefijo que leen los complementos de
+      // `Materials`), ningún programa nuevo que compilar.
+      const mesh = new Mesh(`${key}@${zone}`, this.scene);
+      geometry.applyToMesh(mesh);
+      mesh.material = material;
+      mesh.isPickable = false;
+      mesh.receiveShadows = true;
+      const sub = new Float32Array(idx.length * 16);
+      for (let n = 0; n < idx.length; n++) sub.set(b.subarray(idx[n] * 16, idx[n] * 16 + 16), n * 16);
+      mesh.thinInstanceSetBuffer('matrix', sub, 16, true);
+      // Con búfer estático, el volumen se recalcula a mano (HANDOFF 5.1):
+      // acá es justamente lo que permite descartar el trozo.
+      mesh.thinInstanceRefreshBoundingInfo(true);
+      mesh.freezeWorldMatrix();
+      // Arranca escondido: hasta que `ZoneCulling` decida, se dibuja la de siempre.
+      mesh.isVisible = false;
+      chunks.push({ mesh, zone, tris: trisEach * idx.length });
+    }
+    this.partsList.push({ key, global, tris: trisEach * count, chunks });
   }
 
   /** Cantidad de draw calls que va a costar la ciudad. */
@@ -148,6 +271,9 @@ export class InstanceFarm {
     for (const [key, farm] of this.farms) {
       if (farm.count > 0 && key.includes(materialPrefix)) farm.mesh.setEnabled(enabled);
     }
+    for (const part of this.partsList) {
+      if (part.key.includes(materialPrefix)) for (const c of part.chunks) c.mesh.setEnabled(enabled);
+    }
   }
 
   /** Mallas fuente, para registrarlas en el generador de sombras. */
@@ -170,9 +296,12 @@ export class InstanceFarm {
   }
 
   dispose(): void {
+    for (const part of this.partsList) for (const c of part.chunks) c.mesh.dispose();
+    this.partsList.length = 0;
     for (const farm of this.farms.values()) farm.mesh.dispose();
     this.farms.clear();
     this.committed = false;
+    this.zoneOf = null;
   }
 
   // --- primitivas unitarias, centradas en el origen ---

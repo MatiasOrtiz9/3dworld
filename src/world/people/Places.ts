@@ -638,7 +638,7 @@ export class Places {
   }
 
   private buildSeats(): void {
-    // Tapa del asiento de las sillas como las dibuja `SchoolBuilder.chair`
+    // Tapa del asiento de las sillas como las dibuja `SchoolItems.chair`
     // (estaba en 0,48: la gente quedaba 2 cm en el aire sobre la silla).
     const chairY = FURNITURE.seat;
     for (const it of ITEMS) {

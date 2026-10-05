@@ -26,7 +26,15 @@ export type IconId =
   | 'recycle'
   | 'leaf'
   | 'trash'
-  | 'target';
+  | 'target'
+  // Los del menú del visor (ajustes, controles, pasaporte, inicio, sonido).
+  | 'gear'
+  | 'pad'
+  | 'stamp'
+  | 'home'
+  | 'sound'
+  // La salida de una actividad en el visor (sólo la dibuja drawHoloIcon).
+  | 'door';
 
 export interface ChoiceView {
   label: string;

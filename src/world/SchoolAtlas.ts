@@ -15,7 +15,17 @@ import {
   WALLS,
   WALKABLE,
 } from './SchoolLayout';
+import { DOORS } from './SchoolDoors';
 import {
+  drawBoardScreen,
+  drawCrestDisc,
+  drawLedSwatch,
+  drawMottoGlass,
+  drawSanMartinLed,
+  drawScreenPlate,
+  drawTotem2050,
+  LED_COOL,
+  LED_WARM,
   drawBalletPoster,
   drawCorkBoard,
   drawCrestBanner,
@@ -796,4 +806,76 @@ function drawPlan(ctx: CanvasRenderingContext2D, r: Region): void {
   ctx.rotate(-Math.PI / 2 + Math.atan(MC_SLOPE));
   ctx.fillText('CALLE MIGUEL CANÉ', 0, 0);
   ctx.restore();
+}
+
+// ------------------------------------------------------------- pantallas 2050
+
+/**
+ * Atlas de PANTALLAS de la Escuela 2050 (auditoría 2050, ítems 5, 15, 17 y
+ * 18): todo lo que se ve encendido (tótem, mural LED, lema en vidrio, escudo
+ * retroiluminado, pantallas de las aulas, plaquitas de las puertas y las
+ * tiras LED). Una textura aparte porque se muestra con otro material, con
+ * luz propia y sin sombra (un draw call); el atlas de carteles impresos
+ * sigue igual.
+ */
+export const SW = 2048;
+export const SH = 2048;
+
+export const SR = {
+  boards: [0, 976, 2048, 1232],
+  totemFront: [0, 1240, 232, 1765],
+  totemBack: [240, 1240, 472, 1765],
+  crestDisc: [480, 1240, 992, 1752],
+  motto: [1000, 1240, 2032, 1496],
+  ledWarm: [1004, 1508, 1060, 1564],
+  ledCool: [1072, 1508, 1128, 1564],
+  sanMartin: [1000, 1572, 1824, 2020],
+  // Vidrio oscuro liso: cantos del tótem.
+  dark: [1840, 1580, 1900, 1640],
+} as const;
+
+/** Las cuatro pantallas de aula (512 × 256 cada una: la proporción 2:1 del paño). */
+export function boardScreenRegion(variant: number): Region {
+  const k = ((variant % 4) + 4) % 4;
+  return [k * 512 + 4, 980, k * 512 + 508, 1228];
+}
+
+/** Rótulo de la plaquita de una puerta: genérico arriba, propio abajo. */
+export function plateText(label: string): { caption: string; title: string } {
+  const parts = label
+    .split('·')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return { caption: '', title: 'Aula' };
+  if (parts.length === 1) return { caption: '', title: parts[0] };
+  return { caption: parts[0], title: parts.slice(1).join(' · ') };
+}
+
+/** Rótulos distintos de las puertas del juego, en orden (una plaquita cada uno). */
+export const DOOR_PLATES: readonly string[] = [...new Set(DOORS.map((d) => d.label || 'Aula'))];
+
+/** Celda de la plaquita de un rótulo (4 columnas de 512 × 96). */
+export function doorPlateRegion(label: string): Region {
+  const i = Math.max(0, DOOR_PLATES.indexOf(label || 'Aula'));
+  const col = i % 4;
+  const row = Math.floor(i / 4);
+  return [col * 512 + 4, row * 96 + 4, col * 512 + 508, row * 96 + 92];
+}
+
+/** Pinta el atlas de pantallas completo en un contexto de SW × SH. */
+export function drawScreens(ctx: CanvasRenderingContext2D): void {
+  ctx.fillStyle = '#0e1621';
+  ctx.fillRect(0, 0, SW, SH);
+  for (const label of DOOR_PLATES) {
+    const { caption, title } = plateText(label);
+    drawScreenPlate(ctx, doorPlateRegion(label), caption, title);
+  }
+  for (let k = 0; k < 4; k++) drawBoardScreen(ctx, boardScreenRegion(k), k);
+  drawTotem2050(ctx, SR.totemFront, 'front');
+  drawTotem2050(ctx, SR.totemBack, 'back');
+  drawCrestDisc(ctx, SR.crestDisc);
+  drawMottoGlass(ctx, SR.motto);
+  drawLedSwatch(ctx, SR.ledWarm, LED_WARM);
+  drawLedSwatch(ctx, SR.ledCool, LED_COOL);
+  drawSanMartinLed(ctx, SR.sanMartin);
 }
