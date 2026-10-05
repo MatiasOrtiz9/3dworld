@@ -14,6 +14,7 @@ import { XRLocomotion, type WalkIndex } from './XRLocomotion';
 import { ComfortVignette } from './XRComfortVignette';
 import { ControllerModels } from './XRControllerModels';
 import { WristPanel, type HudInfo } from './XRWristPanel';
+import { XRMapOverlay } from './XRMapOverlay';
 // Efecto secundario: registra `scene.beginAnimation`, que usa el anillo
 // giratorio del destino de teletransporte.
 import '@babylonjs/core/Animations/animatable';
@@ -29,6 +30,8 @@ export interface XRSetupOptions {
   index: () => WalkIndex | null;
   /** Pisada caminando con el stick (sonido de pasos). */
   onStep?: (running: boolean) => void;
+  /** Abre el menú de mapa y ajustes con el botón secundario del mando. */
+  onMenu?: () => void;
 }
 
 export interface XRControls {
@@ -186,6 +189,10 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
   const locomotion = new XRLocomotion(scene, experience, options.index, options.onStep);
   const teleportedObserver = teleport.onAfterCameraTeleport.add(() => locomotion.markTeleported());
   const wrist = new WristPanel(scene);
+  const mapOverlay = new XRMapOverlay(scene);
+  const mapOverlayObserver = scene.onBeforeRenderObservable.add(() => {
+    if (base.state === WebXRState.IN_XR) mapOverlay.update(cam);
+  });
   const models = new ControllerModels(scene, experience.input, (grip) => wrist.attachTo(grip));
   const vignette = new ComfortVignette(scene, cam);
   const vignetteObserver = scene.onBeforeRenderObservable.add(() => {
@@ -198,6 +205,10 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
     controller.onMotionControllerInitObservable.add((motionController) => {
       motionController.getMainComponent()?.onButtonStateChangedObservable.add((component) => {
         if (component.changes.pressed?.current) motionController.pulse(0.22, 25).catch(() => undefined);
+      });
+      const menuId = controller.inputSource.handedness === 'left' ? 'y-button' : 'b-button';
+      motionController.getComponent(menuId)?.onButtonStateChangedObservable.add((component) => {
+        if (component.changes.pressed?.current) options.onMenu?.();
       });
     });
   });
@@ -242,6 +253,7 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
     },
     setHud(info: HudInfo): void {
       wrist.set(info);
+      mapOverlay.set(info);
     },
     placeAt(eye: Vector3, look: Vector3, feetY?: number): void {
       if (base.state !== WebXRState.IN_XR) return;
@@ -258,6 +270,7 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
       if (disposed) return;
       disposed = true;
       scene.onBeforeRenderObservable.remove(vignetteObserver);
+      scene.onBeforeRenderObservable.remove(mapOverlayObserver);
       teleport.onTargetMeshPositionUpdatedObservable.remove(teleportTargetObserver);
       teleport.onAfterCameraTeleport.remove(teleportedObserver);
       base.onStateChangedObservable.remove(stateObserver);
@@ -265,6 +278,7 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
       locomotion.dispose();
       models.dispose();
       wrist.dispose();
+      mapOverlay.dispose();
       vignette.dispose();
       experience.dispose();
       jointSource.dispose();

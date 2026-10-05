@@ -65,6 +65,7 @@ export interface HudHandlers {
   onPause?(paused: boolean): void;
   onReset?(): void;
   onFreeRoam?(on: boolean): void;
+  onFreeRoamStart?(): void;
   passport?(): PassportView;
 }
 
@@ -200,13 +201,14 @@ export class Hud {
 
   // ===================================================================== título
 
-  showTitle(opts: { progress: string | null; onStart(): void; onContinue(): void }): void {
+  showTitle(opts: { progress: string | null; onStart(): void; onContinue(): void; onFreeRoam(): void }): void {
     this.titleOpen = true;
     document.body.classList.add('in-title');
     const title = $('title');
     title.classList.remove('hidden');
     const cont = $<HTMLButtonElement>('title-continue');
     const start = $<HTMLButtonElement>('title-start');
+    const free = $<HTMLButtonElement>('title-free');
     cont.hidden = !opts.progress;
     $('title-progress').textContent = opts.progress ?? '';
     start.classList.toggle('primary', !opts.progress);
@@ -218,6 +220,10 @@ export class Hud {
     start.onclick = () => {
       this.hideTitle();
       opts.onStart();
+    };
+    free.onclick = () => {
+      this.hideTitle();
+      opts.onFreeRoam();
     };
     (opts.progress ? cont : start).focus();
   }
@@ -638,6 +644,8 @@ export class Hud {
 
   setFreeRoam(on: boolean): void {
     this.freeRoam = on;
+    document.body.classList.toggle('free-roam', on);
+    $('free-roam-badge').hidden = !on;
     const b = $('btn-free');
     b.textContent = on ? 'Activado' : 'Desactivado';
     b.setAttribute('aria-pressed', String(on));

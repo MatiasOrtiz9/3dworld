@@ -105,6 +105,8 @@
         padding: 0.7rem 0.85rem 0.6rem; transition: opacity 0.4s, transform 0.4s;
       }
       #objective.flash { animation: flash 1.2s ease; }
+      .free-roam #objective { display: none; }
+      #free-roam-badge { position: absolute; left: 1rem; top: calc(1rem + var(--safe-t)); padding: 0.45rem 0.75rem; border-radius: 999px; background: var(--glass-strong); border: 1px solid rgba(79,170,122,0.6); color: #a7e3bd; font-size: 0.74rem; font-weight: 750; letter-spacing: 0.08em; box-shadow: 0 6px 24px rgba(0,0,0,0.28); }
       @keyframes flash { 0% { box-shadow: 0 0 0 0 rgba(242,193,78,0.7); } 100% { box-shadow: 0 0 0 14px rgba(242,193,78,0); } }
       #objective header { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; }
       #obj-chapter { color: var(--gold); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
@@ -121,6 +123,7 @@
 
       /* mapa y lugar */
       #mapbox { position: absolute; right: 1rem; top: calc(1rem + var(--safe-t)); width: 176px; display: grid; justify-items: center; gap: 0.45rem; pointer-events: none; }
+      #map-caption { color: var(--dim); font-size: 0.58rem; font-weight: 750; letter-spacing: 0.12em; line-height: 1; text-shadow: 0 1px 3px #000; }
       #minimap { width: 176px; height: 176px; display: block; border-radius: 50%; box-shadow: 0 8px 30px rgba(0,0,0,0.35); }
       #map-level { position: absolute; top: 6px; left: 6px; font: 700 0.64rem/1 var(--font); letter-spacing: 0.08em; padding: 0.28rem 0.42rem; border-radius: 6px; background: var(--glass-strong); border: 1px solid var(--line); }
       #room-label {
@@ -336,7 +339,8 @@
 
       @media (max-width: 640px) {
         #objective { width: calc(100vw - 2rem - 130px); }
-        #mapbox { width: 116px; } #minimap { width: 116px; height: 116px; }
+        #mapbox { width: 116px; gap: 0.3rem; } #minimap { width: 116px; height: 116px; }
+        #map-caption { font-size: 0.5rem; }
         #room-label { max-width: 140px; }
         #pause .sheet { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
         #pause nav { flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--line); }
@@ -356,8 +360,10 @@
         <h2 id="obj-title">Llegada a Laprida</h2>
         <ul id="obj-list"></ul>
       </section>
+      <div id="free-roam-badge" hidden>✦ PASEO LIBRE</div>
 
       <div id="mapbox">
+        <span id="map-caption">MAPA COMPLETO</span>
         <canvas id="minimap" width="352" height="352" aria-label="Mapa de la escuela"></canvas>
         <span id="map-level">PB</span>
         <div id="room-label" class="hidden" aria-live="polite"></div>
@@ -483,6 +489,7 @@
       <div class="menu-buttons">
         <button class="big-btn primary" id="title-continue" type="button" hidden>Continuar <span id="title-progress"></span></button>
         <button class="big-btn" id="title-start" type="button">Nueva partida <span>empieza en Laprida</span></button>
+        <button class="big-btn" id="title-free" type="button">Paseo libre <span>toda la escuela abierta, sin misiones</span></button>
         <button class="big-btn" id="title-vr" type="button" hidden>Jugar en VR <span>visor conectado</span></button>
       </div>
       <p class="fine">WASD para caminar · clic y arrastrar para mirar · E para interactuar · Esc para el menú. Personajes ficticios; escuela reconstruida desde su plano y el recorrido virtual de 2020.</p>

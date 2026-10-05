@@ -502,6 +502,7 @@ async function start(): Promise<void> {
         // Se pide en cada cuadro: la escuela se reconstruye al cambiar la calidad.
         index: () => city?.index ?? null,
         onStep: (running) => sound.step(running),
+        onMenu: () => director?.toggleXRMenu(),
       });
       const controls = xr;
       const base = controls.experience.baseExperience;
