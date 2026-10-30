@@ -188,10 +188,14 @@ export class SchoolOutdoor {
         for (const u of [43.2, 44.6, 46.0, 47.4, 48.8].map(planU)) {
           const p = toWorld(this.k.f, u, vc);
           const n = this.k.detailed ? 8 : 5;
+          // Con tarjetas: una mata de gramínea con espigas, de hojas finas
+          // recortadas (los palitos sueltos se leían como varillas de madera).
+          if (this.k.cards) this.k.cards.tuft('grass', p.x, p.z, 0.55, 1.25, 1.3, u * 2.3, 3);
           for (let k = 0; k < n; k++) {
             const a = (k / n) * Math.PI * 2 + this.k.rng.range(-0.3, 0.3);
             const tilt = this.k.rng.range(0.12, 0.36);
             const len = this.k.rng.range(1.0, 1.35);
+            if (this.k.cards) continue;
             this.k.farm.add(
               'box',
               m.tuft,
@@ -610,6 +614,20 @@ export class SchoolOutdoor {
         // 1,6–3,5 m de ancho la gente lo atravesaba. Los vecinos se pisan
         // 15 cm y forman un cerco continuo de 1,25 m.
         const p = toWorld(this.k.f, u, v);
+        if (this.k.cards) {
+          // Cerco de hojas recortadas: una tarjeta a lo largo de cada cara y
+          // una cruzada al medio (macizo como el ítem, sin la icoesfera lisa).
+          const along = w >= d;
+          const yaw = along ? 0 : Math.PI / 2;
+          const len = Math.max(w, d) + 0.15;
+          const thick = Math.min(w, d);
+          for (const s of [-0.5, 0, 0.5]) {
+            const off = s * thick * 0.8;
+            this.k.cards.card('ivy', new Vector3(p.x + (along ? 0 : off), FY + 0.62, p.z + (along ? off : 0)), len, 1.25, yaw);
+          }
+          this.k.cards.flat('fern', p.x, p.z, FY + 1.22, along ? len : thick + 0.1, along ? thick + 0.1 : len, 0);
+          break;
+        }
         this.k.farm.add('blob', this.k.mats.foliage(PALETTE.leafMid), new Vector3(p.x, FY + 0.6, p.z), new Vector3(w + 0.15, 1.3, d + 0.1));
         break;
       }
