@@ -129,6 +129,10 @@ export function createGymGlints(
   };
 }
 
+const GLINT_VARYING = `#ifdef GYMGLINT
+varying float vGlintFade;
+#endif`;
+
 class GymGlintPlugin extends MaterialPluginBase {
   constructor(
     material: Material,
@@ -152,10 +156,13 @@ class GymGlintPlugin extends MaterialPluginBase {
     vertex: string;
     fragment: string;
   } {
+    // Sólo uniformes: con UBO (WebGL2) Babylon descarta estas declaraciones
+    // (las arma desde `ubo`); el varying va en CUSTOM_*_DEFINITIONS, que está
+    // en los dos caminos. Declarado acá, el shader no compilaba en WebGL2
+    // ("vGlintFade: undeclared identifier") y los reflejos no se veían.
     const decl = `#ifdef GYMGLINT
 uniform vec4 ggEye;
 uniform vec4 ggBox;
-varying float vGlintFade;
 #endif`;
     return {
       ubo: [
@@ -177,6 +184,7 @@ varying float vGlintFade;
   override getCustomCode(shaderType: string): Record<string, string> | null {
     if (shaderType === 'vertex') {
       return {
+        CUSTOM_VERTEX_DEFINITIONS: GLINT_VARYING,
         CUSTOM_VERTEX_UPDATE_POSITION: `#ifdef GYMGLINT
 {
   vec3 L = positionUpdated;
@@ -212,6 +220,7 @@ varying float vGlintFade;
     }
     if (shaderType === 'fragment') {
       return {
+        CUSTOM_FRAGMENT_DEFINITIONS: GLINT_VARYING,
         CUSTOM_FRAGMENT_MAIN_BEGIN: `#ifdef GYMGLINT
 if (vPositionW.x < ggBox.x || vPositionW.x > ggBox.y || vPositionW.z < ggBox.z || vPositionW.z > ggBox.w) discard;
 #endif`,
