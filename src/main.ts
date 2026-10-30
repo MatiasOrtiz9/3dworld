@@ -13,6 +13,7 @@ import { DEFAULT_HOUR, Environment, formatHour } from './world/Environment';
 import { QualityManager, TIER_ORDER, TOUCH_TIER_ORDER, type QualityTier } from './core/QualityManager';
 import { createFlyCamera } from './player/FlyCamera';
 import { RenderPipeline } from './core/RenderPipeline';
+import { warmUpShaders } from './core/ShaderWarmup';
 import { PlayerController, type MoveMode } from './player/PlayerController';
 import { VirtualInput } from './player/VirtualInput';
 import { Life } from './world/Life';
@@ -450,19 +451,6 @@ async function assembleCity(newSeed: number): Promise<void> {
   city.freezeMaterials();
   scene.blockMaterialDirtyMechanism = true;
 
-  // Calienta las variantes de la fachada con espera limitada; el resto se
-  // compila cuando entra en cuadro, sin alargar la pantalla de carga.
-  const warm = await city.precompile(camera, (done, total) => {
-    bootBar.style.width = `${78 + (done / total) * 20}%`;
-    bootMsg.textContent = `Compilando materiales… ${done}/${total}`;
-  });
-  if (import.meta.env.DEV) {
-    // Diagnóstico intencional: la consola es la interfaz de las herramientas de
-    // verificación. Sólo en desarrollo — en producción este bloque no se emite.
-    // eslint-disable-next-line no-console
-    console.log(`[precompile] ${warm.compiled}/${warm.total} en ${warm.ms} ms`);
-  }
-
   // Autos por las calles del barrio y pájaros. El detalle y el piso, del
   // perfil y del índice de ESTA construcción (sin adivinarlos de globales).
   const cityIndex = city.index;
@@ -508,6 +496,19 @@ async function assembleCity(newSeed: number): Promise<void> {
 
   quality.applyRuntime();
   player.setMode('walk');
+
+  // Con todo creado (gente, autos, juego): compila en paralelo los shaders
+  // de la escena entera, con presupuesto. Ver core/ShaderWarmup.
+  const warm = await warmUpShaders(scene, 2500, (done, total) => {
+    bootBar.style.width = `${78 + (done / total) * 20}%`;
+    bootMsg.textContent = `Compilando materiales… ${done}/${total}`;
+  });
+  if (import.meta.env.DEV) {
+    // Diagnóstico intencional: la consola es la interfaz de las herramientas de
+    // verificación. Sólo en desarrollo — en producción este bloque no se emite.
+    // eslint-disable-next-line no-console
+    console.log(`[precompile] ${warm.ready}/${warm.total} en ${warm.ms} ms`);
+  }
 
   await progress(100, 'Lista');
   updateStats();

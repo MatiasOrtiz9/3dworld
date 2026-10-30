@@ -11,6 +11,7 @@ import type { Scene } from '@babylonjs/core/scene';
 import type { Material } from '@babylonjs/core/Materials/material';
 import { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData';
+import { uploadThinColors } from '../../core/thinUpload';
 import type { GeoKit } from './geoKit';
 
 export class Channel {
@@ -85,7 +86,7 @@ export class Channel {
     if (!visible) return;
     this.mesh.thinInstanceCount = this.n;
     this.mesh.thinInstanceBufferUpdated('matrix');
-    if (this.colors) this.mesh.thinInstanceBufferUpdated('color');
+    if (this.colors) uploadThinColors(this.mesh, this.colors, this.n);
   }
 
   dispose(): void {
