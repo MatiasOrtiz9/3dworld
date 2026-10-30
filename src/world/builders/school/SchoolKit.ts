@@ -4,6 +4,7 @@ import type { InstanceFarm } from '../../../core/InstanceFarm';
 import type { Materials } from '../../Materials';
 import type { Rng } from '../../../utils/rng';
 import type { NatureBuilder } from '../NatureBuilder';
+import type { FoliageCards } from '../../FoliageCards';
 import type { StreetLevel } from '../StreetLevel';
 import { PrismBatch } from '../PrismBatch';
 import { SCHOOL, toWorld, type Item, type P, type SchoolFrame } from '../../SchoolLayout';
@@ -68,6 +69,8 @@ export class SchoolKit {
   readonly switchable = new Map<string, Fixture[]>();
   /** Todas las luminarias dibujadas, en el orden en que se dibujaron. */
   readonly fixtures: LampFixture[] = [];
+  /** Tarjetas de follaje recortado (frondas de palmera, matas): las crea `SchoolBuilder.build`. */
+  cards: FoliageCards | null = null;
 
   constructor(
     readonly farm: InstanceFarm,

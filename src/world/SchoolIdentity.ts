@@ -30,6 +30,7 @@ import {
 } from './SchoolLayout';
 import { createGymGlints } from './GymGlints';
 import { createLightPools, type LightPoolsHandle } from './LightPools';
+import { createSchoolFloorGlints, type FloorGlints } from './FloorGlints';
 import { DOORS } from './SchoolDoors';
 import type { LampFixture } from './builders/school/SchoolKit';
 import {
@@ -73,6 +74,8 @@ export class SchoolIdentity {
   private readonly screenTexture: DynamicTexture;
   /** Pozos de luz de las luminarias (sólo si el constructor pasó `fixtures`). */
   private readonly pools: LightPoolsHandle | null;
+  /** Reflejos de las luminarias en los pisos pulidos (fuera del polideportivo). */
+  private readonly floorGlints: FloorGlints | null;
 
   /**
    * `fixtures`: las luminarias que anotó el constructor
@@ -259,6 +262,8 @@ export class SchoolIdentity {
     this.glints = createGymGlints(scene, frame, fixtures);
     // Pozos de luz falsos bajo las luminarias (ítem 24).
     this.pools = fixtures ? createLightPools(scene, frame, fixtures) : null;
+    // Y su reflejo en los pisos encerados de pasillos, hall y aulas.
+    this.floorGlints = fixtures ? createSchoolFloorGlints(scene, frame, fixtures) : null;
     q.wall(U.e - 0.18, GYM_MID, 5.1, 2.2, 2.75, -1, 0, R.crestBanner);
 
     // Carteles de los ambientes sobre sus puertas.
@@ -335,6 +340,7 @@ export class SchoolIdentity {
    */
   setRoomLights(room: string, on: boolean): void {
     this.pools?.setRoom(room, on);
+    this.floorGlints?.setRoom(room, on);
   }
 
   dispose(): void {
@@ -344,6 +350,7 @@ export class SchoolIdentity {
     this.screenMaterial.dispose();
     this.screenTexture.dispose();
     this.pools?.dispose();
+    this.floorGlints?.dispose();
     this.glints.dispose();
     this.material.dispose();
     this.floorMaterial.dispose();

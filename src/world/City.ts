@@ -4,6 +4,7 @@ import { Materials } from './Materials';
 import { Rng } from '../utils/rng';
 import { generateCityPlan, type CityPlan, type LayoutOptions } from './CityLayout';
 import { NatureBuilder } from './builders/NatureBuilder';
+import { FoliageCards } from './FoliageCards';
 import { BuildingBuilder } from './builders/BuildingBuilder';
 import { NeighborhoodBuilder } from './builders/NeighborhoodBuilder';
 import { InfraBuilder } from './builders/InfraBuilder';
@@ -96,6 +97,9 @@ export class City {
       rng,
       options.highDetailFoliage ?? true,
     );
+    // Hojas recortadas también en los árboles y matas del barrio (mismo
+    // material y draw call que las de la escuela).
+    nature.cards = new FoliageCards(this.farm, scene);
     const street = new StreetLevel(
       this.farm,
       this.mats,
@@ -156,7 +160,9 @@ export class City {
     infra.canal(this.plan);
 
     this.farm.commit();
-    this.schoolIdentity = new SchoolIdentity(scene, this.schoolFrame);
+    // Con las luminarias anotadas: pozos de luz, reflejos en los pisos y las
+    // barras reales del polideportivo (sin ellas, nada de eso se armaba).
+    this.schoolIdentity = new SchoolIdentity(scene, this.schoolFrame, schoolBuilder.fixtures);
     this.lightFixtures = schoolBuilder.switchable;
 
     const schoolTris = this.schoolMeshes.reduce((n, m) => n + m.getTotalIndices() / 3, 0);
@@ -267,6 +273,11 @@ export class City {
   }
 
   /** Mallas fuente, para registrarlas como proyectoras de sombra. */
+  /** Luces de un aula (interruptor del juego): apaga sus pozos de luz y reflejos. */
+  setRoomLights(room: string, on: boolean): void {
+    this.schoolIdentity.setRoomLights(room, on);
+  }
+
   get shadowCasters() {
     return [...this.farm.sourceMeshes, ...this.schoolMeshes, ...this.schoolIdentity.shadowCasters];
   }

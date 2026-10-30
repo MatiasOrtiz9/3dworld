@@ -499,7 +499,10 @@ async function assembleCity(newSeed: number): Promise<void> {
     canInteract: () => player?.mode === 'walk',
     fixtures: city.lightFixtures,
     // Apagar un aula también baja su luz (mapa de luz natural, ver Environment).
-    onRoomLights: (id, on) => environment?.setRoomLights(id, on),
+    onRoomLights: (id, on) => {
+      environment?.setRoomLights(id, on);
+      city?.setRoomLights(id, on);
+    },
   });
   if (xr) await director.connectXR(xr.experience, xr);
 
