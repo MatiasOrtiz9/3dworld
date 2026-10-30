@@ -21,13 +21,13 @@ export const CHAPTERS: readonly ChapterDef[] = [
     id: 'prologo',
     kicker: 'Prólogo',
     title: 'Llegada a Laprida',
-    brief: 'La escuela cumple 40 años y vos armás el recorrido del aniversario. Primero, que te abran la puerta.',
+    brief: 'La escuela cumple 40 años y vos armás el recorrido del aniversario. Primero, que te abran.',
   },
   {
     id: 'c1',
     kicker: 'Capítulo 1',
     title: 'La planta baja',
-    brief: 'Tres sellos en la planta baja: el Aula Maker, la cantina y el Espacio recreativo. El orden lo elegís vos.',
+    brief: 'Tres sellos en la planta baja: Aula Maker, cantina y Espacio recreativo, en el orden que quieras.',
   },
   {
     id: 'c2',

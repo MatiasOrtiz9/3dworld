@@ -422,6 +422,13 @@ await page.evaluate(() => window.__game.closeModalUI());
 await page.evaluate(() => window.__game.setModal?.(null));
 await sleep(400);
 
+// El acto sin frases: el jugador elige su mensaje (fuera del acto, elegir no cambia nada).
+await page.evaluate(() => void window.__game.actSpeech());
+await sleep(400);
+await capture('17b-acto-mensaje', 'gamePanel', { dist: 0.58 });
+await page.evaluate(() => window.__game.shown?.pick(0));
+await sleep(400);
+
 // ----------------------------------------------------------------- cartel
 
 // Rubén a 1,4 m delante de la mirada (el emulador no lleva la cabeza hasta él).
@@ -463,6 +470,9 @@ await page.evaluate(() => window.__game.vrToast('Controles', 'Stick izq.: camina
 await capture('19c-aviso-controles', 'gameToast', { wait: 600, pad: 60, dist: 0.42 });
 await page.evaluate(() => window.__game.vrToast('Se abrió', 'Recepción'));
 await capture('19d-aviso-se-abrio', 'gameToast', { wait: 600, pad: 60, dist: 0.42 });
+// La presentación de un capítulo (la más larga: tres líneas).
+await page.evaluate(() => window.__game.announceChapter({ kicker: 'Capítulo 1', title: 'La planta baja', brief: 'Tres sellos en la planta baja: Aula Maker, cantina y Espacio recreativo, en el orden que quieras.' }));
+await capture('19e-aviso-capitulo', 'gameToast', { wait: 600, pad: 60, dist: 0.42 });
 
 // ------------------------------------------------------------------ muñeca
 

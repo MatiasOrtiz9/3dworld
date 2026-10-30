@@ -1004,7 +1004,8 @@ export class GamePanel3D {
       detailH = rows.length * 48;
     } else if (text) {
       ctx.font = font(500, 30);
-      lines = wrapLines(ctx, text, maxW, 2);
+      // Hasta tres líneas: la presentación de cada capítulo (una o dos frases) entra entera.
+      lines = wrapLines(ctx, text, maxW, 3);
       detailH = lines.length * 38;
     }
     const blockH = 40 + (detailH ? 6 + detailH : 0);
@@ -1075,7 +1076,7 @@ export class GamePanel3D {
     this.toast.setEnabled(true);
     // Más filas de controles, más tiempo para leerlas (con 3,4 s el de
     // controles ya se apagaba a mitad de la segunda fila).
-    this.toastDur = keyed ? 3.4 + 1.6 * rows.length : lines.length > 1 ? 4.4 : 3.4;
+    this.toastDur = keyed ? 3.4 + 1.6 * rows.length : lines.length > 2 ? 6 : lines.length > 1 ? 4.4 : 3.4;
     this.toastLeft = this.toastDur;
   }
 

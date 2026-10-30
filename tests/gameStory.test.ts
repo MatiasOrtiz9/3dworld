@@ -343,7 +343,8 @@ describe('guía, motivación y final', () => {
   it('cada capítulo se presenta en una o dos frases del narrador', () => {
     for (const c of CHAPTERS) {
       expect(c.brief.length, c.id).toBeGreaterThan(20);
-      expect(c.brief.length, `${c.id}: muy largo para el cartel y el aviso del visor`).toBeLessThanOrEqual(120);
+      // El aviso del visor muestra tres líneas de unos 34 caracteres.
+      expect(c.brief.length, `${c.id}: muy largo para el cartel y el aviso del visor`).toBeLessThanOrEqual(100);
       // Narrador, no un personaje: sin comillas ni rayas de diálogo.
       expect(c.brief, c.id).not.toMatch(/[«»—]/);
     }
