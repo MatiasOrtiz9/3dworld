@@ -225,7 +225,11 @@ export class WindPlugin extends MaterialPluginBase {
               worldPos.xz += wDir * push;
               // Un poco de vaivén cruzado: el recorrido es un ocho, no un péndulo.
               worldPos.xz += vec2(-wDir.y, wDir.x) * amp * ww * 0.25 * gust * sin(wt * 1.71 + ph * 2.3);
+              // vNormalW sólo existe con NORMAL: sin luces (el cuadro en que se
+              // reconstruye la escuela, antes del Environment) no compilaba.
+              #ifdef NORMAL
               worldPos.xyz += vNormalW * flut * 0.022 * (0.4 + 0.6 * gust) * (0.3 + 0.7 * wv);
+              #endif
               // La panza de cada masa, más oscura (sombra propia de la copa).
               float wAO = mix(0.9, 1.04, wv);
             #endif

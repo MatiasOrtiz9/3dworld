@@ -197,7 +197,10 @@ class CardPlugin extends MaterialPluginBase {
             float cPush = cWind.z * cW * (0.45 * cGust + cOsc * (0.35 + 0.65 * cGust));
             worldPos.xz += cDir * cPush;
             worldPos.y -= abs(cPush) * 0.25;
+            // vNormalW sólo existe con NORMAL (sin luces no se declara).
+            #ifdef NORMAL
             worldPos.xyz += vNormalW * cFlut * cWind.z * 0.18 * cW;
+            #endif
             uvUpdated = cReg.xy + uvUpdated * cReg.zw;
             // Tinte suave por planta (más cálido o más frío), sin otro material.
             float cH = fract(sin(dot(cCell, vec2(12.9898, 78.233))) * 43758.5453);
