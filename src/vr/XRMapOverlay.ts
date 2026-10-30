@@ -13,6 +13,8 @@ const DIAMETER = 0.26;
 const FORWARD = new Vector3(0, 0, 1);
 const RIGHT = new Vector3(1, 0, 0);
 const UP = new Vector3(0, 1, 0);
+/** Direcciones de la cámara, reusadas: `update` corre en cada cuadro del visor. */
+const _dir = new Vector3();
 
 /** Minimapa redondo fijo arriba a la derecha de la vista del visor. */
 export class XRMapOverlay {
@@ -81,10 +83,13 @@ export class XRMapOverlay {
 
   update(camera: Camera): void {
     if (!this.info?.mapCanvas) return;
-    const forward = camera.getDirection(FORWARD).scale(0.88);
-    const right = camera.getDirection(RIGHT).scale(0.34);
-    const up = camera.getDirection(UP).scale(0.27);
-    this.mesh.position.copyFrom(camera.globalPosition).addInPlace(forward).addInPlace(right).addInPlace(up);
+    const p = this.mesh.position.copyFrom(camera.globalPosition);
+    camera.getDirectionToRef(FORWARD, _dir);
+    p.addInPlace(_dir.scaleInPlace(0.88));
+    camera.getDirectionToRef(RIGHT, _dir);
+    p.addInPlace(_dir.scaleInPlace(0.34));
+    camera.getDirectionToRef(UP, _dir);
+    p.addInPlace(_dir.scaleInPlace(0.27));
   }
 
   dispose(): void {
