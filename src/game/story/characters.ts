@@ -83,16 +83,29 @@ export const CHARACTERS: readonly CharacterDef[] = [
   },
   {
     id: 'tomas',
-    name: 'Tomás',
+    name: 'Abi',
     role: 'profe del Aula Maker',
     color: '#4c91d9',
-    look: { role: 'teacher', height: 1.8, hairStyle: 'curly', hair: '#1d1612', glasses: true, top: '#2f6db5', seed: 405 },
-    voice: { pitch: 0.92, rate: 1.04 },
+    look: { role: 'teacher', height: 1.68, hairStyle: 'long', hair: '#1d1612', glasses: true, top: '#2f6db5', seed: 405 },
+    voice: { pitch: 1.15, rate: 1.04 },
     stations: [
       { when: ACTO, at: actSpot(1), face: 'e', anim: 'clap' },
       { at: { item: 'hexTable', room: 'tecnologia', nth: 4 }, face: { item: 'hexTable', room: 'tecnologia', nth: 5 } },
     ],
     idle: ['Si no sale a la primera, mejor: aprendemos el doble.', 'Cuidado con la cortadora: siempre con la tapa cerrada.'],
+  },
+  {
+    id: 'sofi',
+    name: 'Sofi',
+    role: 'profe de robótica',
+    color: '#db769d',
+    look: { role: 'teacher', height: 1.64, hairStyle: 'ponytail', hair: '#38251b', top: '#db769d', seed: 411 },
+    voice: { pitch: 1.22, rate: 1.02 },
+    stations: [
+      { when: ACTO, at: actSpot(8), face: 'e', anim: 'clap' },
+      { at: { item: 'hexTable', room: 'tecnologia', nth: 2 }, face: { item: 'hexTable', room: 'tecnologia', nth: 1 } },
+    ],
+    idle: ['Soy Sofi, profe de robótica. ¡Cuando quieras armamos una secuencia para el robot!', 'En robótica probamos, corregimos y volvemos a probar.'],
   },
   {
     id: 'graciela',

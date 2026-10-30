@@ -115,9 +115,8 @@ parques, canal diagonal con puentes, y huertas solares con turbinas de eje
 vertical. **Sin autos**: calzada angosta, vereda ancha, tranvía.
 
 **Interactividad**
-- **Cinco docentes NPC en el campus**: acercate, pulsá `E`, conversá y respondé
-  preguntas de tecnología, robótica, ciencia, deporte y ambiente. Las respuestas
-  incluyen explicación; el avance se conserva en el navegador.
+- **Aula Maker**: conversá con las profesoras Abi y Sofi y programá el robot
+  Educabot. Otros personajes acompañan el recorrido por la escuela.
 - **Caminar** con gravedad, salto y colisión contra los edificios, a 1,68 m de
   altura de ojos. Es lo que da escala: un espacio urbano sólo se entiende
   cuando hay que rodear la manzana en vez de atravesarla.

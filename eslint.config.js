@@ -11,7 +11,7 @@ import prettier from 'eslint-config-prettier';
  * ignorarla, y entonces tampoco se ven los avisos que importan.
  */
 export default tseslint.config(
-  { ignores: ['dist/**', 'node_modules/**', 'shots/**'] },
+  { ignores: ['dist/**', 'node_modules/**', 'shots/**', '.claude/**', 'tmp/**', 'output/**'] },
 
   js.configs.recommended,
   ...tseslint.configs.recommended,

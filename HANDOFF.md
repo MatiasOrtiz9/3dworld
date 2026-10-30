@@ -28,7 +28,7 @@ en visores WebXR (Quest).
   uniformes, que cambian de lugar según el momento del día escolar (entrada,
   clase, recreo, acto, salida), abren las puertas al pasar y miran al jugador.
 - **Es un juego.** "Recorrido 40": la escuela cumple 40 años y el jugador arma
-  el recorrido del aniversario. Prólogo + cinco capítulos, 10 personajes con
+  el recorrido del aniversario. Prólogo + cinco capítulos, 11 personajes con
   nombre, 6 actividades (robot Educabot, bandeja saludable, reciclaje,
   trivia de trofeos, coreografía, penales), simulacro de evacuación, estrellas
   del jardín, acto final y créditos. 8 sellos del Pasaporte 40, 36 lugares,

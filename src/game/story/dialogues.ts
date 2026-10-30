@@ -94,7 +94,7 @@ export const DIALOGUES: readonly DialogueDef[] = [
   // ============================================================ capítulo 1
   dlg(
     'tomas.intro',
-    n('a', 'tomas', '¡Hola! Bienvenidos al Aula Maker. Acá imaginamos, diseñamos, creamos, aprendemos y compartimos: está escrito en el mural.', { anim: 'wave' }),
+    n('a', 'tomas', '¡Hola! Soy Abi. Bienvenidos al Aula Maker. Acá imaginamos, diseñamos, creamos, aprendemos y compartimos: está escrito en el mural.', { anim: 'wave' }),
     n('b', 'tomas', 'Para el recorrido quiero que un robot Educabot cruce la pista con la bandera del 40. ¿Lo programamos?', {
       anim: 'point',
       effects: [{ do: 'flag', id: 'robotExplicado' }],
@@ -130,6 +130,10 @@ export const DIALOGUES: readonly DialogueDef[] = [
         ['¿Un consejo para los visitantes?', 'Que toquen, que pregunten y que se animen a equivocarse. Acá equivocarse es parte del plan.'],
       ],
     ),
+  ),
+  dlg(
+    'sofi.maker',
+    n('a', 'sofi', '¡Hola! Soy Sofi, también doy robótica acá. Mientras Abi prepara la pista, podemos mirar los kits y pensar qué instrucciones necesita el robot.', { anim: 'wave', next: END }),
   ),
   dlg(
     'graciela.intro',
@@ -367,6 +371,7 @@ export const TALK: Readonly<Record<string, readonly TalkRule[]>> = {
     { when: (q) => q.available('c1.maker'), dialogue: 'tomas.retry' },
     { when: (q) => q.done('c1.maker'), dialogue: 'tomas.after' },
   ],
+  sofi: [{ dialogue: 'sofi.maker' }],
   graciela: [{ when: (q) => q.available('c1.cantina'), dialogue: 'graciela.intro' }, { when: (q) => q.done('c1.cantina'), dialogue: 'graciela.after' }],
   martin: [
     { when: (q) => q.available('c1.martin'), dialogue: 'martin.escalera' },

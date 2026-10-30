@@ -16,6 +16,7 @@ import { XRInput } from './XRInput';
 import { XRPointer } from './XRPointer';
 import { XRFade } from './XRFade';
 import { loadComfort, saveComfort, sanitizeComfort, vignetteOpacity, type ComfortSettings } from './XRComfort';
+import { XRMapOverlay } from './XRMapOverlay';
 // Efecto secundario: registra `scene.beginAnimation`, que usa el anillo
 // giratorio del destino de teletransporte.
 import '@babylonjs/core/Animations/animatable';
@@ -220,6 +221,10 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
   let comfort = loadComfort();
   const locomotion = new XRLocomotion(scene, experience, options.index, options.onStep, () => comfort);
   const wrist = new WristPanel(scene);
+  const mapOverlay = new XRMapOverlay(scene);
+  const mapOverlayObserver = scene.onBeforeRenderObservable.add(() => {
+    if (base.state === WebXRState.IN_XR) mapOverlay.update(cam);
+  });
   const models = new ControllerModels(scene, experience.input, (grip) => wrist.attachTo(grip));
   const vignette = new ComfortVignette(scene, cam);
   vignette.setMaxOpacity(vignetteOpacity(comfort));
@@ -325,6 +330,7 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
     },
     setHud(info: HudInfo): void {
       wrist.set(info);
+      mapOverlay.set(info);
     },
     setObjectiveTarget(p: { x: number; y: number; z: number } | null): void {
       wrist.setTarget(p);
@@ -361,6 +367,7 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
       if (disposed) return;
       disposed = true;
       scene.onBeforeRenderObservable.remove(frameObserver);
+      scene.onBeforeRenderObservable.remove(mapOverlayObserver);
       teleport.onTargetMeshPositionUpdatedObservable.remove(teleportTargetObserver);
       teleport.onAfterCameraTeleport.remove(teleportedObserver);
       base.onStateChangedObservable.remove(stateObserver);
@@ -372,6 +379,7 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
       input.dispose();
       locomotion.dispose();
       wrist.dispose();
+      mapOverlay.dispose();
       vignette.dispose();
       fade.dispose();
       experience.dispose();

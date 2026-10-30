@@ -362,6 +362,8 @@ export class GameDirector {
    */
   private seedLaser = false;
   private wristKey = '';
+  /** Cuándo hay que redibujar el minimapa del visor (lo calcula `updateMap`). */
+  private xrMapKey = '';
   private targetKey = '';
   private readonly ray = new Ray(Vector3.Zero(), new Vector3(0, 0, 1), 20);
   private readonly tmpDir = new Vector3();
@@ -417,6 +419,7 @@ export class GameDirector {
       onPause: () => this.applyPause(),
       onReset: () => this.newGame(),
       onFreeRoam: (on) => this.setFreeRoam(on),
+      onFreeRoamStart: () => this.startFreeRoam(),
       passport: () => this.passport(),
     });
     this.hud.setFreeRoam(SESSION.freeRoam);
@@ -560,8 +563,15 @@ export class GameDirector {
     const ch = chapter(this.engine.currentChapter());
     this.hud.showTitle({
       progress: has ? `${ch.kicker} · ${this.engine.stamps}/${TOTAL_STAMPS} sellos` : null,
-      onStart: () => this.newGame(),
-      onContinue: () => this.resume(true),
+      onStart: () => {
+        this.setFreeRoam(false);
+        this.newGame();
+      },
+      onContinue: () => {
+        this.setFreeRoam(false);
+        this.resume(true);
+      },
+      onFreeRoam: () => this.startFreeRoam(),
     });
   }
 
@@ -586,6 +596,26 @@ export class GameDirector {
     this.resume(true);
   }
 
+  private setFreeRoam(on: boolean): void {
+    SESSION.freeRoam = on;
+    this.hud.setFreeRoam(on);
+    if (on) {
+      this.applyLocks(true);
+      this.locksDirty = false;
+    } else {
+      // Esperar a la planta baja evita dejar al jugador encerrado arriba.
+      this.locksDirty = true;
+    }
+  }
+
+  private startFreeRoam(): void {
+    this.setFreeRoam(true);
+    this.resume(true);
+    const feet = this.worldOf({ u: START.feet.u, v: START.feet.v, level: 0 });
+    const look = toWorld(this.frame, START.look.u, START.look.v);
+    this.player.teleport(feet, { x: look.x, y: START.look.y, z: look.z });
+  }
+
   private resume(fromTitle: boolean): void {
     SESSION.started = true;
     SESSION.atTitle = false;
@@ -605,11 +635,11 @@ export class GameDirector {
     // Partida retomada en pleno simulacro: las flechas vuelven a estar.
     if (this.engine.available('c3.evacuar') && !this.drill) void this.scriptDrill();
     const fresh = this.engine.data.done.length === 0;
-    if (fresh && fromTitle) void this.intro();
+    if (fresh && fromTitle && !SESSION.freeRoam) void this.intro();
     else if (fresh && !SESSION.freeRoam) void this.intro();
     else {
       this.music('none');
-      if (fromTitle) {
+      if (fromTitle && !SESSION.freeRoam) {
         const ch = chapter(this.engine.currentChapter());
         this.hud.chapterCard(ch.kicker, ch.title);
       }
@@ -645,7 +675,7 @@ export class GameDirector {
     const paused = this.hud.paused || this.xrMenuOpen;
     if (!paused) {
       this.clock += dt;
-      if (this.mode === 'play' && SESSION.started) this.engine.tick(dt);
+      if (this.mode === 'play' && SESSION.started && !SESSION.freeRoam) this.engine.tick(dt);
     }
     this.props.update(dt);
     this.screens.flush();
@@ -709,7 +739,7 @@ export class GameDirector {
       this.roomName = room ? roomLabel(room) : id === '__encuentro' ? 'Punto de encuentro' : id === '__laprida' ? 'Vereda de Laprida' : '';
       this.hud.setPlace(this.roomName);
       const place = placeForRoom(id);
-      if (place && SESSION.started) this.react(this.engine.enterPlace(place.id));
+      if (place && SESSION.started && !SESSION.freeRoam) this.react(this.engine.enterPlace(place.id));
     }
     this.hud.setLevelBadge(this.level === 0 ? 'PB' : `${this.level}° PISO`);
     if (this.locksDirty && this.level === 0 && !isJardinRoom(this.room)) {
@@ -720,7 +750,7 @@ export class GameDirector {
       this.cardAt = null;
       this.hud.closeCard();
     }
-    if (SESSION.started && this.modal === null) this.react(this.engine.atSpot(u, v, this.level));
+    if (SESSION.started && !SESSION.freeRoam && this.modal === null) this.react(this.engine.atSpot(u, v, this.level));
     // Distancia al objetivo, en el panel.
     const t = this.targetOf(this.engine.mainObjectives()[0]);
     const text = !t ? '' : t.spot.level !== this.level && inLot(u, v) ? (t.spot.level > this.level ? '▲ arriba' : '▼ abajo') : `${Math.round(Math.hypot(t.spot.u - u, t.spot.v - v))} m`;
@@ -735,17 +765,23 @@ export class GameDirector {
   private updateWrist(): void {
     const c = this.xrControls;
     if (!c) return;
-    const o = this.engine.mainObjectives()[0];
+    const free = SESSION.freeRoam;
+    // En el paseo libre no hay misión: ni objetivo, ni flecha, ni capítulo.
+    const o = free ? undefined : this.engine.mainObjectives()[0];
     const info: HudInfo = {
       // Fuera de los ambientes con nombre: la escuela o la calle (no la marca: no es un lugar).
       place: this.roomName || (inLot(this.feetLocal.u, this.feetLocal.v) ? 'Escuela CIMDIP' : ''),
-      progress: this.progressText,
-      objective: o ? this.engine.objectiveTitle(o) : 'Recorrido completo',
-      distance: this.distanceText,
+      progress: free ? 'Toda la escuela abierta · sin misiones' : this.progressText,
+      objective: free ? 'Toda la escuela abierta · sin misiones' : o ? this.engine.objectiveTitle(o) : 'Recorrido completo',
+      distance: free ? '' : this.distanceText,
       stamps: `${this.engine.stamps}/${TOTAL_STAMPS} sellos`,
-      chapter: chapter(this.engine.currentChapter()).kicker,
+      chapter: free ? undefined : chapter(this.engine.currentChapter()).kicker,
+      mapCanvas: this.hud.minimap.sourceCanvas,
+      mapKey: this.xrMapKey,
+      mapLevel: this.level === 0 ? 'PB' : `${this.level}°`,
+      freeRoam: free,
     };
-    const key = `${info.place}|${info.progress}|${info.objective}|${info.distance}|${info.stamps}|${info.chapter}`;
+    const key = `${info.place}|${info.progress}|${info.objective}|${info.distance}|${info.stamps}|${info.chapter}|${info.mapKey}|${free ? 1 : 0}`;
     if (key !== this.wristKey) {
       this.wristKey = key;
       c.setHud(info);
@@ -963,19 +999,6 @@ export class GameDirector {
     for (const l of DOOR_LOCKS) {
       const locked = SESSION.started && !SESSION.freeRoam && !this.engine.zone(l.zone);
       this.doors.setLocked(l.door.id, locked, !animate);
-    }
-  }
-
-  /** Modo libre (menú de escritorio o del visor): saca las cerraduras sin tocar la partida. */
-  private setFreeRoam(on: boolean): void {
-    SESSION.freeRoam = on;
-    if (on) {
-      this.applyLocks(true);
-      this.locksDirty = false;
-    } else {
-      // Volver a cerrar con el jugador arriba lo dejaría encerrado: se
-      // espera a que esté en planta baja, fuera del jardín.
-      this.locksDirty = true;
     }
   }
 
@@ -2055,7 +2078,7 @@ export class GameDirector {
       const raw = this.targetOf(this.engine.mainObjectives()[0]);
       const target = raw ? this.guideTo(raw) : null;
       const focusKey = this.focus?.key ?? '';
-      if (target && this.modal === null) {
+      if (target && this.modal === null && !SESSION.freeRoam) {
         diamonds.push({ ...target.world, y: target.world.y + bob, size: 0.3, color: GOLD, yaw: t * 1.5 });
         if (target.ring && target.spot === raw?.spot) {
           const W = this.worldOf(target.spot);
@@ -2094,18 +2117,21 @@ export class GameDirector {
     const f = this.player.forward();
     const heading = Math.atan2(-f.x, -f.z);
     const raw = this.targetOf(this.engine.mainObjectives()[0]);
-    const target = raw ? this.guideTo(raw) : null;
+    const target = raw && !SESSION.freeRoam ? this.guideTo(raw) : null;
     const people = this.npcs
       .filter((n) => n.handle || n.station)
       .map((n) => ({ ...this.npcSpot(n), color: n.def.color }));
-    this.hud.updateMap({
+    const mapState = {
       u: this.feetLocal.u,
       v: this.feetLocal.v,
       level: this.level,
       heading,
       target: target ? { ...target.spot, level: raw!.spot.level } : null,
       people,
-    });
+    };
+    this.hud.updateMap(mapState);
+    // Minimapa del visor: se redibuja a 2 Hz o al moverse/girar (lo manda `updateWrist`).
+    this.xrMapKey = `${Math.floor(this.clock * 2)}|${Math.round(mapState.u * 2)}|${Math.round(mapState.v * 2)}|${Math.round(heading * 10)}|${this.level}`;
   }
 
   // ===================================================================== pantallas

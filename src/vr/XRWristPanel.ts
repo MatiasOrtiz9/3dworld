@@ -37,6 +37,14 @@ export interface HudInfo {
   stamps?: string;
   /** Capítulo de la historia ("Capítulo 2 · El patio"). */
   chapter?: string;
+  /** Minimapa ya dibujado (lo muestra `XRMapOverlay`, no la muñeca). */
+  mapCanvas?: HTMLCanvasElement;
+  /** Cambia cuando el minimapa necesita redibujarse. */
+  mapKey?: string;
+  /** Piso que muestra el minimapa ("PB", "1°"…). */
+  mapLevel?: string;
+  /** Paseo libre: sin historia, todo abierto. */
+  freeRoam?: boolean;
 }
 
 const W = 640;
@@ -141,7 +149,7 @@ export class WristPanel {
   }
 
   set(info: HudInfo): void {
-    const key = [info.place, info.progress, info.objective ?? '', info.distance ?? '', info.stamps ?? '', info.chapter ?? ''].join('|');
+    const key = [info.place, info.progress, info.objective ?? '', info.distance ?? '', info.stamps ?? '', info.chapter ?? '', info.freeRoam ? 1 : 0].join('|');
     if (key === this.drawn) return;
     this.drawn = key;
     // "Ya llegás": a menos de 5 m del objetivo la flecha late más rápido.
@@ -176,7 +184,7 @@ export class WristPanel {
     ctx.textAlign = 'left';
     ctx.fillStyle = HOLO.cyanText;
     ctx.font = font(700, 24);
-    spacedLeft(ctx, 'ESTÁS EN', 28, 42, 3);
+    spacedLeft(ctx, info.freeRoam ? 'PASEO LIBRE' : 'ESTÁS EN', 28, 42, 3);
     let right = W - 28;
     if (info.stamps) {
       // "3/8 sellos" → el sello mini y "3/8" (el sello ya dice qué se cuenta).
