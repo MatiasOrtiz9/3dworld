@@ -2177,6 +2177,8 @@ export class GameDirector {
       '',
       '#Personajes (ficticios)',
       ...CHARACTERS.map((c) => `${c.name} · ${c.role}`),
+      // El robot de la historia: el que el jugador programó en el Aula Maker.
+      'Educabot · el robot de la bandera del 40, programado por vos',
       '',
       ...(phrases && Object.keys(d.interviews).length
         ? ['#Voces del recorrido', ...Object.entries(d.interviews).map(([who, q]) => `«${q}» — ${CHARACTERS.find((c) => c.id === who)?.name ?? who}`), '']
