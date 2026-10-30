@@ -220,6 +220,13 @@ export class RenderPipeline {
       [this.camera],
       true,
     );
+    // Las tarjetas de follaje recortan su dibujo en el plugin (`FoliageCards`):
+    // el búfer de geometría del SSAO no corre ese código y las dibujaba como
+    // rectángulos enteros, que dejaban manchones grises alrededor de cada
+    // palmera y cada mata (también sobre el cielo). Fuera del búfer, la
+    // oclusión las ignora.
+    const gbuffer = this.scene.geometryBufferRenderer?.getGBuffer();
+    if (gbuffer) gbuffer.renderListPredicate = (mesh) => !mesh.material?.name.startsWith('cards|');
     ssao.samples = s.samples;
     ssao.radius = s.radius;
     ssao.totalStrength = s.strength;

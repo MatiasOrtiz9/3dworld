@@ -60,6 +60,7 @@ import { isInteractiveDoor } from '../SchoolDoors';
 import type { Fixture } from '../SchoolLights';
 import { FY, H, SchoolKit, type LampFixture } from './school/SchoolKit';
 import { STYLES } from './school/SchoolMaterials';
+import { FoliageCards } from '../FoliageCards';
 import { SchoolItems } from './school/SchoolItems';
 import { OUTDOOR_KINDS, SchoolOutdoor } from './school/SchoolOutdoor';
 
@@ -167,6 +168,10 @@ export class SchoolBuilder {
 
   build(frame: SchoolFrame, plan: CityPlan, scene: Scene): Mesh[] {
     this.k.begin(frame);
+    // Vegetación de la escuela en tarjetas recortadas (un draw call para
+    // todas): las frondas de las palmeras y las matas de canteros y jardineras.
+    this.k.cards = new FoliageCards(this.k.farm, scene);
+    this.k.nature.cards = this.k.cards;
     this.outdoor.grounds(plan);
     this.floors();
     for (const w of WALLS) this.wall(w);

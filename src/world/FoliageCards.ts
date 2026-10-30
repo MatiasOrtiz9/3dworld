@@ -224,6 +224,11 @@ class CardPlugin extends MaterialPluginBase {
           vec2 cDy = dFdy(cTex);
           float cLod = max(0.0, 0.5 * log2(max(dot(cDx, cDx), dot(cDy, cDy))));
           if (baseColor.a * (1.0 + cLod * 0.28) < 0.5) discard;
+          // Los huecos del canvas son negros transparentes: el filtrado y los
+          // mipmaps mezclan ese negro con la hoja y, de lejos, la palmera y las
+          // matas quedaban casi negras. Dividir por el alfa devuelve el color
+          // promedio de las hojas (el alfa ya es la fracción de hoja).
+          baseColor.rgb /= max(baseColor.a, 0.25);
           // La base de la planta, más oscura (sombra propia de la mata).
           baseColor.rgb *= mix(0.68, 1.0, smoothstep(0.0, 0.55, vCard.x)) * vCard.y;
         }

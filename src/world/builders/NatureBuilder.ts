@@ -5,6 +5,7 @@ import type { InstanceFarm } from '../../core/InstanceFarm';
 import type { Materials } from '../Materials';
 import { Rng } from '../../utils/rng';
 import { LEAF_TONES, PALETTE } from '../Palette';
+import type { FoliageCards } from '../FoliageCards';
 
 /**
  * Vegetación.
@@ -19,6 +20,12 @@ import { LEAF_TONES, PALETTE } from '../Palette';
  * pase por un árbol.
  */
 export class NatureBuilder {
+  /**
+   * Con tarjetas (la escuela), las matas se dibujan como tarjetas de hojas
+   * cruzadas en vez de icoesferas: mismo azar consumido, otra geometría.
+   */
+  cards: FoliageCards | null = null;
+
   constructor(
     private readonly farm: InstanceFarm,
     private readonly mats: Materials,
@@ -273,6 +280,13 @@ export class NatureBuilder {
     const rz = g.range(-0.25, 0.25);
     if (!emit) return;
     const bloom = localRng(x, z + groundY, 0x3c5d).next();
+    if (this.cards) {
+      // Tres tarjetas cruzadas, algo más anchas que la icoesfera (el dibujo
+      // tiene el borde calado) y hundidas 3 cm en la tierra del cantero.
+      const kind = bloom < 0.2 ? 'flower' : 'fern';
+      this.cards.tuft(kind, x, z, groundY - 0.03, r * 2.3 * Math.max(1, sz), r * sy * 1.25, ry, 3);
+      return;
+    }
     const mat =
       bloom < 0.12
         ? this.flowerMat(PALETTE.blossomPink)

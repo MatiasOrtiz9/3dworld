@@ -620,6 +620,15 @@ export class SchoolOutdoor {
       const a = (k / 14) * Math.PI * 2 + this.k.rng.range(-0.15, 0.15);
       const len = this.k.rng.range(2.8, 3.3) * scale;
       const droop = this.k.rng.range(0.6, 0.9);
+      const cards = this.k.cards;
+      if (cards) {
+        // Fronda pinnada recortada en dos tramos: sube del cogollo y cae en
+        // arco hacia la punta (la caja chata se leía como un tablón verde).
+        const crown = new Vector3(p.x, base + h - 0.2, p.z);
+        const mid = cards.blade('frondIn', crown, a, 0.55 - droop * 0.35, len * 0.42, 0.95 * scale);
+        cards.blade('frondOut', mid, a, -0.25 - droop * 0.7, len * 0.6, 1.0 * scale);
+        continue;
+      }
       const cx = p.x + Math.sin(a) * len * 0.45;
       const cz = p.z + Math.cos(a) * len * 0.45;
       // Hoja: caja chata girada hacia afuera y caída en la punta.
