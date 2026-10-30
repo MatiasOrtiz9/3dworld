@@ -44,7 +44,7 @@ import { phrasesFromQuery } from './story/phrases';
 import { localSaveStore, type SaveStore } from './story/save';
 import { DialogueRunner, StoryEngine } from './story/StoryEngine';
 import type { ActivityId, CharacterDef, ChapterId, Effect, InteractableDef, ObjectiveDef, Spot, StationDef, ZoneId } from './story/types';
-import { ACT, DOOR_LOCKS, ENTRANCE_U, EVAC_ROUTE, INTERACTABLES, LOCKS, PLACES, START, STAIR_GUIDES, isJardinRoom, outsideRoom, placeForRoom } from './story/world';
+import { ACT, DOOR_LOCKS, ENTRANCE_U, EVAC_ROUTE, INTERACTABLES, LOCKS, PLACES, START, STAIR_GUIDES, isJardinRoom, outsideRoom, placeForRoom, safeToRelock } from './story/world';
 import { focusByGaze, focusByRay, type Candidate } from './Interaction';
 import { GameProps, PENALTY_SPOT, GOAL_MOUTH_U } from './world/GameProps';
 import { Doors } from './world/Doors';
@@ -742,7 +742,7 @@ export class GameDirector {
       if (place && SESSION.started && !SESSION.freeRoam) this.react(this.engine.enterPlace(place.id));
     }
     this.hud.setLevelBadge(this.level === 0 ? 'PB' : `${this.level}° PISO`);
-    if (this.locksDirty && this.level === 0 && !isJardinRoom(this.room)) {
+    if (this.locksDirty && safeToRelock({ u, v, level: this.level, room: this.room }, this.engine.zone('entrada'))) {
       this.locksDirty = false;
       this.applyLocks(false);
     }
