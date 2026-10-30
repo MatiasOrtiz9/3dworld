@@ -888,10 +888,12 @@ await sleep(800);
 const desk = await page.evaluate(() => ({
   atTitle: window.__game.atTitle,
   panel: Boolean(window.__scene.getMeshByName('gamePanel')?.isEnabled()),
+  // El minimapa del visor flotaba frente al escritorio donde quedó la cabeza.
+  map: Boolean(window.__scene.getMeshByName('xrMapOverlay')?.isEnabled()),
   title: !document.getElementById('title').classList.contains('hidden'),
   btn: document.getElementById('btn-vr').textContent,
 }));
-check('en el escritorio sigue la partida, sin panel del visor', !desk.atTitle && !desk.panel && /Entrar/.test(desk.btn ?? ''), JSON.stringify(desk));
+check('en el escritorio sigue la partida, sin panel ni minimapa del visor', !desk.atTitle && !desk.panel && !desk.map && /Entrar/.test(desk.btn ?? ''), JSON.stringify(desk));
 
 await finish();
 
