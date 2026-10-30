@@ -17,13 +17,59 @@ import { ACT } from './world';
  */
 
 export const CHAPTERS: readonly ChapterDef[] = [
-  { id: 'prologo', kicker: 'Prólogo', title: 'Llegada a Laprida' },
-  { id: 'c1', kicker: 'Capítulo 1', title: 'La planta baja' },
-  { id: 'c2', kicker: 'Capítulo 2', title: 'El nivel secundario' },
-  { id: 'c3', kicker: 'Capítulo 3', title: 'El simulacro' },
-  { id: 'c4', kicker: 'Capítulo 4', title: 'El jardín' },
-  { id: 'c5', kicker: 'Capítulo 5', title: 'El acto' },
-  { id: 'fin', kicker: 'Epílogo', title: 'Recorrido 40 completo' },
+  {
+    id: 'prologo',
+    kicker: 'Prólogo',
+    title: 'Llegada a Laprida',
+    brief: 'La escuela cumple 40 años y vos armás el recorrido del aniversario. Primero, que te abran.',
+  },
+  {
+    id: 'c1',
+    kicker: 'Capítulo 1',
+    title: 'La planta baja',
+    brief: 'Tres sellos en la planta baja: Aula Maker, cantina y Espacio recreativo, en el orden que quieras.',
+  },
+  {
+    id: 'c2',
+    kicker: 'Capítulo 2',
+    title: 'El nivel secundario',
+    brief: 'Se abrió la escalera. Arriba te esperan la trivia de los trofeos y la coreografía del acto.',
+  },
+  {
+    id: 'c3',
+    kicker: 'Capítulo 3',
+    title: 'El simulacro',
+    brief: 'Cuidarse también se aprende: hoy toca practicar la evacuación, caminando y sin empujar.',
+  },
+  {
+    id: 'c4',
+    kicker: 'Capítulo 4',
+    title: 'El jardín',
+    brief: 'El jardín CIMPID abre sus puertas: las salas escondieron una sorpresa para el aniversario.',
+  },
+  {
+    id: 'c5',
+    kicker: 'Capítulo 5',
+    title: 'El acto',
+    brief: 'Último tramo: una muestra de handball y, después, el acto de los 40 años en el Polideportivo.',
+  },
+  {
+    id: 'fin',
+    kicker: 'Epílogo',
+    title: 'Recorrido 40 completo',
+    brief: 'Recorriste la escuela de punta a punta. Queda abierta: seguí descubriendo sus rincones.',
+  },
+];
+
+/**
+ * Lo que el jugador puede destacar en el acto. Son SUS palabras (no las de un
+ * personaje): con frases se eligen en el diálogo con Inés; sin frases, en un
+ * panel propio del acto (`StoryEngine.actMessage`). Los créditos la citan.
+ */
+export const ACT_MESSAGES: ReadonlyArray<{ value: string; label: string; text: string }> = [
+  { value: 'personas', label: 'Las personas que me enseñaron', text: 'Las personas: cada una me enseñó algo.' },
+  { value: 'espacios', label: 'Los espacios para crear y jugar', text: 'Los espacios para crear, jugar y aprender.' },
+  { value: 'cuidado', label: 'Que nos cuidamos entre todos', text: 'Que acá nos cuidamos entre todos.' },
 ];
 
 export function chapter(id: ChapterId): ChapterDef {
@@ -107,7 +153,8 @@ export const OBJECTIVES: readonly ObjectiveDef[] = [
     id: 'c1.maker',
     chapter: 'c1',
     title: 'Programá el robot Educabot',
-    hint: 'Aula Maker: al fondo del pasillo norte, con la Profe Abi.',
+    silentTitle: 'Programá el robot Educabot con la Profe Abi',
+    hint:'Aula Maker: al fondo del pasillo norte, con la Profe Abi.',
     requires: ['p.directora'],
     target: { kind: 'talk', npc: 'tomas' },
     onComplete: [{ do: 'stamp', id: 'maker' }],
@@ -175,7 +222,8 @@ export const OBJECTIVES: readonly ObjectiveDef[] = [
     id: 'c2.martin',
     chapter: 'c2',
     title: 'Pasá por la Preceptoría de secundaria',
-    hint: 'Ala oeste del primer piso.',
+    silentTitle: 'Saludá a Martín en la Preceptoría de secundaria',
+    hint: 'Ala oeste del primer piso, junto a la escalera.',
     requires: ['c1.martin'],
     target: { kind: 'talk', npc: 'martin' },
   },
@@ -203,7 +251,8 @@ export const OBJECTIVES: readonly ObjectiveDef[] = [
     id: 'c3.laura',
     chapter: 'c3',
     title: 'La Seño Laura te espera para el simulacro',
-    hint: 'Aula de primaria, sobre Laprida.',
+    silentTitle: 'Saludá a la Seño Laura: empieza el simulacro',
+    hint: 'Planta baja: la segunda aula de primaria desde el hall, sobre Laprida.',
     requires: ['c2.trivia', 'c2.danza'],
     target: { kind: 'talk', npc: 'laura' },
   },
@@ -286,7 +335,10 @@ export const OBJECTIVES: readonly ObjectiveDef[] = [
     id: 'c5.palabras',
     chapter: 'c5',
     title: 'Decí unas palabras en el acto',
-    silentTitle: 'Acompañá a Inés en el escenario',
+    // Sin frases no hay diálogo: el mensaje se elige en un panel del acto
+    // (`StoryEngine.actMessage`); saludar a Inés lo vuelve a abrir.
+    silentTitle: 'Elegí tu mensaje para el acto, junto a Inés',
+    hint: 'Inés te espera en el escenario del Polideportivo.',
     requires: ['c5.acto'],
     target: { kind: 'talk', npc: 'ines' },
   },
@@ -309,12 +361,15 @@ export function objective(id: string): ObjectiveDef | undefined {
   return OBJECTIVES.find((o) => o.id === id);
 }
 
+/** Lugares de la libreta que dan la insignia Explorador. */
+export const EXPLORER_PLACES = 24;
+
 export const RULES: readonly RuleDef[] = [
   {
     id: 'r.tresSellos',
     when: (q) => q.done('c1.maker') && q.done('c1.cantina') && q.done('c1.patio'),
     effects: [
-      { do: 'toast', title: '¡Tres sellos!', text: 'La planta baja está recorrida.' },
+      { do: 'toast', title: '¡Tres sellos!', text: 'Planta baja recorrida: ¡a tocar la campana del recreo!' },
     ],
   },
   {
@@ -343,7 +398,7 @@ export const RULES: readonly RuleDef[] = [
   },
   {
     id: 'r.explorador',
-    when: (q) => q.places >= 24,
+    when: (q) => q.places >= EXPLORER_PLACES,
     effects: [{ do: 'toast', title: 'Insignia: Explorador', text: 'Conocés la escuela de punta a punta.' }],
   },
 ];

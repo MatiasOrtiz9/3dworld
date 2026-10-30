@@ -2,7 +2,7 @@ import type { NpcAnim } from '../contracts';
 import { resolveAnchor } from './anchors';
 import { CHARACTERS } from './characters';
 import { TALK, dialogue } from './dialogues';
-import { ACTIVITY_REWARDS, OBJECTIVES, RULES, objective } from './objectives';
+import { ACT_MESSAGES, ACTIVITY_REWARDS, OBJECTIVES, RULES, objective } from './objectives';
 import { FRASES } from './phrases';
 import { emptySave, type SaveData } from './save';
 import type {
@@ -255,6 +255,20 @@ export class StoryEngine implements QuestView {
     }
     this.settle(out);
     return out;
+  }
+
+  /**
+   * El mensaje del jugador en el acto. Sin frases no hay diálogo con Inés: se
+   * elige en un panel del acto y hace lo mismo que la opción del diálogo
+   * (guarda la elección y cumple «Decí unas palabras», que dispara los
+   * créditos). Fuera de ese momento, o con un valor que no existe, no hace nada.
+   */
+  actMessage(value: string): Effect[] {
+    if (!this.available('c5.palabras') || !ACT_MESSAGES.some((m) => m.value === value)) return [];
+    return this.apply([
+      { do: 'choice', key: 'discurso', value },
+      { do: 'complete', id: 'c5.palabras' },
+    ]);
   }
 
   /** Abre todas las zonas (modo libre de exposición). No toca el progreso. */

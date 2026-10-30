@@ -1,6 +1,6 @@
 import { GYM_MID, LEVEL_Y, MEETING_POINT, STAIRS, U, U1, V, fromPlan, makerWallAt, miguelCaneU, planU, planV, rearV, riserCount, type Level, type Stair } from '../../world/SchoolLayout';
 import { DOORS, type DoorDef } from '../../world/SchoolDoors';
-import { openingNear, openingsOnLine, stairAt, stairFoot } from './anchors';
+import { openingNear, openingsOnLine, resolveAnchor, stairAt, stairFoot } from './anchors';
 import type { Anchor, InteractableDef, LockDef, PlaceDef, Spot, ZoneId } from './types';
 
 /**
@@ -61,6 +61,37 @@ export const PLACES: readonly PlaceDef[] = [
 /** Lugar de la libreta que corresponde a un ambiente (o a la vereda). */
 export function placeForRoom(roomId: string): PlaceDef | undefined {
   return PLACES.find((p) => p.rooms.includes(roomId));
+}
+
+/**
+ * Un punto adentro de un lugar de la libreta, para guiar hasta él (el rombo
+ * dorado del epílogo): el centro de su primer ambiente o, afuera, la vereda
+ * frente al portal y la esquina del punto de encuentro.
+ */
+export function placeSpot(p: PlaceDef): Spot {
+  if (p.rooms[0] === '__laprida') return { u: START.feet.u, v: START.feet.v, level: 0 };
+  if (p.rooms[0] === '__encuentro') return { u: MEETING_POINT[0], v: MEETING_POINT[1], level: 0 };
+  const r = resolveAnchor({ room: p.rooms[0] });
+  return { u: r.u, v: r.v, level: r.level };
+}
+
+/**
+ * El lugar de la libreta sin descubrir más cercano a `from` (otro piso pesa
+ * como 12 m de pasillo), o null si ya están todos.
+ */
+export function nearestUndiscovered(from: Spot, discovered: (id: string) => boolean): { place: PlaceDef; spot: Spot } | null {
+  let best: { place: PlaceDef; spot: Spot } | null = null;
+  let bd = Infinity;
+  for (const p of PLACES) {
+    if (discovered(p.id)) continue;
+    const s = placeSpot(p);
+    const d = Math.hypot(s.u - from.u, s.v - from.v) + Math.abs(s.level - from.level) * 12;
+    if (d < bd) {
+      bd = d;
+      best = { place: p, spot: s };
+    }
+  }
+  return best;
 }
 
 /**

@@ -138,6 +138,8 @@ export interface XRMenuHost {
   canLeaveToTitle(): boolean;
   continueGame(): void;
   startNewGame(): void;
+  /** "Paseo libre" del inicio: toda la escuela abierta, sin misiones (no toca la partida guardada). */
+  startFreeRoam(): void;
   backToTitle(): void;
   exitVR(): void;
   /** Cierra el menú del juego (Seguir jugando, o B en la raíz). */
@@ -158,7 +160,7 @@ interface Entry {
 
 const TITLE_TEXT =
   'La escuela cumple 40 años y te eligieron para armar el recorrido del aniversario. Recorré cada sector, ayudá a quienes la hacen todos los días y llegá al acto final en el Polideportivo.';
-const TITLE_FOOTER = 'Personajes ficticios; escuela reconstruida desde su plano y el recorrido virtual de 2020.';
+const TITLE_FOOTER = 'Personajes ficticios; escuela reconstruida desde sus planos, el recorrido virtual de 2020 y el video de 2026.';
 const yesNo = (on: boolean): string => (on ? 'Sí' : 'No');
 
 /**
@@ -242,6 +244,8 @@ export class XRMenus {
         if (cont) buttons.push({ label: 'Continuar', sub: h.progressLabel(), tone: 'accent', icon: 'play' });
         // Con "Continuar" arriba, "Nueva partida" es reiniciar (otro ícono: no son lo mismo).
         buttons.push({ label: 'Nueva partida', sub: 'empieza en Laprida', tone: cont ? 'normal' : 'accent', icon: cont ? 'spin' : 'play' });
+        // Como el título de escritorio: para una muestra, recorrer sin la historia.
+        buttons.push({ label: 'Paseo libre', sub: 'todo abierto, sin misiones', icon: 'home' });
         buttons.push({ label: 'Ajustes de confort', sub: 'giro, velocidad, viñeta', icon: 'gear' });
         buttons.push({ label: 'Controles', sub: 'qué hace cada botón', icon: 'pad' });
         buttons.push({ label: 'Salir de VR', sub: 'volver a la pantalla', icon: 'close' });
@@ -372,7 +376,8 @@ export class XRMenus {
         else if (action === 'Nueva partida') {
           if (h.hasProgress()) this.push('newConfirm', i);
           else h.startNewGame();
-        } else if (action === 'Ajustes de confort') this.push('comfort', i);
+        } else if (action === 'Paseo libre') h.startFreeRoam();
+        else if (action === 'Ajustes de confort') this.push('comfort', i);
         else if (action === 'Controles') this.push('controls', i);
         else if (action === 'Salir de VR') this.push('exit', i);
         return;

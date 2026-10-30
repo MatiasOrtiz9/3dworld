@@ -43,6 +43,7 @@ function fakeHost(opts: { progress?: boolean; inPlace?: boolean } = {}) {
     canLeaveToTitle: () => true,
     continueGame: () => calls.push('continue'),
     startNewGame: () => calls.push('new'),
+    startFreeRoam: () => calls.push('free'),
     backToTitle: () => calls.push('toTitle'),
     exitVR: () => calls.push('exit'),
     closeMenu: () => calls.push('close'),
@@ -98,10 +99,18 @@ describe('pantalla de inicio del visor', () => {
     expect(h.shown.screen.style).toBe('title');
     expect(h.shown.screen.title).toBe('Recorrido 40');
     expect(h.shown.screen.text).toMatch(/40 años/);
-    expect(h.shown.screen.buttons.map((b) => b.label)).toEqual(['Continuar', 'Nueva partida', 'Ajustes de confort', 'Controles', 'Salir de VR']);
+    expect(h.shown.screen.buttons.map((b) => b.label)).toEqual(['Continuar', 'Nueva partida', 'Paseo libre', 'Ajustes de confort', 'Controles', 'Salir de VR']);
     expect(h.shown.screen.buttons[0].sub).toBe('Capítulo 1 · 2/8 sellos');
     // Los rótulos de los mandos acompañan el inicio.
     expect(h.hints).toBe(true);
+  });
+
+  it('"Paseo libre" está en el inicio, como en el escritorio, y arranca sin preguntar', () => {
+    const h = fakeHost({ progress: true });
+    h.ui.openRoot('title');
+    h.pick('Paseo libre');
+    // No borra la partida: no pide confirmación.
+    expect(h.calls).toEqual(['free']);
   });
 
   it('sin progreso no hay "Continuar" y "Nueva partida" arranca directo', () => {
