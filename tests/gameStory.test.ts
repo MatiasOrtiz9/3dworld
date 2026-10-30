@@ -3,10 +3,10 @@ import { LEVEL_Y, ROOMS, setDynamicSolid, schoolSolidLocal } from '../src/world/
 import { resolveAnchor, roomIdAt, standNear, standable } from '../src/game/story/anchors';
 import { CHARACTERS } from '../src/game/story/characters';
 import { DIALOGUES, TALK, dialogue } from '../src/game/story/dialogues';
-import { ACTIVITY_REWARDS, OBJECTIVES, RULES, objective } from '../src/game/story/objectives';
+import { ACT_MESSAGES, ACTIVITY_REWARDS, CHAPTERS, OBJECTIVES, RULES, objective } from '../src/game/story/objectives';
 import { DialogueRunner, StoryEngine } from '../src/game/story/StoryEngine';
 import type { Effect, ObjectiveDef } from '../src/game/story/types';
-import { DOOR_LOCKS, INTERACTABLES, LOCKS, PLACES, interactable, outsideRoom } from '../src/game/story/world';
+import { DOOR_LOCKS, INTERACTABLES, LOCKS, PLACES, interactable, nearestUndiscovered, outsideRoom, placeSpot } from '../src/game/story/world';
 import { createActivity } from '../src/game/activities';
 import { seeded } from '../src/game/activities/types';
 
@@ -324,5 +324,83 @@ describe('jugar la historia', () => {
     expect(engine.finished).toBe(true);
     for (const id of ['s.llavero', 's.camara', 's.musica']) expect(engine.done(id), id).toBe(true);
     expect(engine.done('s.voces')).toBe(false);
+  });
+});
+
+// ================================================================ guía y cierre
+
+/** Juega sin frases (saludando) hasta que el primer objetivo principal sea `stop`. */
+function playUntil(engine: StoryEngine, stop: string): void {
+  const log: string[] = [];
+  for (let guard = 0; guard < 80 && !engine.finished; guard++) {
+    const o = engine.mainObjectives()[0];
+    if (!o || o.id === stop) return;
+    attempt(engine, o, log);
+  }
+}
+
+describe('guía, motivación y final', () => {
+  it('cada capítulo se presenta en una o dos frases del narrador', () => {
+    for (const c of CHAPTERS) {
+      expect(c.brief.length, c.id).toBeGreaterThan(20);
+      expect(c.brief.length, `${c.id}: muy largo para el cartel y el aviso del visor`).toBeLessThanOrEqual(120);
+      // Narrador, no un personaje: sin comillas ni rayas de diálogo.
+      expect(c.brief, c.id).not.toMatch(/[«»—]/);
+    }
+  });
+
+  it('sin frases, cada objetivo de saludar nombra a quién hay que saludar', () => {
+    const engine = new StoryEngine(null, { phrases: false });
+    for (const o of OBJECTIVES) {
+      const t = o.target;
+      if (t.kind !== 'talk') continue;
+      const c = CHARACTERS.find((ch) => ch.id === t.npc)!;
+      expect(engine.objectiveTitle(o), o.id).toContain(c.name);
+      // Sin frases nadie contesta: el título no puede pedir una charla.
+      expect(engine.objectiveTitle(o), o.id).not.toMatch(/^(Hablá|Decí)/);
+    }
+  });
+
+  it('sin frases el jugador elige su mensaje del acto y eso cierra la historia', () => {
+    const engine = new StoryEngine(null, { phrases: false });
+    // Fuera del acto no hace nada.
+    expect(engine.actMessage('espacios')).toEqual([]);
+    playUntil(engine, 'c5.palabras');
+    expect(engine.mainObjectives()[0]?.id).toBe('c5.palabras');
+    expect(engine.actMessage('nada')).toEqual([]);
+    const fx = engine.actMessage('espacios');
+    expect(fx.some((e) => e.do === 'complete' && e.id === 'c5.palabras')).toBe(true);
+    expect(fx.some((e) => e.do === 'script' && e.id === 'creditos')).toBe(true);
+    expect(engine.finished).toBe(true);
+    expect(engine.choice('discurso')).toBe('espacios');
+    // Una sola vez.
+    expect(engine.actMessage('cuidado')).toEqual([]);
+    expect(engine.choice('discurso')).toBe('espacios');
+  });
+
+  it('los mensajes del acto son los mismos en el diálogo con frases y en el panel sin ellas', () => {
+    const node = dialogue('ines.acto')!.nodes.find((nd) => nd.id === 'c')!;
+    expect(node.choices!.map((c) => c.text)).toEqual(ACT_MESSAGES.map((m) => m.text));
+    for (const m of ACT_MESSAGES) expect(m.label.length, m.value).toBeLessThanOrEqual(32);
+  });
+
+  it('cada lugar de la libreta tiene un punto adentro para guiar hasta él', () => {
+    for (const p of PLACES) {
+      const s = placeSpot(p);
+      const room = roomIdAt(s.u, s.v, s.level) || outsideRoom(s.u, s.v);
+      expect(p.rooms, `${p.id} en ${s.u.toFixed(1)}, ${s.v.toFixed(1)} (${room})`).toContain(room);
+    }
+  });
+
+  it('el epílogo lleva al lugar sin descubrir más cercano, hasta completar la libreta', () => {
+    const found = new Set<string>();
+    const from = placeSpot(PLACES.find((p) => p.id === 'hall')!);
+    expect(nearestUndiscovered(from, (id) => found.has(id))?.place.id).toBe('hall');
+    found.add('hall');
+    const second = nearestUndiscovered(from, (id) => found.has(id));
+    expect(second).not.toBeNull();
+    expect(second!.place.id).not.toBe('hall');
+    for (const p of PLACES) found.add(p.id);
+    expect(nearestUndiscovered(from, (id) => found.has(id))).toBeNull();
   });
 });

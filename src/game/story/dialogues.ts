@@ -1,3 +1,4 @@
+import { ACT_MESSAGES } from './objectives';
 import type { ActivityId, DialogueChoice, DialogueDef, DialogueNode, Effect, TalkRule } from './types';
 
 /**
@@ -323,11 +324,7 @@ export const DIALOGUES: readonly DialogueDef[] = [
     n('a', 'ines', 'Buenas tardes a todas y a todos. Hoy celebramos los 40 años de la escuela.', { anim: 'talk' }),
     n('b', 'ines', 'Hoy alguien recorrió cada rincón para armar el Recorrido 40: el Aula Maker, la cantina, los patios, el nivel secundario, el aula de danzas y el jardín.', { anim: 'point' }),
     n('c', 'ines', 'Te invito a decir unas palabras. ¿Qué querés destacar?', {
-      choices: [
-        { text: 'Las personas: cada una me enseñó algo.', next: 'cierre', effects: [{ do: 'choice', key: 'discurso', value: 'personas' }] },
-        { text: 'Los espacios para crear, jugar y aprender.', next: 'cierre', effects: [{ do: 'choice', key: 'discurso', value: 'espacios' }] },
-        { text: 'Que acá nos cuidamos entre todos.', next: 'cierre', effects: [{ do: 'choice', key: 'discurso', value: 'cuidado' }] },
-      ],
+      choices: ACT_MESSAGES.map((m) => ({ text: m.text, next: 'cierre', effects: [{ do: 'choice', key: 'discurso', value: m.value }] })),
     }),
     n('cierre', 'ines', 'Gracias. Eso es lo que hace a esta escuela: 40 años construyendo, entre todos, la mejor escuela.', {
       anim: 'clap',

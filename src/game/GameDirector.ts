@@ -39,12 +39,12 @@ import { Penalty } from './activities/Penalty';
 import { DanceSequence } from './activities/DanceSequence';
 import { resolveAnchor, roomIdAt, standNear, standable, yawCardinal, yawLocal, type Resolved } from './story/anchors';
 import { CHARACTERS } from './story/characters';
-import { ITEMS_INFO, STAMPS, STAMP_ORDER, ZONES, chapter, objective } from './story/objectives';
+import { ACT_MESSAGES, EXPLORER_PLACES, ITEMS_INFO, STAMPS, STAMP_ORDER, ZONES, chapter, objective } from './story/objectives';
 import { phrasesFromQuery } from './story/phrases';
 import { localSaveStore, type SaveStore } from './story/save';
 import { DialogueRunner, StoryEngine } from './story/StoryEngine';
-import type { ActivityId, CharacterDef, ChapterId, Effect, InteractableDef, ObjectiveDef, Spot, StationDef, ZoneId } from './story/types';
-import { ACT, DOOR_LOCKS, ENTRANCE_U, EVAC_ROUTE, INTERACTABLES, LOCKS, PLACES, START, STAIR_GUIDES, isJardinRoom, outsideRoom, placeForRoom } from './story/world';
+import type { ActivityId, ChapterDef, CharacterDef, ChapterId, Effect, InteractableDef, ObjectiveDef, PlaceDef, Spot, StationDef, ZoneId } from './story/types';
+import { ACT, DOOR_LOCKS, ENTRANCE_U, EVAC_ROUTE, INTERACTABLES, LOCKS, PLACES, START, STAIR_GUIDES, isJardinRoom, nearestUndiscovered, outsideRoom, placeForRoom } from './story/world';
 import { focusByGaze, focusByRay, type Candidate } from './Interaction';
 import { GameProps, PENALTY_SPOT, GOAL_MOUTH_U } from './world/GameProps';
 import { Doors } from './world/Doors';
@@ -180,12 +180,13 @@ const PHASE_BY_CHAPTER: Record<ChapterId, SchoolPhase> = {
 /** Insignias: lo que se hizo de más (no hacen falta para terminar). `phrases`: sólo existe con frases. */
 const BADGES: ReadonlyArray<{ title: string; got: (e: StoryEngine) => boolean; phrases?: boolean }> = [
   { title: 'Cronista', got: (e) => e.interviews >= 4, phrases: true },
-  { title: 'Explorador', got: (e) => e.places >= 24 },
+  { title: 'Explorador', got: (e) => e.places >= EXPLORER_PLACES },
   { title: 'Programación de manual', got: (e) => e.flag('perfecto:robot') },
   { title: 'Bandeja perfecta', got: (e) => e.flag('perfecto:menu') },
   { title: 'Ojo de lince', got: (e) => e.flag('perfecto:trivia') },
   { title: 'Primera fila', got: (e) => e.flag('perfecto:danza') },
   { title: 'Tres de tres', got: (e) => e.flag('perfecto:penales') },
+  { title: 'Evacuación modelo', got: (e) => e.flag('perfecto:simulacro') },
 ];
 
 interface NpcSlot {
@@ -218,6 +219,27 @@ interface ActiveActivity {
   version: number;
   host: string | null;
 }
+
+/** Simulacro en curso: flechas, cronómetro y si el jugador corre. */
+interface Drill {
+  t: number;
+  arrows: Glow[];
+  next: number;
+  /** Velocidad horizontal suavizada (m/s) y posición del cuadro anterior. */
+  speed: number;
+  last: { x: number; z: number } | null;
+  /** Segundos seguidos por encima del paso de caminar. */
+  runT: number;
+  runs: number;
+  /** Reloj del juego desde el que se puede volver a avisar. */
+  warnAt: number;
+}
+
+/**
+ * Más rápido que esto (m/s, sostenido) es correr: entre el caminar y el
+ * correr de cada modo (escritorio y celular 4,2 / 8,5; visor 2,0 / 3,6).
+ */
+const RUN_LIMIT = { desk: 6.2, vr: 2.9 } as const;
 
 interface Timer {
   at: number;
@@ -285,8 +307,12 @@ export class GameDirector {
   private roomName = '';
   private level: Level = 0;
   private feetLocal = { u: 0, v: 0 };
-  private drill: { t: number; arrows: Glow[]; next: number } | null = null;
+  private drill: Drill | null = null;
   private drillTime = 0;
+  /** Veces que el jugador corrió en el último simulacro (para el resultado). */
+  private drillRuns = 0;
+  /** Epílogo: el lugar sin descubrir más cercano (lo marca el rombo dorado). */
+  private exploreNext: { place: PlaceDef; spot: Spot } | null = null;
   private phase: SchoolPhase = 'entrada';
   private phaseSet = false;
   /** Las cerraduras se vuelven a poner al salir del modo libre, cuando el jugador está en planta baja. */
@@ -640,8 +666,7 @@ export class GameDirector {
     else {
       this.music('none');
       if (fromTitle && !SESSION.freeRoam) {
-        const ch = chapter(this.engine.currentChapter());
-        this.hud.chapterCard(ch.kicker, ch.title);
+        this.announceChapter(chapter(this.engine.currentChapter()));
       }
     }
   }
@@ -657,8 +682,7 @@ export class GameDirector {
     await this.wait(0.35);
     void this.hud.fade(false, 1100);
     this.music('intro');
-    this.hud.chapterCard('Prólogo', 'Llegada a Laprida', 3.6);
-    this.vrToast('Prólogo', 'Llegada a Laprida');
+    this.announceChapter(chapter('prologo'));
     this.endCutscene();
     await this.wait(1.6);
     // Lola saluda sin hablar: no comenta por su cuenta (lo pidió el usuario);
@@ -751,8 +775,9 @@ export class GameDirector {
       this.hud.closeCard();
     }
     if (SESSION.started && !SESSION.freeRoam && this.modal === null) this.react(this.engine.atSpot(u, v, this.level));
+    this.updateExplore();
     // Distancia al objetivo, en el panel.
-    const t = this.targetOf(this.engine.mainObjectives()[0]);
+    const t = this.mainTarget();
     const text = !t ? '' : t.spot.level !== this.level && inLot(u, v) ? (t.spot.level > this.level ? '▲ arriba' : '▼ abajo') : `${Math.round(Math.hypot(t.spot.u - u, t.spot.v - v))} m`;
     if (text !== this.distanceText) {
       this.distanceText = text;
@@ -772,7 +797,13 @@ export class GameDirector {
       // Fuera de los ambientes con nombre: la escuela o la calle (no la marca: no es un lugar).
       place: this.roomName || (inLot(this.feetLocal.u, this.feetLocal.v) ? 'Escuela CIMDIP' : ''),
       progress: free ? 'Toda la escuela abierta · sin misiones' : this.progressText,
-      objective: free ? 'Toda la escuela abierta · sin misiones' : o ? this.engine.objectiveTitle(o) : 'Recorrido completo',
+      objective: free
+        ? 'Toda la escuela abierta · sin misiones'
+        : o
+          ? this.engine.objectiveTitle(o)
+          : this.exploreNext
+            ? `Descubrí lugares: ${this.engine.places}/${PLACES.length}`
+            : 'Recorrido completo',
       distance: free ? '' : this.distanceText,
       stamps: `${this.engine.stamps}/${TOTAL_STAMPS} sellos`,
       chapter: free ? undefined : chapter(this.engine.currentChapter()).kicker,
@@ -787,7 +818,7 @@ export class GameDirector {
       c.setHud(info);
     }
     // En otro piso, la flecha lleva a la escalera (como el rombo del objetivo).
-    const raw = this.targetOf(o);
+    const raw = free ? null : this.mainTarget();
     const t = raw ? this.guideTo(raw).world : null;
     const tKey = t ? `${Math.round(t.x * 4)},${Math.round(t.y * 4)},${Math.round(t.z * 4)}` : '';
     if (tKey !== this.targetKey) {
@@ -1093,6 +1124,12 @@ export class GameDirector {
     this.save();
   }
 
+  /** Cartel del capítulo con su presentación (narrador): en pantalla y en el visor. */
+  private announceChapter(def: ChapterDef): void {
+    this.hud.chapterCard(def.kicker, def.title, 3.6, def.brief);
+    this.vrToast(`${def.kicker} · ${def.title}`, def.brief);
+  }
+
   private notify(kind: Parameters<Hud['toast']>[0]['kind'], title: string, text?: string): void {
     this.hud.toast({ kind, title, text });
     this.vrToast(title, text);
@@ -1179,7 +1216,19 @@ export class GameDirector {
       ...main.slice(0, 3).map((o, k) => ({ text: title(o), hint: k === 0 ? o.hint : undefined, distance: k === 0 ? this.distanceText : undefined })),
       ...side.slice(0, 2).map((o) => ({ text: title(o), side: true })),
     ];
-    if (ch === 'fin') items.push({ text: 'Seguí explorando: la escuela queda abierta.', hint: 'Reiniciá desde el menú para jugar otra vez.', distance: undefined });
+    if (ch === 'fin') {
+      // Epílogo: la libreta de lugares como meta (el rombo lleva al más cercano).
+      const n = this.engine.places;
+      const total = PLACES.length;
+      const next = this.exploreNext;
+      const badge = n < EXPLORER_PLACES ? ` · insignia Explorador a los ${EXPLORER_PLACES}` : '';
+      items.unshift(
+        n < total
+          ? { text: `Descubrí los lugares de la escuela: ${n}/${total}`, hint: next ? `Próximo: ${next.place.title}${badge}` : undefined, distance: this.distanceText }
+          : { text: `¡Descubriste los ${total} lugares de la escuela!`, hint: undefined, distance: undefined },
+      );
+      items.push({ text: 'Reiniciá desde el menú para jugar otra vez.', side: true });
+    }
     this.hud.setObjective({ chapter: def.kicker, title: def.title, items, stamps: this.engine.stamps, totalStamps: TOTAL_STAMPS });
     const first = main[0]?.id ?? '';
     if (announce && first && first !== this.currentMain) this.hud.flashObjective();
@@ -1189,12 +1238,32 @@ export class GameDirector {
         // La música del inicio acompaña la llegada; con la misión en marcha, el ambiente de la escuela.
         this.music('none');
       }
-      this.hud.chapterCard(def.kicker, def.title);
-      this.vrToast(def.kicker, def.title);
+      this.announceChapter(def);
       // El recreo, el simulacro y el acto mandan sobre el capítulo.
       if (ch !== 'fin' && this.phase !== 'recreo' && this.phase !== 'acto' && this.phase !== 'salida') this.setPhase(PHASE_BY_CHAPTER[ch]);
     }
     this.currentChapter = ch;
+  }
+
+  /**
+   * Lo que marca el rombo dorado: el objetivo principal o, con la historia
+   * terminada, el lugar de la libreta sin descubrir más cercano (el epílogo
+   * invita a seguir recorriendo).
+   */
+  private mainTarget(): { spot: Spot; world: WorldPoint; ring?: number } | null {
+    const o = this.engine.mainObjectives()[0];
+    if (o) return this.targetOf(o);
+    const next = this.exploreNext;
+    return next ? { spot: next.spot, world: this.worldOf(next.spot, 2.2) } : null;
+  }
+
+  /** Epílogo: el lugar sin descubrir más cercano (se recalcula 4 veces por segundo). */
+  private updateExplore(): void {
+    const next =
+      this.engine.finished && !SESSION.freeRoam ? nearestUndiscovered({ ...this.feetLocal, level: this.level }, (id) => this.engine.discovered(id)) : null;
+    const changed = (next?.place.id ?? '') !== (this.exploreNext?.place.id ?? '');
+    this.exploreNext = next;
+    if (changed && this.engine.finished) this.refreshObjectives(false);
   }
 
   /** Dónde está el objetivo (en el plano y en el mundo). */
@@ -1492,6 +1561,8 @@ export class GameDirector {
     const n = this.npc(npcId);
     if (!n) return;
     if (!SESSION.phrases) {
+      // El acto sin frases: el mensaje lo elige el jugador en un panel propio.
+      if (npcId === 'ines' && this.engine.available('c5.palabras')) return this.actSpeech();
       this.greet(n);
       return;
     }
@@ -1566,6 +1637,9 @@ export class GameDirector {
     }
     this.click(due ? 880 : 660);
     this.react(effects);
+    // Un saludo que no cambia nada suele ser alguien buscando qué hacer: el
+    // aviso le recuerda el próximo paso (texto del juego, nadie habla).
+    if (!due) this.nextStepToast();
     // El gesto es de una vez: después vuelve a lo que hacía en su lugar, si
     // sigue ahí y ningún guion (simulacro, créditos) tomó el control.
     const st = n.station;
@@ -1577,6 +1651,55 @@ export class GameDirector {
     const act = this.pendingActivity;
     this.pendingActivity = null;
     if (act) this.startActivity(act, n.def.id);
+  }
+
+  /**
+   * El acto sin frases: nadie da un discurso, pero el jugador elige qué
+   * destacar del recorrido. Son SUS palabras (no las de un personaje), en un
+   * panel con lo que juntó; lo elegido cumple el objetivo, dispara los
+   * créditos y queda citado en ellos. Saludar a Inés lo vuelve a abrir si
+   * algo lo cerró antes de elegir.
+   */
+  private async actSpeech(): Promise<void> {
+    if (this.modal !== null && this.modal !== 'cutscene') return;
+    this.setModal('dialogue');
+    this.sfx('open');
+    const ines = this.npc('ines');
+    try {
+      ines?.handle?.play('wave');
+    } catch {
+      // Personaje no disponible.
+    }
+    const e = this.engine;
+    const view: ActivityView = {
+      kicker: 'Polideportivo · Acto de los 40 años',
+      title: 'Tu mensaje para el acto',
+      text: `Inés te invita al escenario. Juntaste ${e.stamps} de ${TOTAL_STAMPS} sellos y descubriste ${e.places} de ${PLACES.length} lugares. ¿Qué querés destacar del Recorrido 40?`,
+      progress: `${e.stamps}/${TOTAL_STAMPS} sellos`,
+      choices: ACT_MESSAGES.map((m) => ({ label: m.label })),
+    };
+    const pick = await this.ask({ kind: 'activity', view }, ines ? this.worldOf(this.npcSpot(ines)) : undefined);
+    this.closeModalUI();
+    this.setModal(null);
+    this.sfx('select');
+    const msg = ACT_MESSAGES[Math.max(0, Math.min(pick, ACT_MESSAGES.length - 1))];
+    try {
+      ines?.handle?.play('clap');
+    } catch {
+      // Personaje no disponible.
+    }
+    this.react(e.actMessage(msg.value));
+  }
+
+  private nextStepAt = -99;
+
+  /** «Próximo paso: …» (como mucho cada cuatro segundos). */
+  private nextStepToast(): void {
+    if (SESSION.freeRoam || this.clock - this.nextStepAt < 4) return;
+    this.nextStepAt = this.clock;
+    const o = this.engine.mainObjectives()[0];
+    if (o) this.notify('info', 'Próximo paso', this.engine.objectiveTitle(o));
+    else if (this.engine.finished) this.notify('info', 'Recorrido 40 completo', 'Seguí descubriendo la escuela.');
   }
 
   /** Muestra algo que espera una elección (HUD o panel del visor) y la devuelve. */
@@ -1663,7 +1786,10 @@ export class GameDirector {
           } catch {
             // Audio opcional.
           }
-          this.bark('lola', this.engine.done('c1.campana') ? '¡Ya tocamos la campana! Una vez por recreo alcanza.' : 'Todavía no es la hora del recreo: primero los tres sellos de la planta baja.');
+          const rung = this.engine.done('c1.campana');
+          if (SESSION.phrases) this.bark('lola', rung ? '¡Ya tocamos la campana! Una vez por recreo alcanza.' : 'Todavía no es la hora del recreo: primero los tres sellos de la planta baja.');
+          // Sin frases, el mismo aviso sin nadie que lo diga.
+          else if (!SESSION.freeRoam) this.notify('info', rung ? 'El recreo ya sonó' : 'Todavía no es el recreo', rung ? 'Una vez por recreo alcanza.' : 'Primero, los tres sellos de la planta baja.');
         }
         break;
       }
@@ -1945,7 +2071,8 @@ export class GameDirector {
         arrows.push({ x: W.x, y: LEVEL_Y[0] + 0.05, z: W.z, size: 0.8, color: GREEN, yaw: Math.atan2(-(v1 - v0), -(u1 - u0)) });
       }
     }
-    this.drill = { t: 0, arrows, next: 0 };
+    this.drill = { t: 0, arrows, next: 0, speed: 0, last: null, runT: 0, runs: 0, warnAt: 0 };
+    this.drillRuns = 0;
     this.hud.setDrill(0);
     this.notify('info', 'Simulacro de evacuación', 'Seguí las flechas verdes, caminando');
   }
@@ -1963,6 +2090,24 @@ export class GameDirector {
       if (Math.hypot(a.x - P.x, a.z - P.z) < 1.6) d.next = k + 1;
     }
     this.markers.setArrows(d.arrows.slice(d.next));
+    // En un simulacro no se corre: si el jugador corre (sostenido, no un
+    // salto de teletransporte), un aviso amable y queda anotado en el resultado.
+    const f = this.feet;
+    if (d.last && dt > 0) {
+      const step = Math.hypot(f.x - d.last.x, f.z - d.last.z);
+      if (step < 1.2) d.speed += (step / dt - d.speed) * Math.min(1, dt * 6);
+    }
+    d.last = { x: f.x, z: f.z };
+    if (d.speed > (this.player.inVR ? RUN_LIMIT.vr : RUN_LIMIT.desk)) {
+      d.runT += dt;
+      if (d.runT > 0.6 && this.clock >= d.warnAt) {
+        d.runs++;
+        this.drillRuns = d.runs;
+        d.warnAt = this.clock + 6;
+        this.sfx('error');
+        this.notify('info', '¡Sin correr!', 'En un simulacro se sale caminando, sin empujar.');
+      }
+    } else d.runT = 0;
   }
 
   private async scriptDrillEnd(): Promise<void> {
@@ -1970,8 +2115,15 @@ export class GameDirector {
     this.markers.setArrows([]);
     this.hud.setDrill(null);
     const s = Math.round(this.drillTime);
-    this.notify('info', 'Llegaste al punto de encuentro', `Evacuación en ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
+    const runs = this.drillRuns;
+    const how = runs === 0 ? 'caminando, sin correr' : runs === 1 ? 'corriste una vez' : `corriste ${runs} veces`;
+    this.notify('info', 'Llegaste al punto de encuentro', `Evacuación en ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} · ${how}`);
     this.npc('ines')?.handle?.play('wave');
+    // Sin correr ni una vez: insignia (no hace falta para terminar).
+    if (runs === 0 && !this.engine.flag('perfecto:simulacro')) {
+      this.react(this.engine.apply([{ do: 'flag', id: 'perfecto:simulacro' }]));
+      this.after(1.2, () => this.notify('item', 'Insignia: Evacuación modelo', 'Llegaste caminando, como se debe.'));
+    }
   }
 
   private async scriptAct(): Promise<void> {
@@ -2004,18 +2156,19 @@ export class GameDirector {
     for (let g = 0; g < 600 && this.modal !== null; g++) await this.wait(0.2);
     this.music('credits');
     const d = this.engine.data;
-    // Sin frases no hubo discurso ni entrevistas: los créditos no citan a nadie.
     const phrases = SESSION.phrases;
-    const speech = !phrases
-      ? ''
-      : ({ personas: '«Las personas: cada una me enseñó algo.»', espacios: '«Los espacios para crear, jugar y aprender.»', cuidado: '«Que acá nos cuidamos entre todos.»' }[
-          this.engine.choice('discurso') ?? 'personas'
-        ] ?? '');
+    // El mensaje del acto es del jugador (con frases, en el diálogo; sin
+    // ellas, en el panel del acto): los créditos lo citan en los dos modos.
+    const said = ACT_MESSAGES.find((m) => m.value === this.engine.choice('discurso'));
+    const speech = said ? `«${said.text}»` : '';
     const mins = Math.max(1, Math.round(d.seconds / 60));
+    const badges = BADGES.filter((b) => phrases || !b.phrases);
+    const gotBadges = badges.filter((b) => b.got(this.engine));
     const stats = [
       { value: `${this.engine.stamps}/${TOTAL_STAMPS}`, label: 'SELLOS' },
       { value: `${this.engine.places}/${PLACES.length}`, label: 'LUGARES' },
       ...(phrases ? [{ value: `${this.engine.interviews}`, label: 'VOCES' }] : []),
+      { value: `${gotBadges.length}/${badges.length}`, label: 'INSIGNIAS' },
     ];
     const lines = [
       '#Recorrido 40',
@@ -2028,9 +2181,10 @@ export class GameDirector {
       ...(phrases && Object.keys(d.interviews).length
         ? ['#Voces del recorrido', ...Object.entries(d.interviews).map(([who, q]) => `«${q}» — ${CHARACTERS.find((c) => c.id === who)?.name ?? who}`), '']
         : []),
+      ...(gotBadges.length ? ['#Tus insignias', ...gotBadges.map((b) => b.title), ''] : []),
       '#La escuela',
-      'Reconstruida desde el plano de evacuación',
-      'y el recorrido virtual de 2020',
+      'Reconstruida desde sus planos,',
+      'el recorrido virtual de 2020 y el video de 2026',
       '',
       '#Hecho con código',
       'Geometría, texturas y sonido generados en el navegador',
@@ -2042,9 +2196,8 @@ export class GameDirector {
     ];
     if (this.inXR && this.panel) {
       this.setModal('card');
-      const text = phrases
-        ? `Tu mensaje en el acto: ${speech} Sellos ${stats[0].value} · lugares ${stats[1].value} · voces ${stats[2].value}.`
-        : `Sellos ${stats[0].value} · lugares ${stats[1].value}.`;
+      const summary = stats.map((st) => `${st.label.toLowerCase()} ${st.value}`).join(' · ');
+      const text = `${speech ? `Tu mensaje en el acto: ${speech} ` : ''}${summary.charAt(0).toUpperCase()}${summary.slice(1)}. La escuela queda abierta para seguir explorando.`;
       await this.ask({ kind: 'menu', kicker: 'Recorrido 40 completo', title: '¡Felicitaciones!', text, buttons: ['Seguir explorando'] });
       this.closeModalUI();
       this.setModal(null);
@@ -2075,7 +2228,7 @@ export class GameDirector {
     const bob = Math.sin(t * 2.4) * 0.06;
     if (this.mode === 'play') {
       // Objetivo principal: rombo dorado grande (o la escalera que lleva a él).
-      const raw = this.targetOf(this.engine.mainObjectives()[0]);
+      const raw = this.mainTarget();
       const target = raw ? this.guideTo(raw) : null;
       const focusKey = this.focus?.key ?? '';
       if (target && this.modal === null && !SESSION.freeRoam) {
@@ -2116,7 +2269,7 @@ export class GameDirector {
   private updateMap(): void {
     const f = this.player.forward();
     const heading = Math.atan2(-f.x, -f.z);
-    const raw = this.targetOf(this.engine.mainObjectives()[0]);
+    const raw = this.mainTarget();
     const target = raw && !SESSION.freeRoam ? this.guideTo(raw) : null;
     const people = this.npcs
       .filter((n) => n.handle || n.station)
@@ -2471,9 +2624,17 @@ export class GameDirector {
         return `${ch.kicker} · ${ch.title}`;
       },
       objectiveLabel: () => {
+        if (SESSION.freeRoam) return 'Paseo libre: toda la escuela abierta, sin misiones.';
         const o = this.engine.mainObjectives()[0];
-        if (!o) return 'Recorrido completo: la escuela queda abierta para explorar.';
-        return `Objetivo: ${this.engine.objectiveTitle(o)}${this.distanceText ? ` (${this.distanceText})` : ''}`;
+        const dist = this.distanceText ? ` (${this.distanceText})` : '';
+        if (!o) {
+          const next = this.exploreNext;
+          return next
+            ? `Recorrido completo. Lugares ${this.engine.places}/${PLACES.length}: el rombo dorado te lleva a ${next.place.title}${dist}.`
+            : 'Recorrido completo: la escuela queda abierta para explorar.';
+        }
+        // En la muñeca entra una línea: acá va también la pista de dónde ir.
+        return `Objetivo: ${this.engine.objectiveTitle(o)}${dist}.${o.hint ? ` ${o.hint}` : ''}`;
       },
       passport: () => this.passport(),
       comfort: () => this.xrControls!.getComfort(),
@@ -2500,6 +2661,7 @@ export class GameDirector {
       canLeaveToTitle: () => this.canLeaveToTitle(),
       continueGame: () => void this.startFromXRTitle(false),
       startNewGame: () => void this.startFromXRTitle(true),
+      startFreeRoam: () => void this.startFromXRTitle('free'),
       backToTitle: () => void this.backToXRTitle(),
       exitVR: () => {
         const c = this.xrControls;
@@ -2532,10 +2694,10 @@ export class GameDirector {
    * (como el prólogo) y entra a la escuela caminando. Con la partida ya en
    * curso, "Continuar" sólo cierra el inicio.
    */
-  private async startFromXRTitle(fresh: boolean): Promise<void> {
+  private async startFromXRTitle(fresh: boolean | 'free'): Promise<void> {
     const c = this.xrControls;
     if (!c || this.xrBusy) return;
-    if (this.mode !== 'title' && !fresh) {
+    if (this.mode !== 'title' && fresh === false) {
       this.xrTitleInPlace = false;
       this.closeXRMenu();
       this.sfx('close');
@@ -2546,17 +2708,26 @@ export class GameDirector {
     try {
       await c.fade(true, 380);
       if (!this.inXR) return;
-      if (fresh) this.newGame();
-      else this.resume(true);
-      // Una partida nueva (o sin nada hecho) pasa por el prólogo, que ya lleva
-      // al jugador frente al portal; una retomada también arranca ahí.
-      if (this.engine.data.done.length > 0) {
-        const feet = this.worldOf({ u: START.feet.u, v: START.feet.v, level: 0 });
-        const look = toWorld(this.frame, START.look.u, START.look.v);
-        this.player.teleport(feet, { x: look.x, y: START.look.y, z: look.z });
-        this.syncStations(true);
-        const ch = chapter(this.engine.currentChapter());
-        this.after(1.2, () => this.vrToast(ch.kicker, ch.title));
+      // Paseo libre: la escuela abierta frente al portal, sin misiones (la partida guardada no se toca).
+      if (fresh === 'free') {
+        this.startFreeRoam();
+        this.after(1.2, () => this.vrToast('Paseo libre', 'Toda la escuela abierta, sin misiones. Y o B abre el menú.'));
+      } else {
+        if (fresh) this.newGame();
+        else {
+          this.setFreeRoam(false);
+          this.resume(true);
+        }
+        // Una partida nueva (o sin nada hecho) pasa por el prólogo, que ya lleva
+        // al jugador frente al portal; una retomada también arranca ahí.
+        if (this.engine.data.done.length > 0) {
+          const feet = this.worldOf({ u: START.feet.u, v: START.feet.v, level: 0 });
+          const look = toWorld(this.frame, START.look.u, START.look.v);
+          this.player.teleport(feet, { x: look.x, y: START.look.y, z: look.z });
+          this.syncStations(true);
+          const ch = chapter(this.engine.currentChapter());
+          this.after(1.2, () => this.vrToast(`${ch.kicker} · ${ch.title}`, ch.brief));
+        }
       }
       // El salto del visor se aplica en el cuadro siguiente: se espera a
       // verlo en su lugar antes de aclarar.

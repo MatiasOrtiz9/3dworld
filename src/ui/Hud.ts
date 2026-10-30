@@ -630,13 +630,21 @@ export class Hud {
     window.setTimeout(() => el.remove(), seconds * 1000 + 450);
   }
 
-  chapterCard(kicker: string, title: string, seconds = 3.2): void {
+  /**
+   * Cartel de capítulo. `brief` (opcional) es para qué es el capítulo, en
+   * palabras del narrador: con él, el cartel queda más tiempo para leerlo.
+   */
+  chapterCard(kicker: string, title: string, seconds = 3.2, brief = ''): void {
     const el = $('chapter');
     $('chapter-kicker').textContent = kicker;
     $('chapter-title').textContent = title;
+    const b = $('chapter-brief');
+    b.textContent = brief;
+    b.hidden = !brief;
     el.classList.remove('hidden');
     window.clearTimeout(this.chapterTimer);
-    this.chapterTimer = window.setTimeout(() => el.classList.add('hidden'), seconds * 1000);
+    const t = brief ? Math.max(seconds, 5.5) : seconds;
+    this.chapterTimer = window.setTimeout(() => el.classList.add('hidden'), t * 1000);
   }
 
   setDrill(seconds: number | null): void {

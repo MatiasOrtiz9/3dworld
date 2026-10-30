@@ -192,6 +192,12 @@ export interface ChapterDef {
   id: ChapterId;
   kicker: string;
   title: string;
+  /**
+   * Para qué es el capítulo, en una o dos frases del narrador (no lo dice
+   * ningún personaje: vale también sin frases). Va bajo el título del
+   * capítulo, en el aviso del visor y en el menú.
+   */
+  brief: string;
 }
 
 /** Reglas: cuando se cumple `when`, una sola vez, pasan sus efectos. */
