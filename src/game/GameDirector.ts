@@ -2546,6 +2546,11 @@ export class GameDirector {
     try {
       await c.fade(true, 380);
       if (!this.inXR) return;
+      // Como "Nueva partida" y "Continuar" del título de escritorio: el
+      // inicio juega la historia. Con el paseo libre heredado (elegido en el
+      // título de la PC antes de entrar al visor) la historia quedaba
+      // congelada: sin prólogo, sin objetivo y el jugador en el mirador.
+      this.setFreeRoam(false);
       if (fresh) this.newGame();
       else this.resume(true);
       // Una partida nueva (o sin nada hecho) pasa por el prólogo, que ya lleva
