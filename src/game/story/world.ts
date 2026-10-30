@@ -1,4 +1,4 @@
-import { GYM_MID, LEVEL_Y, MEETING_POINT, STAIRS, U, U1, V, fromPlan, makerWallAt, miguelCaneU, planU, planV, rearV, riserCount, type Level, type Stair } from '../../world/SchoolLayout';
+import { GYM_MID, LEVEL_Y, MEETING_POINT, STAIRS, U, U1, V, fromPlan, inLot, makerWallAt, miguelCaneU, planU, planV, rearV, riserCount, type Level, type Stair } from '../../world/SchoolLayout';
 import { DOORS, type DoorDef } from '../../world/SchoolDoors';
 import { openingNear, openingsOnLine, resolveAnchor, stairAt, stairFoot } from './anchors';
 import type { Anchor, InteractableDef, LockDef, PlaceDef, Spot, ZoneId } from './types';
@@ -866,6 +866,19 @@ export const STAIR_GUIDES: readonly StairGuide[] = [
 /** ¿El ambiente es del jardín? (se sube por su propia escalera). */
 export function isJardinRoom(roomId: string): boolean {
   return roomId.startsWith('jardin') || ['salaAmarilla', 'salaCeleste', 'salaRosa', 'salaRoja', 'sum', 'espacioMusica'].includes(roomId);
+}
+
+/**
+ * ¿Se pueden volver a poner las cerraduras (al salir del modo libre) con el
+ * jugador acá? Sólo si ninguna lo deja encerrado: en planta baja (las
+ * escaleras se cierran desde abajo), fuera del jardín y, mientras la entrada
+ * siga cerrada en la historia, fuera del predio. Con la entrada cerrada se
+ * traban el portal y TODAS las salidas: apagar el modo libre desde el hall o
+ * un patio dejaba al jugador adentro sin poder llegar a Rubén.
+ */
+export function safeToRelock(p: { u: number; v: number; level: Level; room: string }, entradaOpen: boolean): boolean {
+  if (p.level !== 0 || isJardinRoom(p.room)) return false;
+  return entradaOpen || !inLot(p.u, p.v);
 }
 
 // ======================================================================= simulacro

@@ -354,8 +354,28 @@ function xrSpawn(): { eye: Vector3; look: Vector3 } {
   return { eye, look: eye.add(flat.scale(4)) };
 }
 
+/**
+ * Se está armando la escuela: el bucle no dibuja (la pantalla de carga la
+ * tapa). Al reconstruir (cambio de calidad, entrar o salir del visor) cada
+ * `await progress` cede cuadros con la escena a medio armar: la escuela
+ * nueva sin luces ni Environment (sin NORMAL, el viento no compilaba) y el
+ * mapa de sombras dibujando mallas recién creadas, que cortaba el cuadro con
+ * "Cannot read properties of undefined (reading '0')". El primer armado ya
+ * corría así, antes de arrancar el bucle.
+ */
+let building = false;
+
 /** Construye (o reconstruye) la escuela y su barrio. */
 async function buildCity(newSeed: number): Promise<void> {
+  building = true;
+  try {
+    await assembleCity(newSeed);
+  } finally {
+    building = false;
+  }
+}
+
+async function assembleCity(newSeed: number): Promise<void> {
   await progress(10, 'Abriendo la escuela…');
 
   // Al cambiar la calidad se reconstruye todo: el jugador sigue donde estaba.
@@ -656,7 +676,7 @@ async function start(): Promise<void> {
       xr?.setPerformanceLevel(adaptiveLevel);
       updateQualityButton();
     }
-    scene.render();
+    if (!building) scene.render();
   });
   window.addEventListener('resize', () => {
     engine.resize();

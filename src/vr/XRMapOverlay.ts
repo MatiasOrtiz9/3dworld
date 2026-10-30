@@ -43,8 +43,8 @@ export class XRMapOverlay {
   }
 
   set(info: HudInfo): void {
+    // Se enciende en `update`, sólo con la cámara del visor.
     this.info = info;
-    this.mesh.setEnabled(Boolean(info.mapCanvas));
     const key = `${info.mapKey ?? ''}|${info.mapLevel ?? ''}`;
     if (!info.mapCanvas || key === this.drawn) return;
     this.drawn = key;
@@ -79,8 +79,15 @@ export class XRMapOverlay {
     this.texture.update(true);
   }
 
-  update(camera: Camera): void {
-    if (!this.info?.mapCanvas) return;
+  /**
+   * Por cuadro, con la cámara del visor (null fuera de él). Fuera del visor
+   * se apaga: si no, quedaba flotando (por encima de todo, grupo 1) donde
+   * estuvo la cabeza, justo delante de la cámara del escritorio al salir.
+   */
+  update(camera: Camera | null): void {
+    const on = Boolean(camera && this.info?.mapCanvas);
+    if (this.mesh.isEnabled() !== on) this.mesh.setEnabled(on);
+    if (!on || !camera) return;
     const forward = camera.getDirection(FORWARD).scale(0.88);
     const right = camera.getDirection(RIGHT).scale(0.34);
     const up = camera.getDirection(UP).scale(0.27);

@@ -44,7 +44,7 @@ import { phrasesFromQuery } from './story/phrases';
 import { localSaveStore, type SaveStore } from './story/save';
 import { DialogueRunner, StoryEngine } from './story/StoryEngine';
 import type { ActivityId, ChapterDef, CharacterDef, ChapterId, Effect, InteractableDef, ObjectiveDef, PlaceDef, Spot, StationDef, ZoneId } from './story/types';
-import { ACT, DOOR_LOCKS, ENTRANCE_U, EVAC_ROUTE, INTERACTABLES, LOCKS, PLACES, START, STAIR_GUIDES, isJardinRoom, nearestUndiscovered, outsideRoom, placeForRoom } from './story/world';
+import { ACT, DOOR_LOCKS, ENTRANCE_U, EVAC_ROUTE, INTERACTABLES, LOCKS, PLACES, START, STAIR_GUIDES, isJardinRoom, nearestUndiscovered, outsideRoom, placeForRoom, safeToRelock } from './story/world';
 import { focusByGaze, focusByRay, type Candidate } from './Interaction';
 import { GameProps, PENALTY_SPOT, GOAL_MOUTH_U } from './world/GameProps';
 import { Doors } from './world/Doors';
@@ -766,7 +766,7 @@ export class GameDirector {
       if (place && SESSION.started && !SESSION.freeRoam) this.react(this.engine.enterPlace(place.id));
     }
     this.hud.setLevelBadge(this.level === 0 ? 'PB' : `${this.level}° PISO`);
-    if (this.locksDirty && this.level === 0 && !isJardinRoom(this.room)) {
+    if (this.locksDirty && safeToRelock({ u, v, level: this.level, room: this.room }, this.engine.zone('entrada'))) {
       this.locksDirty = false;
       this.applyLocks(false);
     }
@@ -2715,11 +2715,12 @@ export class GameDirector {
         this.startFreeRoam();
         this.after(1.2, () => this.vrToast('Paseo libre', 'Toda la escuela abierta, sin misiones. Y o B abre el menú.'));
       } else {
+        // Con el paseo libre heredado (elegido en el título de la PC antes de
+        // entrar al visor) la historia quedaba congelada: sin prólogo, sin
+        // objetivo y el jugador en el mirador.
+        this.setFreeRoam(false);
         if (fresh) this.newGame();
-        else {
-          this.setFreeRoam(false);
-          this.resume(true);
-        }
+        else this.resume(true);
         // Una partida nueva (o sin nada hecho) pasa por el prólogo, que ya lleva
         // al jugador frente al portal; una retomada también arranca ahí.
         if (this.engine.data.done.length > 0) {

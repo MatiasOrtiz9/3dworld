@@ -115,6 +115,10 @@ check('el user agent del Quest elige el perfil VR', /VR/.test(tier ?? ''), tier 
 // Con la pantalla de título, el botón de VR es el suyo ("Jugar en VR").
 const titleVr = await page.$eval('#title-vr', (b) => !b.hidden && b.offsetParent !== null).catch(() => false);
 check('el título ofrece jugar en VR', titleVr);
+// Paseo libre activado en la PC antes de entrar (como "Paseo libre" del
+// título o "Explorar libre" de Ajustes): el inicio del visor igual tiene que
+// jugar la historia (ver «Nueva partida» más abajo).
+await page.$eval('#btn-free', (b) => b.click());
 await page.click(titleVr ? '#title-vr' : '#btn-vr');
 const entered = await until(() => window.__scene?.activeCamera?.getClassName() === 'WebXRCamera', 120000);
 check('entra en VR', entered);
@@ -586,6 +590,8 @@ check('la A en «Nueva partida» arranca la partida y se camina', started, `${st
 check('al empezar se cierra el panel (la misma pulsación no elige otra cosa)', !afterStart.visible && afterStart.menu === null, afterStart.kind ?? '');
 check('los primeros segundos de juego se ven los rótulos de los mandos', afterStart.hints);
 check('apenas empieza se puede caminar', afterStart.canWalk === true);
+const story = await page.evaluate(() => ({ free: document.body.classList.contains('free-roam'), feet: window.__player.feet() }));
+check('«Nueva partida» juega la historia aunque se viniera del paseo libre', !story.free, JSON.stringify(story));
 await shot('vr-2-partida');
 
 // ------------------------------------------------------------ saludar a Rubén
@@ -888,10 +894,12 @@ await sleep(800);
 const desk = await page.evaluate(() => ({
   atTitle: window.__game.atTitle,
   panel: Boolean(window.__scene.getMeshByName('gamePanel')?.isEnabled()),
+  // El minimapa del visor flotaba frente al escritorio donde quedó la cabeza.
+  map: Boolean(window.__scene.getMeshByName('xrMapOverlay')?.isEnabled()),
   title: !document.getElementById('title').classList.contains('hidden'),
   btn: document.getElementById('btn-vr').textContent,
 }));
-check('en el escritorio sigue la partida, sin panel del visor', !desk.atTitle && !desk.panel && /Entrar/.test(desk.btn ?? ''), JSON.stringify(desk));
+check('en el escritorio sigue la partida, sin panel ni minimapa del visor', !desk.atTitle && !desk.panel && !desk.map && /Entrar/.test(desk.btn ?? ''), JSON.stringify(desk));
 
 await finish();
 

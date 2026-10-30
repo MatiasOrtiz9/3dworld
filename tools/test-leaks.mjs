@@ -24,11 +24,16 @@ const url = process.argv[2] ?? 'http://localhost:5174/?seed=42';
 // Multiplos de 3 para cerrar el ciclo de calidad y volver al perfil inicial.
 const cycles = Number(process.argv[3] ?? 2);
 const rounds = cycles * 3;
+// Con GPU por defecto, como las otras pruebas (`sw` usa SwiftShader: cada
+// reconstrucción tarda minutos).
+const gpu = process.argv[4] !== 'sw';
 
 const browser = await puppeteer.launch({
   executablePath: CHROME,
   headless: true,
-  args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader'],
+  args: gpu
+    ? ['--no-sandbox', '--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist']
+    : ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader'],
 });
 const page = await browser.newPage();
 await page.setViewport({ width: 900, height: 600 });
@@ -63,7 +68,10 @@ const snapshot = () =>
 const first = await snapshot();
 
 for (let i = 0; i < rounds; i++) {
-  await page.click('#btn-quality');
+  // El botón vive en Ajustes, dentro del menú de pausa (oculto): un clic de
+  // puppeteer sobre él falla ("Node is either not clickable"). El juego sólo
+  // escucha el evento, así que alcanza con dispararlo.
+  await page.$eval('#btn-quality', (b) => b.click());
   await new Promise((r) => setTimeout(r, 600));
   await waitReady();
   await new Promise((r) => setTimeout(r, 400));

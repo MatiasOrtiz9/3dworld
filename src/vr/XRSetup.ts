@@ -223,7 +223,7 @@ export async function setupXR(scene: Scene, options: XRSetupOptions): Promise<XR
   const wrist = new WristPanel(scene);
   const mapOverlay = new XRMapOverlay(scene);
   const mapOverlayObserver = scene.onBeforeRenderObservable.add(() => {
-    if (base.state === WebXRState.IN_XR) mapOverlay.update(cam);
+    mapOverlay.update(base.state === WebXRState.IN_XR ? cam : null);
   });
   const models = new ControllerModels(scene, experience.input, (grip) => wrist.attachTo(grip));
   const vignette = new ComfortVignette(scene, cam);
