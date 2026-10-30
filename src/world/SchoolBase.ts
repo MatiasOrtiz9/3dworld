@@ -202,6 +202,13 @@ export const V = {
   wcP1: -17.41,
   wcP2: -19.62,
   gymTop: -20.8,
+  /**
+   * Escuela 2050: frente norte del primer piso del edificio de bloque, en
+   * voladizo 3 m sobre el patio este (2,6 del plano). 2° A y el aula taller
+   * tenían 3,7 m de fondo (19 y 23 m²); abajo queda una galería cubierta
+   * sobre columnas y el paso al pasillo del jardín sigue en el patio.
+   */
+  blockN: -23.4,
   /** Administración: su lado norte, al pasillo norte. */
   admN: -20.9,
   /** Pasillo norte: lado sur (= norte del patio y del buffet). */

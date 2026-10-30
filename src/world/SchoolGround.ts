@@ -1220,7 +1220,11 @@ const ITEMS_PB: Item[] = [
   item('roundPlanter', 48.45, -28.95, 3.2, 3.2),
   // Bicicleta apoyada contra la pilastra, entre el cantero y la puerta blanca (1:05).
   item('bike', 49.85, -27.2, 0.5, 1.5, 'w'),
-  ...[-21.6, -22.9, -24.2].map((v) => ({ ...item('bunting', 45.42, v, 9.6, 0.05, 's', false), y: 3.6 })),
+  // Banderines al norte del voladizo de 2° A (a 3,6 m pasaban por su losa).
+  ...[-24.3, -25.45, -26.6].map((v) => ({ ...item('bunting', 45.42, v, 9.6, 0.05, 's', false), y: 3.6 })),
+  // Escuela 2050: columnas del voladizo de 2° A y el aula taller, bajo el
+  // borde de su losa (la galería cubierta del patio).
+  ...[40.84, 46.6, 49.3].map((u) => ({ ...item('roundColumn', u, V.blockN, 0.3, 0.3), color: 'frame', h: SCHOOL.storey - 0.15 })),
   // El patio de juegos de antes (bicicletero, torre de madera con toboganes,
   // aviarios, choza, hamacas, tobogán, domo trepador, arenero y cerco de
   // cañas) se removió: el patio nuevo del video de 2026 termina en las

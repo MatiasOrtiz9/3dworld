@@ -102,7 +102,7 @@ function holeOf(o: Opening, wallH: number): [number, number] {
 }
 
 /** Ambientes de un piso alto sobre un patio de planta baja: llevan losa vista por debajo. */
-const SOFFIT_ROOMS: ReadonlySet<string> = new Set(['aulaNE']);
+const SOFFIT_ROOMS: ReadonlySet<string> = new Set(['aulaNE', 'aulaBloqueA', 'aulaTaller']);
 
 interface Side {
   bands: Array<[number, number, Material]>;

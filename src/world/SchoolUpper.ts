@@ -247,7 +247,9 @@ export const UPPER_VOLUMES: readonly Volume[] = [
   // Edificio de bloque: la franja oeste tiene azotea; el resto queda bajo la
   // bóveda del polideportivo, que se prolonga hasta el muro de los espejos.
   { poly: rect(U.salonW, V1.blockHall, U1.vaultW, V.facade), floors: 1 },
-  { poly: rect(U.salonW, V.gymTop, U1.vaultW, V1.blockA), floors: 1 },
+  { poly: rect(U.salonW, V.blockN, U1.vaultW, V1.blockA), floors: 1 },
+  // Voladizo de 2° A y el aula taller más allá de la bóveda: azotea propia.
+  { poly: rect(U1.vaultW, V.blockN, U.gymW, V.gymTop), floors: 1 },
   // Remate de la escalera de chapa: tres plantas, con el tanque de agua arriba.
   { poly: rect(U.salonW, V1.blockA, U1.vaultW, V1.blockHall), floors: 2 },
   { poly: rect(U1.vaultW, V.gymTop, U.gymW, V.facade), floors: 1, roof: false },
@@ -301,8 +303,8 @@ const L1: Room[] = [
   },
   { id: 'aulaBloqueD', name: 'Aula', caption: '3° C', poly: rect(U1.blockCorr, V1.blockCD, U.gymW, V.facade), floor: 'ceramic', roofed: true },
   { id: 'aulaBloqueC', name: 'Aula', caption: '5° C', poly: rect(U1.blockCorr, V1.blockHall, U.gymW, V1.blockCD), floor: 'ceramic', roofed: true },
-  { id: 'aulaBloqueA', name: 'Aula', caption: '2° A', poly: rect(U.salonW, V.gymTop, U1.aulaTaller, V1.blockA), floor: 'ceramic', roofed: true },
-  { id: 'aulaTaller', name: 'Aula', caption: 'Aula taller emociones · psicología', poly: rect(U1.aulaTaller, V.gymTop, U.gymW, V1.blockA), floor: 'ceramic', roofed: true },
+  { id: 'aulaBloqueA', name: 'Aula', caption: '2° A', poly: rect(U.salonW, V.blockN, U1.aulaTaller, V1.blockA), floor: 'ceramic', roofed: true },
+  { id: 'aulaTaller', name: 'Aula', caption: 'Aula taller emociones · psicología', poly: rect(U1.aulaTaller, V.blockN, U.gymW, V1.blockA), floor: 'ceramic', roofed: true },
 
   // --- Ala oeste (sobre el pasillo oeste y el ala de Administración) ---------
   {
@@ -549,21 +551,29 @@ const W1: Wall[] = [
   // para dos hojas (la doble de 1,15 m se metía en los muros de los costados).
   vw(U.salonW, V1.walkS, V1.walkN, 'int', [[-13.75, -14.7, 'door', undefined, undefined, 'frame']]),
   {
-    ...vw(U.salonW, V1.walkN, V.gymTop, 'ext', [
+    ...vw(U.salonW, V1.walkN, V.blockN, 'ext', [
       [-15.5, -16.8, 'window', 1.0, 2.2, undefined, 'mesh'],
       [-18.2, -20.2, 'window', 1.0, 2.2, undefined, 'mesh'],
+      [-21.0, -22.8, 'window', 0.9, 2.3],
     ]),
     ext: 'brickWhite',
   },
   {
-    ...hw(V.gymTop, U.salonW, U1.vaultW, 'ext', [[42.4, 43.8, 'window', 1.0, 2.2, undefined, 'mesh']]),
+    // Al patio, ventanales corridos de 2° A (Escuela 2050: el aula ganó el voladizo).
+    ...hw(V.blockN, U.salonW, U1.vaultW, 'ext', [
+      [41.2, 43.7, 'window', 0.9, 2.3],
+    ]),
     ext: 'brickWhite',
   },
   {
-    // Una ventana por aula: 2° A y el aula taller (la malla es cara en el visor).
-    ...hw(V.gymTop, U1.vaultW, U.gymW, 'ext', [[47.4, 48.8, 'window', 1.0, 2.2, undefined, 'mesh']], 3.9),
+    ...hw(V.blockN, U1.vaultW, U.gymW, 'ext', [
+      [44.4, 45.4, 'window', 0.9, 2.3],
+      [46.3, 49.6, 'window', 0.9, 2.3],
+    ]),
     ext: 'brickWhite',
   },
+  // Costado del voladizo sobre el techo del pasillo del jardín.
+  { ...vw(U.gymW, V.blockN, V.gymTop, 'ext', [[-21.4, -22.9, 'window', 0.9, 2.3]]), ext: 'brickWhite' },
   // Pasillo del bloque: frente vidriado del aula C (puerta toda de vidrio y
   // dos corredizas) y puerta del aula D.
   vw(U1.blockCorr, V.facade, V1.blockHall, 'int', [
@@ -582,7 +592,7 @@ const W1: Wall[] = [
   vw(U1.blockStair0, -16.15, V1.blockA, 'int', [[-16.3, -17.45, 'window', 1.0, 2.2]], 2.9),
   // Al fondo del hall de la escalera, 2° A y el aula taller (la mano la parte en dos).
   hw(V1.blockA, U.salonW, U.gymW, 'int', [door(40.85, 41.75), door(49.05, 49.95)]),
-  vw(U1.aulaTaller, V1.blockA, V.gymTop),
+  vw(U1.aulaTaller, V1.blockA, V.blockN),
 
   // --- Sector nuevo ---------------------------------------------------------
   // Frente al patio central: ladrillo pintado con ventanitas enrejadas
@@ -681,6 +691,9 @@ const W1: Wall[] = [
 
 /** Segundo piso: aula de danzas y su hall, bajo la bóveda del polideportivo. */
 const W2: Wall[] = [
+  // Remate de la bóveda del polideportivo sobre la azotea del voladizo de 2° A
+  // y el aula taller (antes era el muro norte de esas aulas, de 3,9 m).
+  { ...hw(V.gymTop, U1.vaultW, U.gymW, 'ext', [], 0.6), ext: 'brickWhite' },
   // Testero norte del aula: puerta doble y dos ventanas a la escalera.
   hw(V1.blockHall, U1.vaultW, U.gymW, 'int', [
     [44.9, 46.3, 'double', undefined, undefined, 'frame'],
@@ -1027,8 +1040,16 @@ const I1: Item[] = [
   // Pizarra en el muro lleno del sur (el del pasillo tiene dos ventanas).
   ...desks({ u0: 44.0, v0: -13.4, u1: 49.6, v1: -9.0 }, 's', 'timber', 'chairGreen', 3, 3, 'table'),
   ...classKit([46.8, V1.blockCD - 0.12], 'n', 46.8, -10.7),
-  ...desks({ u0: 42.0, v0: -20.4, u1: 45.5, v1: -18.0 }, 'n', 'timber', 'chairGreen', 2, 2, 'table'),
-  ...bareRoom([U1.aulaTaller + 0.12, -19.2], 'e', 2.4, [46.85, -19.2]),
+  // 2° A, ya con el voladizo: tres filas de mesas mirando al este (el ventanal
+  // al patio queda a la izquierda), pizarra en el tabique del aula taller.
+  ...desks({ u0: 41.25, v0: -22.75, u1: 44.0, v1: -18.75 }, 'e', 'timber', 'chairGreen', 3, 3, 'table'),
+  ...classKit([U1.aulaTaller - 0.12, -20.6], 'w', 43.0, -20.6),
+  item('teacherDesk', 44.95, -20.6, 0.7, 1.3, 'w'),
+  // Aula taller (emociones · psicología): pizarra y escritorio, y dos mesas
+  // redondas de trabajo en grupo.
+  ...bareRoom([U1.aulaTaller + 0.12, -20.6], 'e', 2.4, [46.85, -20.6]),
+  item('roundTable', 48.55, -22.1, 1.1, 1.1),
+  item('roundTable', 48.55, -19.6, 1.1, 1.1),
   item('extinguisher', U.salonW + 0.24, -17.15, 0.17, 0.17, 'e', false),
   // Video 2026 (0:31–0:33): persianas de enrollar rosado salmón, bajas tres
   // cuartos, en las ventanas que dan sobre la escalera blanca del patio.
