@@ -48,6 +48,9 @@ const VIEWS = [
   { name: 'gimnasio', eye: [60, 1.7, -22.5], look: [75, 2.5, -5] },
   { name: 'calle', eye: [15, 1.6, 13], look: [15, 4, 0] },
   { name: 'aerea', eye: [40, 60, 60], look: [38, 0, -15] },
+  // Adentro de ambientes cerrados: primer piso y salón de danzas.
+  { name: 'aula-p1', eye: [5.5, 5.02, -6.5], look: [1, 4.2, -0.5] },
+  { name: 'danzas', eye: [57.5, 8.32, -4.5], look: [51.5, 7.5, -15] },
 ];
 
 const browser = await puppeteer.launch({
