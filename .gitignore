@@ -13,3 +13,6 @@ Thumbs.db
 
 # Recorrido virtual de la escuela (~800 MB): referencia local, no se versiona
 *.mp4
+
+# Copias de trabajo (worktrees) de los agentes de Claude Code
+.claude/
