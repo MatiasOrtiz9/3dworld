@@ -5,7 +5,8 @@
  * Uso: node tools/anim-shots.mjs <url> <carpeta> [fase] [modo]
  *   fase: entrada | recreo | clase | salida | acto (por defecto, recreo)
  *   modo: walk (alguien caminando, por defecto) | idle (alguien parado) |
- *         sit (alguien sentado) | run (alguien corriendo)
+ *         sit (alguien sentado) | run (alguien corriendo) |
+ *         wave (alguien parado que saluda)
  *
  * Elige a la persona del modo pedido más cercana al centro del patio, pone
  * la cámara a 3,6 m de su costado (a la altura de la cadera, mirando su
@@ -42,23 +43,48 @@ const pick = await page.evaluate((m) => {
     if (m === 'walk') return (b === 'walk' || b === 'run') && a.speed > 0.6 && a.speed < 1.8 && a.level === 0;
     if (m === 'run') return a.speed > 2 && a.level === 0;
     if (m === 'sit') return !!a.seat;
-    return b === 'idle' && a.speed < 0.05 && !a.seat && a.level === 0;
+    return (b === 'idle' || b === 'lookAround') && a.speed < 0.05 && !a.seat && a.level === 0;
   };
   const list = pop.sim.agents.filter(ok);
-  if (list.length === 0) return null;
-  const a = list[Math.floor(list.length / 2)];
+  // Una con lugar libre a un costado (si no, la cámara queda dentro de un muro).
+  const idx = window.__index();
+  const free = (a, side) => {
+    const x = f.ox - a.u;
+    const z = f.oz + a.v;
+    const fx = Math.sin(a.yaw);
+    const fz = Math.cos(a.yaw);
+    for (const r of [1, 2, 3, 3.6]) if (idx.isSolid(x + side * fz * r, z - side * fx * r, a.y)) return false;
+    return true;
+  };
+  let a = null;
+  let side = 1;
+  for (let k = 0; k < list.length && !a; k++) {
+    const c = list[(k + Math.floor(list.length / 2)) % list.length];
+    if (free(c, 1)) a = c;
+    else if (free(c, -1)) {
+      a = c;
+      side = -1;
+    }
+  }
+  if (!a) return null;
   const x = f.ox - a.u;
   const z = f.oz + a.v;
   const fx = Math.sin(a.yaw);
   const fz = Math.cos(a.yaw);
   // Delante en su camino (lo que va a recorrer en ~1 s) y 3,6 m al costado.
   const ahead = m === 'walk' || m === 'run' ? a.speed * 0.55 : 0;
-  const cx = x + fx * ahead + fz * 3.6;
-  const cz = z + fz * ahead - fx * 3.6;
+  const cx = x + fx * ahead + side * fz * 3.6;
+  const cz = z + fz * ahead - side * fx * 3.6;
   const scene = window.__scene;
   const cam = scene.activeCamera;
   const V3 = window.__BABYLON_Vector3;
   window.__animPick = a;
+  if (m === 'wave') {
+    a.lookPlayer = false;
+    a.anim.gesture = 'wave';
+    a.anim.gT = 0;
+    a.anim.gDur = 3;
+  }
   cam.position = new V3(cx, a.y + (m === 'sit' ? 1.1 : 1.0), cz);
   cam.setTarget(new V3(x + fx * ahead, a.y + 0.7, z + fz * ahead));
   return { id: a.id, role: a.role, age: a.look.age, speed: a.speed, base: a.anim.base, n: list.length };

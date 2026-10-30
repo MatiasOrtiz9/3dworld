@@ -238,16 +238,16 @@ function idle(o: Float32Array, c: AnimCtx, style: IdleStyle = c.style): void {
   // lado de la pierna floja (contrapposto); la floja dobla la rodilla y
   // levanta apenas el talón. Los pies NO se mueven: antes la pierna floja
   // arrastraba el pie 4 cm cada vez que cambiaba el peso.
-  o[SWAY] = 0.024 * ws;
-  o[PROLL] = -0.035 * ws;
+  o[SWAY] = 0.03 * ws;
+  o[PROLL] = -0.04 * ws;
   o[PTWIST] = 0.025 * ws;
   o[ROLL] = 0.025 * ws;
   const rl = pos(ws);
   const rr = pos(-ws);
   // Un pie apenas adelante del otro, propio de cada uno.
   const st = (c.seed > 0.5 ? 1 : -1) * (0.015 + 0.03 * ((c.seed * 3.7) % 1));
-  placeLeg(o, c, false, 0.012 + st, 0.04 + 0.26 * rl, 0.1 * rl);
-  placeLeg(o, c, true, 0.012 - st, 0.04 + 0.26 * rr, 0.1 * rr);
+  placeLeg(o, c, false, 0.012 + st, 0.04 + 0.32 * rl, 0.12 * rl);
+  placeLeg(o, c, true, 0.012 - st, 0.04 + 0.32 * rr, 0.12 * rr);
   legsApart(o, 0.035, o[PROLL]);
   // La mirada se queda un rato en un lado y cambia (no barre como un faro).
   o[HYAW] = 0.16 * Math.tanh(2.2 * Math.sin(t * 0.37 + s)) + 0.04 * Math.sin(t * 0.91 + s * 2) - o[PTWIST];
@@ -669,12 +669,19 @@ function sitFloor(o: Float32Array, c: AnimCtx): void {
 function wave(o: Float32Array, c: AnimCtx): void {
   idle(o, c);
   const t = c.t;
-  o[ARM_R] = 0.3;
-  o[ARM_R + 1] = 2.5 + 0.18 * Math.sin(t * 15.5);
-  o[ARM_R + 2] = 0.05;
-  o[ARM_R + 3] = 0.45 + 0.18 * Math.sin(t * 15.5 + 1.2);
+  // Codo al costado, a la altura del hombro, y el antebrazo para arriba; la
+  // mano va y viene girando el brazo sobre su eje (pose hallada con el
+  // esqueleto: con el brazo estirado arriba parecía pedir la palabra). Los
+  // chicos, con más ganas.
+  const f = c.kid ? 15 : 12.5;
+  const k = c.kid ? 0.48 : 0.36;
+  o[ARM_R] = 1.15;
+  o[ARM_R + 1] = 1.1;
+  o[ARM_R + 2] = -0.3 + k * Math.sin(t * f);
+  o[ARM_R + 3] = 1.6 + 0.08 * Math.sin(t * f + 1.2);
+  o[TWIST] += 0.05;
   o[HPITCH] = -0.04;
-  o[HROLL] = 0.06;
+  o[HROLL] = 0.06 + 0.02 * Math.sin(t * f * 0.5);
 }
 
 function point(o: Float32Array, c: AnimCtx): void {
