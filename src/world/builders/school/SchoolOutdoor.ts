@@ -577,6 +577,11 @@ export class SchoolOutdoor {
           const p = toWorld(this.k.f, u, v);
           for (let k = 0; k < 9; k++) {
             const a = (k / 9) * Math.PI * 2;
+            if (this.k.cards) {
+              // Hoja pinnada entera, parada y abierta en abanico.
+              this.k.cards.blade('frond', new Vector3(p.x, FY + ph - 0.05, p.z), a, 0.75 - 0.12 * (k % 3), 1.25, 0.7);
+              continue;
+            }
             this.k.farm.add('box', frond, new Vector3(p.x + Math.sin(a) * 0.25, FY + ph + 0.2, p.z + Math.cos(a) * 0.25), new Vector3(0.3, 0.05, 0.9), a, -0.7);
           }
           break;
@@ -590,6 +595,13 @@ export class SchoolOutdoor {
           this.k.cyl(bark, u + du, v + dv, 0.07, ph * k, FY);
         }
         const p = toWorld(this.k.f, u, v);
+        if (this.k.cards) {
+          // Copa chica de hojas recortadas: tres tarjetas cruzadas y una
+          // acostada arriba (la icoesfera se leía como un chupetín facetado).
+          this.k.cards.tuft('fern', p.x, p.z, FY + ph - 0.65, 1.15, 1.05, u * 1.7, 3);
+          this.k.cards.flat('fern', p.x, p.z, FY + ph - 0.05, 1.0, 1.0, v);
+          break;
+        }
         this.k.farm.add('blob', this.k.mats.foliage(PALETTE.leafMid), new Vector3(p.x, FY + ph - 0.1, p.z), new Vector3(1.0, 0.9, 1.0));
         break;
       }

@@ -225,8 +225,23 @@ export class RenderPipeline {
     // rectángulos enteros, que dejaban manchones grises alrededor de cada
     // palmera y cada mata (también sobre el cielo). Fuera del búfer, la
     // oclusión las ignora.
-    const gbuffer = this.scene.geometryBufferRenderer?.getGBuffer();
-    if (gbuffer) gbuffer.renderListPredicate = (mesh) => !mesh.material?.name.startsWith('cards|');
+    // Se las saltea en su `isReady` (sin dibujar, sin trabar al resto): un
+    // `renderListPredicate` armaba la lista con TODAS las mallas de la escena
+    // (también las fuera de cuadro) y dejaba avisos de programas inválidos.
+    const gbr = this.scene.geometryBufferRenderer;
+    if (gbr && !(gbr as { __cardsSkipped?: boolean }).__cardsSkipped) {
+      const ready = gbr.isReady.bind(gbr);
+      gbr.isReady = (subMesh, instanced) => !subMesh.getMaterial()?.name.startsWith('cards|') && ready(subMesh, instanced);
+      // Y para la espera de "listo" del búfer cuentan como listas: si no, la
+      // escena no terminaba nunca de estar lista.
+      const mrt = gbr.getGBuffer();
+      const mrtReady = mrt.customIsReadyFunction;
+      if (mrtReady) {
+        mrt.customIsReadyFunction = (mesh, refreshRate, preWarm) =>
+          mesh.material?.name.startsWith('cards|') ? true : mrtReady(mesh, refreshRate, preWarm);
+      }
+      (gbr as { __cardsSkipped?: boolean }).__cardsSkipped = true;
+    }
     ssao.samples = s.samples;
     ssao.radius = s.radius;
     ssao.totalStrength = s.strength;
