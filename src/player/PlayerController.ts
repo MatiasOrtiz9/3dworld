@@ -68,6 +68,10 @@ export class PlayerController {
 
     window.addEventListener('keydown', this.handleDown);
     window.addEventListener('keyup', this.handleUp);
+    // Al perder el foco (Alt+Tab, clic en otra ventana, un diálogo del
+    // sistema) el keyup de lo que estaba apretado nunca llega: sin esto el
+    // jugador seguía caminando o corriendo solo al volver.
+    window.addEventListener('blur', this.releaseKeys);
     this.scene.onBeforeRenderObservable.add(this.update);
   }
 
@@ -120,6 +124,7 @@ export class PlayerController {
   dispose(): void {
     window.removeEventListener('keydown', this.handleDown);
     window.removeEventListener('keyup', this.handleUp);
+    window.removeEventListener('blur', this.releaseKeys);
     this.scene.onBeforeRenderObservable.removeCallback(this.update);
   }
 
@@ -131,12 +136,18 @@ export class PlayerController {
       return;
     }
     this.keys.add(e.code);
-    if (e.code === 'KeyF') this.toggleMode();
+    // Sin la repetición automática: mantener F alternaba caminar/volar
+    // decenas de veces por segundo.
+    if (e.code === 'KeyF' && !e.repeat) this.toggleMode();
     if (e.code === 'Space') e.preventDefault();
   };
 
   private handleUp = (e: KeyboardEvent): void => {
     this.keys.delete(e.code);
+  };
+
+  private releaseKeys = (): void => {
+    this.keys.clear();
   };
 
   private update = (): void => {
