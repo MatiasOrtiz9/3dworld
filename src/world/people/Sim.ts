@@ -1,7 +1,7 @@
 import type { CharacterLook, NpcAnim, NpcRole, SchoolPhase } from '../../game/contracts';
 import { Rng } from '../../utils/rng';
 import { LEVEL_Y, U, V, WALLS, inLot, levelOf, planU, planV, roomAt, schoolFloorLocal, schoolSolidLocal, type Level, type Rect } from '../SchoolLayout';
-import { GESTURES, SEATED, newAnimState, setBase, startGesture, tickAnim, type AnimId, type AnimState } from './Anim';
+import { GESTURES, SEATED, aimLook, newAnimState, setAnimBody, setBase, sitKnee, startGesture, stepGait, tickAnim, turnToward, type AnimId, type AnimState } from './Anim';
 import { bodyDims, dressStaff, makeAppearance, type Appearance, type BodyDims, type StaffKind } from './Looks';
 import { NAV_BOUNDS, NavGrid, type NavPoint, type PathJob, type PathLeg } from './NavGrid';
 import { Places, yawOfLocal, type Board, type Seat, type Spot } from './Places';
@@ -102,6 +102,8 @@ export class Agent {
   seatY = 0;
   yaw = 0;
   wantYaw = 0;
+  /** Velocidad de giro del cuerpo (rad/s): los giros arrancan y frenan suave. */
+  yawV = 0;
   vu = 0;
   vv = 0;
   speed = 0;
@@ -190,12 +192,7 @@ export class Agent {
   ) {
     this.radius = 0.16 + 0.1 * body.s * look.build;
     this.anim = newAnimState(seed, look.idleStyle, look.age === 'kid' || look.age === 'child');
-    this.anim.waist = body.waist;
-    this.anim.shY = body.shoulderY;
-    this.anim.l1 = body.upperArm;
-    this.anim.l2 = body.forearm;
-    this.anim.thigh = body.thigh;
-    this.anim.thighR = body.seatOffset;
+    setAnimBody(this.anim, body, look.age);
   }
 
   get alive(): boolean {
@@ -896,6 +893,7 @@ export class PeopleSim {
     a.level = level;
     a.y = this.floorAt(level, u, v);
     a.yaw = a.wantYaw = yaw;
+    a.yawV = 0;
     a.vu = a.vv = a.speed = 0;
     a.onStair = false;
     a.pre = a.post = null;
@@ -1226,7 +1224,7 @@ export class PeopleSim {
       const hip = 1.2;
       const drop = top - d.thigh * Math.cos(hip) - s.footY;
       a.anim.hipFlex = hip;
-      a.anim.knee = hip + Math.acos(clamp(drop / d.shin, 0, 1));
+      a.anim.knee = hip + sitKnee(drop, d.legS);
       a.anim.dangle = false;
       return;
     }
@@ -1241,7 +1239,7 @@ export class PeopleSim {
     }
     a.anim.hipFlex = hip;
     if (d.shin * 0.98 >= drop) {
-      a.anim.knee = hip - Math.acos(clamp(drop / d.shin, 0, 1));
+      a.anim.knee = hip - sitKnee(drop, d.legS);
       a.anim.dangle = false;
     } else {
       a.anim.knee = hip - 0.08;
@@ -2098,10 +2096,8 @@ export class PeopleSim {
 
   private animate(a: Agent, dt: number): void {
     const an = a.anim;
-    // Giro del cuerpo hacia donde quiere mirar.
-    const dy = wrap(a.wantYaw - a.yaw);
-    const rate = (a.speed > 0.3 ? (a.run ? 7 : 4.5) : 2.6) * dt;
-    a.yaw = wrap(a.yaw + clamp(dy, -rate, rate));
+    // Giro del cuerpo hacia donde quiere mirar, con inercia.
+    const dy = turnToward(a, a.speed > 0.3 ? (a.run ? 7 : 4.5) : 2.6, dt);
     // Girar en el lugar más de unos 20° se hace dando pasitos: sin esto el
     // cuerpo rotaba sobre los pies quietos, como en una bandeja giratoria.
     const still = a.speed < 0.08 && a.seat === null && a.task.k !== 'floor' && !SEATED.has(an.base);
@@ -2121,13 +2117,9 @@ export class PeopleSim {
       setBase(an, a.task.k === 'script' ? a.scriptAnim : (a.resume ?? 'idle'));
       a.resume = null;
     }
-    const legLen = 0.92 * a.body.legS;
     const runW = clamp((a.speed - a.walkSpeed * 1.25) / Math.max(0.3, a.look.runSpeed * 0.8 - a.walkSpeed * 1.25), 0, 1);
     an.run += (runW - an.run) * Math.min(1, dt * 4);
-    const ampT = clamp(legs / Math.max(0.3, a.walkSpeed * 0.9), 0, 1);
-    an.amp += (ampT - an.amp) * Math.min(1, dt * 5);
-    const stride = legLen * (1.45 + 1.15 * an.run);
-    an.phase = (an.phase + (legs * dt * TAU) / stride) % TAU;
+    stepGait(an, a.speed, turn, a.walkSpeed, a.body.legS, dt);
     tickAnim(an, dt);
     this.lookAt(a, dt);
   }
@@ -2172,8 +2164,7 @@ export class PeopleSim {
       const d = Math.hypot(du, dv) || 1;
       // Ojos: de pie, ~93 % de la altura; sentado, el tronco sobre el asiento.
       const eye = a.seat ? a.seatY + a.body.seatOffset + a.look.height * 0.93 - 0.92 * a.body.legS : a.y + a.look.height * 0.93;
-      an.lookYaw += (clamp(wrap(yawOfLocal(du, dv) - a.yaw), -1.35, 1.35) - an.lookYaw) * Math.min(1, dt * 5);
-      an.lookPitch += (clamp(Math.atan2(eye - ty, d), -0.4, 0.5) - an.lookPitch) * Math.min(1, dt * 5);
+      aimLook(an, clamp(wrap(yawOfLocal(du, dv) - a.yaw), -1.35, 1.35), clamp(Math.atan2(eye - ty, d), -0.4, 0.5), dt);
       an.lookW = Math.min(1, an.lookW + dt * 2.5);
       // Si hay que girar demasiado, el cuerpo acompaña (sólo parado y quieto).
       if (Math.abs(an.lookYaw) > 1.1 && a.stage === 'act' && !a.seat && a.task.k !== 'teach' && a.speed < 0.1 && a.task.k !== 'floor') {

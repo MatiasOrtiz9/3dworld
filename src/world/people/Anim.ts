@@ -1,5 +1,5 @@
 import type { NpcAnim } from '../../game/contracts';
-import type { IdleStyle } from './Looks';
+import { REF, type AgeGroup, type BodyDims, type IdleStyle } from './Looks';
 
 /**
  * Animación procedural de las personas.
@@ -7,8 +7,16 @@ import type { IdleStyle } from './Looks';
  * Nada de clips grabados: cada animación es una función del tiempo que
  * devuelve ángulos de articulación (los "canales" de la pose). Así cada
  * persona tiene su propio ritmo (semilla), la caminata se ajusta a la
- * velocidad real (el ciclo avanza con la distancia recorrida: los pies no
- * patinan) y cambiar de estado es mezclar dos poses durante un instante.
+ * velocidad real y cambiar de estado es mezclar dos poses durante un instante.
+ *
+ * La marcha (`gait`) no es una onda: se escribe dónde va cada PIE y se
+ * despeja el ángulo de cadera (cinemática inversa plana con la rodilla y el
+ * tobillo). Mientras un pie está apoyado retrocede respecto de la cadera en
+ * línea recta y exactamente a la velocidad del cuerpo, así que en el mundo
+ * queda quieto; el ciclo avanza con la distancia recorrida (`stepGait`) y el
+ * largo del paso y la cadencia crecen con la velocidad, como en la gente
+ * (chicos: pasos cortos y rápidos). Con las ondas de antes el pie apoyado
+ * patinaba al 60-90 % de la velocidad del cuerpo.
  *
  * Capas, de abajo hacia arriba:
  *  1. base: la animación del estado (parado, sentado, caminando…) con fundido
@@ -46,7 +54,12 @@ export const LEG_R = 20;
 export const SIT = 24;
 /** Rebote vertical extra (vuelo de la carrera), m relativos a la altura. */
 export const BOUNCE = 25;
-export const POSE_N = 26;
+/** Tobillos: flexión del pie respecto de la pierna (positiva: punta arriba). */
+export const ANK_L = 26;
+export const ANK_R = 27;
+/** Corrimiento lateral de la pelvis hacia +X (sobre la pierna que carga), × legS. */
+export const SWAY = 28;
+export const POSE_N = 29;
 
 /** Canales que un gesto puede pisar (torso, cabeza y brazos). */
 const UPPER: readonly number[] = [LEAN, TWIST, HYAW, HPITCH, HROLL, 8, 9, 10, 11, 12, 13, 14, 15];
@@ -57,10 +70,24 @@ export interface AnimCtx {
   /** Semilla de la persona (0..1): fases y frecuencias propias. */
   seed: number;
   style: IdleStyle;
-  /** Locomoción: amplitud (0..1), fase del ciclo (rad) y mezcla con la carrera. */
+  /** Locomoción: amplitud (0..1,15), fase del ciclo (rad) y mezcla con la carrera. */
   amp: number;
   phase: number;
   run: number;
+  /** Cuánto del paso es avance (0 = pasitos en el lugar para girar). */
+  fwd: number;
+  /** Aceleración (m/s²) e inclinación hacia adentro de la curva (rad). */
+  accel: number;
+  bank: number;
+  /** Estilo de marcha: largo de paso, levantar los pies, braceo e inclinación extra. */
+  strideK: number;
+  liftK: number;
+  armK: number;
+  leanK: number;
+  /** Media cadera (eje de la pierna) y talón/punta del zapato, × legS. */
+  hipXn: number;
+  heelN: number;
+  toeN: number;
   /** Sentado: flexión de cadera y de rodilla para apoyar los pies, y si los pies cuelgan. */
   hipFlex: number;
   knee: number;
@@ -85,6 +112,19 @@ export interface AnimCtx {
 
 const pos = (x: number) => (x > 0 ? x : 0);
 const smoothSign = (x: number) => Math.tanh(x * 3);
+const clampN = (x: number, a: number, b: number) => (x < a ? a : x > b ? b : x);
+const smooth01 = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
+const TAU = Math.PI * 2;
+const wrapA = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
+// Pierna en unidades de `legS` (ver `Looks.REF`): cadera → rodilla, rodilla →
+// tobillo, tobillo → suela; cadera → suela con la pierna estirada y el pie plano.
+const TH = REF.thigh;
+const SH = REF.ankle;
+const SOLE = REF.sole;
+const LEG = REF.thigh + REF.shin;
+/** Alto de pierna "de trabajo" para compensar corrimientos laterales con la abducción. */
+const LEG_V = 0.9;
 
 function rest(o: Float32Array): void {
   o.fill(0);
@@ -92,6 +132,64 @@ function rest(o: Float32Array): void {
   o[ARM_R + 1] = 0.09;
   o[ARM_L + 3] = 0.14;
   o[ARM_R + 3] = 0.14;
+}
+
+/**
+ * Pone una pierna con el tobillo a `x` (× legS) delante de la cadera, la
+ * rodilla doblada `knee` y el pie inclinado `toeDown` respecto del piso
+ * (0 = plano, positivo = talón levantado). Despeja la flexión de cadera de
+ * forma exacta: muslo y pierna forman un solo segmento de largo R(rodilla)
+ * girado δ. Descuenta lo que la torsión de la pelvis adelanta o atrasa la
+ * articulación de esa cadera, para que el pie apoyado no se corra con ella.
+ */
+function placeLeg(o: Float32Array, c: AnimCtx, right: boolean, x: number, knee: number, toeDown: number): void {
+  const tw = o[PTWIST];
+  const side = right ? 1 : -1;
+  // Girar la pelvis θ lleva la cadera derecha (+X) hacia atrás: z = −side·hipX·sen θ.
+  const hz = -side * c.hipXn * Math.sin(tw);
+  const xl = (x - hz) / Math.cos(tw);
+  const ck = Math.cos(knee);
+  const R = Math.sqrt(TH * TH + SH * SH + 2 * TH * SH * ck);
+  const th = Math.atan2(SH * Math.sin(knee), TH + SH * ck) + Math.asin(clampN(xl / R, -0.97, 0.97));
+  const L = right ? LEG_R : LEG_L;
+  o[L] = th;
+  o[L + 3] = knee;
+  // La pierna barre en el plano de la pelvis girada: el pie se correría de
+  // costado (xl·sen θ) y apuntaría girado. La abducción y el giro de la
+  // pierna sobre su eje lo devuelven (`legsApart` suma lo suyo encima).
+  o[L + 1] = (-side * xl * Math.sin(tw)) / LEG_V;
+  o[L + 2] = 0;
+  // El pie, respecto de la pierna (que está girada θ − rodilla hacia adelante).
+  o[right ? ANK_R : ANK_L] = -toeDown - (th - knee);
+}
+
+/** Rodilla que deja el tobillo a `x` adelante y `depth` debajo de la cadera (× legS). */
+function kneeFor(x: number, depth: number): number {
+  const c = (x * x + depth * depth - TH * TH - SH * SH) / (2 * TH * SH);
+  return Math.acos(clampN(c, -1, 1));
+}
+
+/** Profundidad del punto de apoyo (talón o punta `pz`) bajo la cadera. */
+function contactDepth(x: number, knee: number, phi: number, pz: number): number {
+  const R2 = TH * TH + SH * SH + 2 * TH * SH * Math.cos(knee);
+  return Math.sqrt(Math.max(0, R2 - x * x)) + SOLE * Math.cos(phi) + pz * Math.sin(phi);
+}
+
+/**
+ * Abducción de las dos piernas que deja los pies donde estaban aunque la
+ * pelvis se corra de costado (`SWAY`) o se incline (`roll`, la parte del
+ * rolido que no es inclinarse en una curva).
+ */
+function legsApart(o: Float32Array, base: number, roll: number): void {
+  const s = o[SWAY] / LEG_V;
+  o[LEG_L + 1] += base + s - roll;
+  o[LEG_R + 1] += base - s + roll;
+}
+
+/** Pies planos con las piernas como estén (sentados, de rodillas…). */
+function flatFeet(o: Float32Array): void {
+  o[ANK_L] = -(o[LEG_L] - o[LEG_L + 3]);
+  o[ANK_R] = -(o[LEG_R] - o[LEG_R + 3]);
 }
 
 /** Brazos según la postura de espera. */
@@ -116,6 +214,7 @@ function arms(o: Float32Array, c: AnimCtx, style: IdleStyle): void {
     o[ARM_R + 2] = 1.12;
     o[ARM_R + 3] = 1.8;
   } else {
+    // Sueltos: siguen al tronco con atraso (el balanceo del peso los mece).
     o[ARM_L] = 0.03 * Math.sin(c.t * 0.8 + s);
     o[ARM_R] = 0.03 * Math.sin(c.t * 0.8 + s + 1.3);
     o[ARM_L + 3] = 0.16 + 0.04 * Math.sin(c.t * 0.6 + s);
@@ -127,89 +226,213 @@ function idle(o: Float32Array, c: AnimCtx, style: IdleStyle = c.style): void {
   rest(o);
   const s = c.seed * 100;
   const t = c.t;
-  // Respiración (~0,27 Hz): pecho y hombros.
-  const br = Math.sin(t * 1.7 + s);
-  o[LEAN] = 0.015 + 0.012 * br;
-  // Cambio de peso de una pierna a la otra cada pocos segundos.
-  const ws = smoothSign(Math.sin(t * (c.kid ? 1.1 : 0.62) + s * 3));
-  o[PROLL] = 0.04 * ws;
-  o[PTWIST] = 0.03 * ws;
+  // Respiración (~0,27 Hz; los chicos, más rápido): pecho y hombros.
+  const br = Math.sin(t * (c.kid ? 2.3 : 1.7) + s);
+  o[LEAN] = 0.015 + 0.012 * br + c.leanK * 0.5;
+  // Cambio de peso de una pierna a la otra cada pocos segundos, con un ritmo
+  // propio (con el mismo período, una fila entera se balanceaba a la par) y
+  // pausas irregulares (dos senos de frecuencias no múltiplos).
+  const f = c.kid ? 1.1 : 0.42 + 0.3 * ((c.seed * 7.31) % 1);
+  const ws = smoothSign(Math.sin(t * f + s * 3) + 0.4 * Math.sin(t * f * 2.71 + s));
+  // ws > 0: el peso en la derecha. La pelvis se corre sobre ella y baja del
+  // lado de la pierna floja (contrapposto); la floja dobla la rodilla y
+  // levanta apenas el talón. Los pies NO se mueven: antes la pierna floja
+  // arrastraba el pie 4 cm cada vez que cambiaba el peso.
+  o[SWAY] = 0.03 * ws;
+  o[PROLL] = -0.04 * ws;
+  o[PTWIST] = 0.025 * ws;
+  o[ROLL] = 0.025 * ws;
   const rl = pos(ws);
   const rr = pos(-ws);
-  o[LEG_L + 3] = 0.04 + 0.22 * rl;
-  o[LEG_L] = 0.02 + 0.07 * rl;
-  o[LEG_L + 1] = 0.035;
-  o[LEG_R + 3] = 0.04 + 0.22 * rr;
-  o[LEG_R] = 0.02 + 0.07 * rr;
-  o[LEG_R + 1] = 0.035;
+  // Un pie apenas adelante del otro, propio de cada uno.
+  const st = (c.seed > 0.5 ? 1 : -1) * (0.015 + 0.03 * ((c.seed * 3.7) % 1));
+  placeLeg(o, c, false, 0.012 + st, 0.04 + 0.32 * rl, 0.12 * rl);
+  placeLeg(o, c, true, 0.012 - st, 0.04 + 0.32 * rr, 0.12 * rr);
+  legsApart(o, 0.035, o[PROLL]);
   // La mirada se queda un rato en un lado y cambia (no barre como un faro).
-  o[HYAW] = 0.16 * Math.tanh(2.2 * Math.sin(t * 0.37 + s)) + 0.04 * Math.sin(t * 0.91 + s * 2);
+  o[HYAW] = 0.16 * Math.tanh(2.2 * Math.sin(t * 0.37 + s)) + 0.04 * Math.sin(t * 0.91 + s * 2) - o[PTWIST];
   o[HPITCH] = 0.03 + 0.04 * Math.sin(t * 0.53 + s * 4);
+  o[HROLL] = -0.6 * o[ROLL];
   arms(o, c, style);
   o[ARM_L + 1] += 0.012 * br;
   o[ARM_R + 1] += 0.012 * br;
+  // Los brazos sueltos cuelgan: el tronco inclinado los deja a plomo.
+  if (style === 0) {
+    o[ARM_L + 1] += o[ROLL];
+    o[ARM_R + 1] -= o[ROLL];
+  }
 }
 
-function walk(o: Float32Array, c: AnimCtx): void {
+/**
+ * Sentado con el pie plano: ángulo de la pierna respecto de la vertical que
+ * deja la suela `drop` metros debajo de la rodilla (tobillo + talón).
+ */
+export function sitKnee(drop: number, legS: number): number {
+  return Math.acos(clampN((drop / legS - SOLE) / SH, 0, 1));
+}
+
+/** Fracción del ciclo con cada pie apoyado: caminando hay doble apoyo; corriendo, vuelo. */
+const betaOf = (run: number) => 0.62 - 0.26 * run;
+
+/**
+ * Largo de una zancada (dos pasos, × legS) con la amplitud y la carrera del
+ * momento. Lo usan la pose (cuánto retrocede el pie apoyado) y `stepGait`
+ * (cuánto avanza el ciclo por metro): por eso el pie no patina.
+ */
+export function strideOf(a: { amp: number; run: number; strideK: number }): number {
+  const amp = clampN(a.amp, 0.15, 1.15);
+  return LEG * a.strideK * ((1 - a.run) * 1.66 * amp + a.run * 2.6);
+}
+
+const P = {
+  beta: 0,
+  A: 0,
+  x0: 0,
+  k0: 0,
+  /** Altura máxima del pie en el aire (× legS). */
+  lift: 0,
+  phiStrike: 0,
+  phiOff: 0,
+  /** Altura de la cadera (profundidad del apoyo bajo ella, × legS): al pisar, en el medio del apoyo, y su mezcla. */
+  hw0: 0,
+  hwm: 0,
+  hr0: 0,
+  hrm: 0,
+  r: 0,
+};
+
+/** Pie apoyado en el punto `s` (0..1) de su apoyo: tobillo, inclinación y el punto que toca. */
+function stanceFoot(s: number): void {
+  const x = P.x0 + P.A * (1 - 2 * s);
+  const phi = s < 0.14 ? P.phiStrike * (1 - smooth01(s / 0.14)) : P.phiOff * Math.pow(smooth01((s - 0.5) / 0.5), 1.6);
+  F.phi = phi;
+  F.pz = phi > 0 ? F.toe : F.heel;
+  // El punto que toca (la punta si el talón está arriba, el talón si la punta
+  // está arriba) sigue la recta del apoyo: se corrige dónde va el tobillo.
+  F.x = x + F.pz * (1 - Math.cos(phi)) + SOLE * Math.sin(phi);
+}
+const F: { x: number; phi: number; pz: number; toe: number; heel: number } = { x: 0, phi: 0, pz: 0, toe: REF.toe, heel: REF.heel };
+
+/**
+ * Altura de la cadera a lo largo del paso (`h`, 0..0,5): la más baja al
+ * pisar, con las piernas abiertas, y la más alta en el medio del apoyo (el
+ * péndulo invertido de la marcha). Corriendo, se hunde a mitad del apoyo.
+ */
+function hipDepth(h: number): number {
+  const sw = Math.sin(TAU * h);
+  const walk = P.hw0 + (P.hwm - P.hw0) * sw * sw;
+  if (P.r <= 0.001) return walk;
+  const run = h < P.beta ? P.hr0 + (P.hrm - P.hr0) * Math.sin((Math.PI * h) / P.beta) : P.hr0;
+  return walk + (run - walk) * P.r;
+}
+
+/** Rodilla que deja el punto más bajo del pie `clear` sobre el piso, con la cadera a la altura del paso. */
+function legKnee(u: number, clear: number): number {
+  const ad = hipDepth(u % 0.5) - clear - (SOLE * Math.cos(F.phi) + F.pz * Math.sin(F.phi));
+  return clampN(kneeFor(F.x, ad), 0.02, 2.4);
+}
+
+/**
+ * Una pierna en el punto `u` (0..1) de su ciclo: 0 es el talón que pisa,
+ * `beta` el despegue. Apoyada, el tobillo retrocede en línea recta de x0+A a
+ * x0−A (el pie plano; al final el talón se levanta girando sobre la punta,
+ * que es la que queda quieta) y la rodilla es la que deja el pie en el piso
+ * con la cadera a la altura del paso: en el doble apoyo, los dos pies tocan.
+ * En el aire vuelve con una curva de Hermite que arranca y llega a la misma
+ * velocidad que el apoyo (sin tirones al despegar ni al pisar), doblando la
+ * rodilla para no arrastrar la punta.
+ */
+function legCycle(o: Float32Array, c: AnimCtx, right: boolean, u: number): void {
+  let knee: number;
+  if (u < P.beta) {
+    stanceFoot(u / P.beta);
+    knee = legKnee(u, 0);
+  } else {
+    const s = (u - P.beta) / (1 - P.beta);
+    const m = (-2 * P.A * (1 - P.beta)) / P.beta;
+    const s2 = s * s;
+    const s3 = s2 * s;
+    const x = (2 * s3 - 3 * s2 + 1) * (P.x0 - P.A) + (s3 - 2 * s2 + s) * m + (-2 * s3 + 3 * s2) * (P.x0 + P.A) + (s3 - s2) * m;
+    const phi = P.phiOff + (P.phiStrike - P.phiOff) * smooth01(s / 0.8);
+    F.phi = phi;
+    F.pz = phi > 0 ? F.toe : F.heel;
+    F.x = x + F.pz * (1 - Math.cos(phi)) + SOLE * Math.sin(phi);
+    // El pie sube enseguida al despegar y baja recién al final, a pisar con
+    // el talón: la altura se diseña y la rodilla sale de ella.
+    knee = legKnee(u, P.lift * Math.sin(Math.PI * Math.pow(s, 0.8)));
+  }
+  placeLeg(o, c, right, F.x, knee, F.phi);
+}
+
+/** Caminata y carrera (mezcladas por `run`), con la amplitud del momento. */
+function gait(o: Float32Array, c: AnimCtx): void {
   rest(o);
-  const a = c.amp;
+  const r = c.run;
+  const w = 1 - r;
+  const a = clampN(c.amp, 0, 1.15);
+  const lk = c.liftK;
   const ph = c.phase;
   const sp = Math.sin(ph);
   const cp = Math.cos(ph);
-  o[LEG_L] = 0.4 * a * sp + 0.03;
-  o[LEG_R] = -0.4 * a * sp + 0.03;
-  // Rodilla: flexión máxima a mitad del vuelo, con el muslo ya pasando bajo
-  // la cadera (≈ 60°), y una pequeña al recibir el peso. Con el pico antes
-  // (muslo todavía atrás) el pie de atrás subía como pateando.
-  const knee = (p: number) => 0.05 + a * (1.0 * Math.pow(pos(Math.cos(p + 0.12)), 2.2) + 0.16 * Math.pow(pos(Math.cos(p - 2.02)), 6));
-  o[LEG_L + 3] = knee(ph);
-  o[LEG_R + 3] = knee(ph + Math.PI);
-  o[LEG_L + 1] = 0.02;
-  o[LEG_R + 1] = 0.02;
-  // Brazos en contrafase con la pierna del mismo lado; el codo se dobla al ir adelante.
-  const swing = (c.kid ? 0.36 : 0.3) * a;
-  o[ARM_L] = -swing * sp + 0.02;
-  o[ARM_R] = swing * sp + 0.02;
-  o[ARM_L + 3] = 0.2 + 0.2 * a + 0.4 * pos(o[ARM_L]);
-  o[ARM_R + 3] = 0.2 + 0.2 * a + 0.4 * pos(o[ARM_R]);
-  o[ARM_L + 1] = 0.1;
-  o[ARM_R + 1] = 0.1;
-  o[PTWIST] = 0.08 * a * sp;
-  o[TWIST] = -0.13 * a * sp;
-  o[PROLL] = -0.035 * a * cp;
-  o[LEAN] = 0.03 + 0.04 * a;
-  o[HPITCH] = 0.02;
-  // La cabeza mira adelante aunque cadera y hombros se tuerzan con el paso.
-  o[HYAW] = 0.06 * Math.sin(c.t * 0.4 + c.seed * 30) - 0.6 * (o[PTWIST] + o[TWIST]);
-}
+  P.beta = betaOf(r);
+  P.r = r;
+  P.A = ((P.beta * strideOf(c)) / 2) * c.fwd * Math.min(1, a / 0.15);
+  P.x0 = 0.02 * w - 0.04 * r;
+  P.k0 = 0.05 * w + 0.32 * r;
+  P.lift = 0.075 * Math.min(1, a) * lk * w + 0.3 * r;
+  P.phiStrike = -0.18 * a * w - 0.04 * r;
+  P.phiOff = 0.55 * a * w + 0.8 * r;
+  F.toe = c.toeN;
+  F.heel = c.heelN;
+  // Alturas de cadera: al pisar, con la rodilla casi estirada; en el medio
+  // del apoyo, con la rodilla apenas flexionada (más al ir más rápido).
+  stanceFoot(0);
+  const hs = contactDepth(F.x, P.k0, F.phi, F.pz);
+  P.hw0 = hs;
+  P.hr0 = hs;
+  stanceFoot(0.25 / P.beta);
+  P.hwm = Math.max(hs, contactDepth(F.x, 0.06 + 0.1 * a, F.phi, F.pz));
+  stanceFoot(0.5);
+  P.hrm = contactDepth(F.x, 0.7, F.phi, F.pz);
 
-function run(o: Float32Array, c: AnimCtx): void {
-  rest(o);
-  const ph = c.phase;
-  const sp = Math.sin(ph);
-  // Muslo adelante más que atrás. Con ±0,72 las dos piernas quedaban rectas
-  // y abiertas 80° y, con el pie de apoyo en el piso, la cadera bajaba: los
-  // chicos corrían "en estocada".
-  o[LEG_L] = 0.18 + 0.52 * sp;
-  o[LEG_R] = 0.18 - 0.52 * sp;
-  const knee = (p: number) => 0.3 + 1.5 * Math.pow(pos(Math.cos(p + 0.5)), 1.2) + 0.3 * Math.pow(pos(Math.cos(p - 2.0)), 4);
-  o[LEG_L + 3] = knee(ph);
-  o[LEG_R + 3] = knee(ph + Math.PI);
-  o[ARM_L] = -0.7 * sp + 0.12;
-  o[ARM_R] = 0.7 * sp + 0.12;
-  o[ARM_L + 3] = 1.35 + 0.15 * sp;
-  o[ARM_R + 3] = 1.35 - 0.15 * sp;
-  o[ARM_L + 1] = 0.15;
-  o[ARM_R + 1] = 0.15;
-  o[ARM_L + 2] = 0.25;
-  o[ARM_R + 2] = 0.25;
-  o[LEAN] = 0.18;
-  o[PTWIST] = 0.12 * sp;
-  o[TWIST] = -0.2 * sp;
-  o[PROLL] = -0.04 * Math.cos(ph);
-  o[HPITCH] = -0.08;
-  // Vuelo: entre un apoyo y el otro los dos pies están en el aire.
-  o[BOUNCE] = 0.045 * Math.cos(ph) * Math.cos(ph);
+  // Pelvis: la cadera de la pierna que va adelante también se adelanta
+  // (torsión), baja la del lado que va en el aire y se corre sobre el pie
+  // apoyado. Izquierda apoyada en la primera mitad del ciclo.
+  const f = c.fwd;
+  o[PTWIST] = (0.07 * a * w + 0.1 * r) * f * cp;
+  const roll = (0.045 * a * w + 0.03 * r) * sp;
+  o[PROLL] = roll + c.bank;
+  o[SWAY] = -(0.022 * a * w + 0.01 * r) * sp;
+  legCycle(o, c, false, ph / TAU);
+  legCycle(o, c, true, (ph / TAU + 0.5) % 1);
+  legsApart(o, 0.015 * w + 0.03 * r, roll);
+  // Corriendo, entre un apoyo y el otro los dos pies están en el aire.
+  if (r > 0.001 && P.beta < 0.5) {
+    const h = (ph / TAU) % 0.5;
+    if (h > P.beta) o[BOUNCE] = 0.04 * r * Math.sin((Math.PI * (h - P.beta)) / (0.5 - P.beta));
+  }
+  // Brazos en contrafase con la pierna del mismo lado (apenas atrasados, son
+  // péndulos); el codo se dobla al ir adelante. Corriendo, codos a 80°.
+  const swing = (c.kid ? 0.36 : 0.3) * c.armK * a * Math.sqrt(f);
+  const ca = Math.cos(ph - 0.3);
+  const armL = w * (-swing * ca + 0.02) + r * (0.12 - 0.7 * ca);
+  const armR = w * (swing * ca + 0.02) + r * (0.12 + 0.7 * ca);
+  o[ARM_L] = armL;
+  o[ARM_R] = armR;
+  o[ARM_L + 3] = w * (0.2 + 0.2 * a + 0.4 * pos(armL)) + r * (1.35 + 0.15 * ca);
+  o[ARM_R + 3] = w * (0.2 + 0.2 * a + 0.4 * pos(armR)) + r * (1.35 - 0.15 * ca);
+  o[ARM_L + 1] = 0.1 * w + 0.15 * r;
+  o[ARM_R + 1] = 0.1 * w + 0.15 * r;
+  o[ARM_L + 2] = 0.25 * r;
+  o[ARM_R + 2] = 0.25 * r;
+  // Hombros en contrafase con la pelvis; la cabeza sigue mirando adelante.
+  o[TWIST] = -(o[PTWIST] + (0.1 * a * w + 0.12 * r) * f * cp);
+  o[ROLL] = -0.5 * roll;
+  // Inclinado hacia adelante al acelerar y hacia atrás al frenar.
+  o[LEAN] = (0.03 + 0.04 * a) * w + 0.17 * r + c.leanK + clampN(c.accel * 0.035, -0.07, 0.09);
+  o[HPITCH] = 0.02 * w - 0.06 * r;
+  o[HYAW] = 0.06 * w * Math.sin(c.t * 0.4 + c.seed * 30) - (o[PTWIST] + o[TWIST]);
+  o[HROLL] = -0.4 * c.bank;
 }
 
 /** Ruido suave de frecuencias propias para los gestos. */
@@ -266,7 +489,11 @@ function sitLegs(o: Float32Array, c: AnimCtx): void {
     const env = pos(Math.sin(c.t * 0.35 + c.seed * 9));
     o[LEG_L + 3] += 0.28 * env * Math.sin(c.t * 2.6 + c.seed * 4);
     o[LEG_R + 3] += 0.28 * env * Math.sin(c.t * 2.6 + c.seed * 4 + 2.6);
-  }
+    // Pie colgando: la punta cae un poco respecto de la pierna.
+    o[ANK_L] = -0.3;
+    o[ANK_R] = -0.3;
+  } else flatFeet(o);
+  o[SWAY] = 0;
   o[SIT] = 1;
 }
 
@@ -355,6 +582,8 @@ function sit(o: Float32Array, c: AnimCtx): void {
   sitLegs(o, c);
   o[PROLL] = 0;
   o[PTWIST] = 0;
+  o[ROLL] = 0;
+  o[HROLL] *= 0.5;
   o[LEAN] = -0.04 + 0.01 * Math.sin(c.t * 1.7 + c.seed * 50);
   // Con mesa, los antebrazos descansan encima, cruzados adelante y apenas
   // inclinado (con las manos en el regazo bajo una tapa de 0,74 m, quedaban
@@ -423,6 +652,8 @@ function sitFloor(o: Float32Array, c: AnimCtx): void {
   o[LEG_R + 2] = 0.18;
   o[LEG_L + 3] = 2.45;
   o[LEG_R + 3] = 2.4;
+  flatFeet(o);
+  o[SWAY] = 0;
   o[PROLL] = 0;
   o[PTWIST] = 0;
   o[LEAN] = 0.2 + 0.02 * Math.sin(c.t * 1.7 + c.seed * 9);
@@ -438,12 +669,19 @@ function sitFloor(o: Float32Array, c: AnimCtx): void {
 function wave(o: Float32Array, c: AnimCtx): void {
   idle(o, c);
   const t = c.t;
-  o[ARM_R] = 0.3;
-  o[ARM_R + 1] = 2.5 + 0.18 * Math.sin(t * 15.5);
-  o[ARM_R + 2] = 0.05;
-  o[ARM_R + 3] = 0.45 + 0.18 * Math.sin(t * 15.5 + 1.2);
+  // Codo al costado, a la altura del hombro, y el antebrazo para arriba; la
+  // mano va y viene girando el brazo sobre su eje (pose hallada con el
+  // esqueleto: con el brazo estirado arriba parecía pedir la palabra). Los
+  // chicos, con más ganas.
+  const f = c.kid ? 15 : 12.5;
+  const k = c.kid ? 0.48 : 0.36;
+  o[ARM_R] = 1.15;
+  o[ARM_R + 1] = 1.1;
+  o[ARM_R + 2] = -0.3 + k * Math.sin(t * f);
+  o[ARM_R + 3] = 1.6 + 0.08 * Math.sin(t * f + 1.2);
+  o[TWIST] += 0.05;
   o[HPITCH] = -0.04;
-  o[HROLL] = 0.06;
+  o[HROLL] = 0.06 + 0.02 * Math.sin(t * f * 0.5);
 }
 
 function point(o: Float32Array, c: AnimCtx): void {
@@ -514,10 +752,14 @@ function mop(o: Float32Array, c: AnimCtx): void {
   o[ARM_L + 1] = 0.05;
   o[ARM_L + 2] = 0.75;
   o[ARM_L + 3] = 0.55;
+  // Piernas algo abiertas y flojas, un pie adelante: la base para el vaivén.
+  o[SWAY] = 0;
+  o[PROLL] = 0;
+  o[PTWIST] = 0;
+  placeLeg(o, c, false, 0.08, 0.14, 0);
+  placeLeg(o, c, true, -0.06, 0.14, 0);
   o[LEG_L + 1] = 0.09;
   o[LEG_R + 1] = 0.09;
-  o[LEG_L + 3] = 0.14;
-  o[LEG_R + 3] = 0.14;
   o[HPITCH] = 0.25;
 }
 
@@ -561,8 +803,8 @@ function phone(o: Float32Array, c: AnimCtx): void {
 
 const CLIPS: Record<AnimId, (o: Float32Array, c: AnimCtx) => void> = {
   idle,
-  walk,
-  run,
+  walk: gait,
+  run: gait,
   talk,
   listen,
   sit,
@@ -599,14 +841,23 @@ export interface AnimState {
   phase: number;
   amp: number;
   run: number;
+  /** Cuánto del paso es avance (0 = pasitos en el lugar para girar). */
+  fwd: number;
+  /** Aceleración suavizada (m/s²), velocidad anterior e inclinación en la curva. */
+  accel: number;
+  lastSpeed: number;
+  bank: number;
   gesture: AnimId | null;
   gT: number;
   gW: number;
   /** Duración del gesto en curso si no es la de siempre (0 = `GESTURE_TIME`). */
   gDur: number;
-  /** Mirada aditiva (rad) y su peso. */
+  /** Mirada aditiva (rad), su velocidad (resorte), la parte del tronco y su peso. */
   lookYaw: number;
   lookPitch: number;
+  lookYawV: number;
+  lookPitchV: number;
+  lookTorso: number;
   lookW: number;
   seed: number;
   style: IdleStyle;
@@ -622,6 +873,15 @@ export interface AnimState {
   l2: number;
   thigh: number;
   thighR: number;
+  /** Media cadera, talón y punta en unidades de pierna (ver `setAnimBody`). */
+  hipXn: number;
+  heelN: number;
+  toeN: number;
+  /** Estilo de marcha (edad y persona). */
+  strideK: number;
+  liftK: number;
+  armK: number;
+  leanK: number;
 }
 
 export function newAnimState(seed: number, style: IdleStyle, kid: boolean): AnimState {
@@ -634,12 +894,19 @@ export function newAnimState(seed: number, style: IdleStyle, kid: boolean): Anim
     phase: seed * Math.PI * 2,
     amp: 0,
     run: 0,
+    fwd: 1,
+    accel: 0,
+    lastSpeed: 0,
+    bank: 0,
     gesture: null,
     gT: 0,
     gW: 0,
     gDur: 0,
     lookYaw: 0,
     lookPitch: 0,
+    lookYawV: 0,
+    lookPitchV: 0,
+    lookTorso: 0,
     lookW: 0,
     seed,
     style,
@@ -656,7 +923,121 @@ export function newAnimState(seed: number, style: IdleStyle, kid: boolean): Anim
     l2: 0.245,
     thigh: 0.44,
     thighR: 0.08,
+    hipXn: REF.hipX,
+    heelN: REF.heel,
+    toeN: REF.toe,
+    strideK: 1,
+    liftK: 1,
+    armK: 1,
+    leanK: 0,
   };
+}
+
+/**
+ * Medidas del cuerpo y estilo de marcha de una persona. Por edad: los chicos
+ * de jardín levantan más las rodillas y bracean más (pasos cortos y
+ * rápidos salen solos: la pierna es corta); los mayores, paso más corto,
+ * poco braceo y algo encorvados. Cada uno, además, con lo suyo (semilla).
+ */
+export function setAnimBody(an: AnimState, d: BodyDims, age: AgeGroup): void {
+  an.waist = d.waist;
+  an.shY = d.shoulderY;
+  an.l1 = d.upperArm;
+  an.l2 = d.forearm;
+  an.thigh = d.thigh;
+  an.thighR = d.seatOffset;
+  an.hipXn = d.hipX / d.legS;
+  an.heelN = (REF.heel * d.limbW) / d.legS;
+  an.toeN = (REF.toe * d.limbW) / d.legS;
+  const s = an.seed;
+  const j = (k: number) => ((s * k) % 1) * 2 - 1;
+  an.strideK = (age === 'senior' ? 0.86 : age === 'kid' ? 0.95 : 1) * (1 + 0.05 * j(13.7));
+  an.liftK = (age === 'kid' ? 1.2 : age === 'child' ? 1.1 : age === 'senior' ? 0.75 : 1) * (1 + 0.08 * j(5.3));
+  an.armK = (age === 'kid' ? 1.25 : age === 'senior' ? 0.6 : age === 'teen' ? 0.85 : 1) * (1 + 0.2 * j(9.1));
+  an.leanK = (age === 'senior' ? 0.08 : 0) + 0.015 * j(3.9);
+}
+
+/**
+ * Avanza el ciclo de paso con lo que de verdad se movió la persona
+ * (`speed`, m/s) y, si gira en el lugar, con los pasitos del giro (`turn`).
+ * El largo del paso crece con la velocidad (amplitud ∝ velocidad^0,6) y el
+ * ciclo avanza `speed / zancada`: la cadencia sale sola, más rápida en los
+ * chicos. Al frenar termina el paso en curso hasta juntar los pies, en vez
+ * de quedar congelado a mitad de zancada.
+ */
+export function stepGait(an: AnimState, speed: number, turn: number, walkSpeed: number, legS: number, dt: number): void {
+  const legs = Math.max(speed, turn);
+  if (dt > 0) {
+    const acc = (speed - an.lastSpeed) / dt;
+    an.accel += (clampN(acc, -6, 6) - an.accel) * Math.min(1, dt * 5);
+  }
+  an.lastSpeed = speed;
+  an.fwd += ((legs > 1e-3 ? Math.min(1, speed / legs) : 1) - an.fwd) * Math.min(1, dt * 8);
+  if (legs > 0.04) {
+    const ampT = Math.min(1.15, Math.pow(legs / Math.max(0.3, walkSpeed), 0.6));
+    an.amp += (ampT - an.amp) * Math.min(1, dt * 6);
+    an.phase = (an.phase + (legs * dt * TAU) / (strideOf(an) * legS)) % TAU;
+    return;
+  }
+  if (an.amp <= 0.02) {
+    an.amp = 0;
+    return;
+  }
+  // Frenando: el ciclo sigue hasta el apoyo medio más cercano (un pie bajo la
+  // cadera y el otro pasando a su lado) mientras el paso se achica.
+  const target = Math.PI * betaOf(an.run);
+  let rem = (target - an.phase) % Math.PI;
+  if (rem < 0) rem += Math.PI;
+  if (rem > 0.05 && rem < Math.PI - 0.05) {
+    an.phase = (an.phase + Math.min(rem, TAU * 1.1 * dt)) % TAU;
+    an.amp = Math.max(0, an.amp - dt * 1.6);
+  } else an.amp = Math.max(0, an.amp - dt * 5);
+}
+
+/**
+ * Gira el cuerpo hacia `wantYaw` con inercia: la velocidad de giro acelera,
+ * se topa en `maxRate` y frena al llegar (proporcional al ángulo que falta).
+ * Con un tope de velocidad pelado el giro arrancaba y paraba en seco. Inclina
+ * el cuerpo hacia adentro de la curva según velocidad × giro. Devuelve el
+ * ángulo que faltaba.
+ */
+export function turnToward(a: { yaw: number; wantYaw: number; yawV: number; speed: number; anim: AnimState }, maxRate: number, dt: number): number {
+  const dy = wrapA(a.wantYaw - a.yaw);
+  const want = clampN(dy * 7, -maxRate, maxRate);
+  const acc = 24 * dt;
+  a.yawV += clampN(want - a.yawV, -acc, acc);
+  let step = a.yawV * dt;
+  if (step * dy > 0 && Math.abs(step) > Math.abs(dy)) {
+    step = dy;
+    a.yawV = dy / Math.max(dt, 1e-3);
+  }
+  a.yaw = wrapA(a.yaw + step);
+  // Girar θ positivo lleva el frente hacia +X (la derecha del cuerpo): se
+  // inclina hacia +X, rolido positivo. Tan(inclinación) = v·ω/g, a la mitad.
+  const an = a.anim;
+  const bank = clampN((a.speed * a.yawV) / 9.8 * 0.5, -0.1, 0.1);
+  an.bank += (bank - an.bank) * Math.min(1, dt * 6);
+  return dy;
+}
+
+/**
+ * Mirada hacia (`yaw`, `pitch`) respecto del cuerpo: resorte críticamente
+ * amortiguado (arranca y frena suave, sin pasarse), resuelto de forma exacta
+ * para que no explote con los pasos de 0,2-0,5 s de la gente lejana. El
+ * tronco acompaña con atraso una parte del giro.
+ */
+export function aimLook(an: AnimState, yaw: number, pitch: number, dt: number): void {
+  const w = 8;
+  const e = Math.exp(-w * dt);
+  let x = an.lookYaw - yaw;
+  let k = (an.lookYawV + w * x) * dt;
+  an.lookYaw = yaw + (x + k) * e;
+  an.lookYawV = (an.lookYawV - w * k) * e;
+  x = an.lookPitch - pitch;
+  k = (an.lookPitchV + w * x) * dt;
+  an.lookPitch = pitch + (x + k) * e;
+  an.lookPitchV = (an.lookPitchV - w * k) * e;
+  an.lookTorso += (an.lookYaw - an.lookTorso) * Math.min(1, dt * 2.2);
 }
 
 /** Cambia la animación de base con fundido cruzado. */
@@ -682,7 +1063,7 @@ export function startGesture(a: AnimState, id: AnimId, dur = 0): void {
 export function tickAnim(a: AnimState, dt: number): void {
   a.t += dt;
   a.prevT += dt;
-  if (a.w < 1) a.w = Math.min(1, a.w + dt / (SEATED.has(a.base) !== SEATED.has(a.prev) ? 0.8 : 0.35));
+  if (a.w < 1) a.w = Math.min(1, a.w + dt / (SEATED.has(a.base) !== SEATED.has(a.prev) ? 0.8 : 0.4));
   if (a.gesture) {
     a.gT += dt;
     const dur = a.gDur > 0 ? a.gDur : (GESTURE_TIME[a.gesture] ?? 1.5);
@@ -701,6 +1082,9 @@ const tmpB = new Float32Array(POSE_N);
 const tmpG = new Float32Array(POSE_N);
 const ease = (x: number) => x * x * (3 - 2 * x);
 
+/** Canales del torso, cabeza y brazos que se funden con la espera al caminar despacio. */
+const WALK_UPPER: readonly number[] = [LEAN, TWIST, ROLL, HYAW, HPITCH, HROLL, 8, 9, 10, 11, 12, 13, 14, 15];
+
 /** Contexto compartido: se rellena en cada evaluación (cientos por cuadro, sin crear objetos). */
 const sharedCtx: AnimCtx = {
   t: 0,
@@ -709,6 +1093,16 @@ const sharedCtx: AnimCtx = {
   amp: 0,
   phase: 0,
   run: 0,
+  fwd: 1,
+  accel: 0,
+  bank: 0,
+  strideK: 1,
+  liftK: 1,
+  armK: 1,
+  leanK: 0,
+  hipXn: REF.hipX,
+  heelN: REF.heel,
+  toeN: REF.toe,
   hipFlex: 1.4,
   knee: 1.4,
   dangle: false,
@@ -731,6 +1125,16 @@ function ctxOf(a: AnimState, t: number): AnimCtx {
   c.amp = a.amp;
   c.phase = a.phase;
   c.run = a.run;
+  c.fwd = a.fwd;
+  c.accel = a.accel;
+  c.bank = a.bank;
+  c.strideK = a.strideK;
+  c.liftK = a.liftK;
+  c.armK = a.armK;
+  c.leanK = a.leanK;
+  c.hipXn = a.hipXn;
+  c.heelN = a.heelN;
+  c.toeN = a.toeN;
   c.hipFlex = a.hipFlex;
   c.knee = a.knee;
   c.dangle = a.dangle;
@@ -747,25 +1151,20 @@ function ctxOf(a: AnimState, t: number): AnimCtx {
 }
 
 function evalClip(id: AnimId, a: AnimState, t: number, out: Float32Array): void {
+  const c = ctxOf(a, t);
   if (id === 'walk' || id === 'run') {
-    // Locomoción: mezcla caminata/carrera según la velocidad.
-    const c = ctxOf(a, t);
-    if (a.run <= 0.001) walk(out, c);
-    else if (a.run >= 0.999) run(out, c);
-    else {
-      walk(out, c);
-      run(tmpG, c);
-      for (let i = 0; i < POSE_N; i++) out[i] += (tmpG[i] - out[i]) * a.run;
-    }
-    if (a.amp < 0.999) {
-      // Arrancando o frenando: se funde con la pose quieta.
+    gait(out, c);
+    if (a.amp < 0.6) {
+      // Despacio, el torso y los brazos son los de la espera (las manos atrás
+      // o los brazos cruzados siguen así al dar unos pasos); las piernas no:
+      // mezclarlas haría patinar el pie apoyado.
       idle(tmpG, c);
-      const k = ease(Math.min(1, a.amp / 0.6));
-      for (let i = 0; i < POSE_N; i++) out[i] = tmpG[i] + (out[i] - tmpG[i]) * k;
+      const k = ease(a.amp / 0.6);
+      for (const i of WALK_UPPER) out[i] = tmpG[i] + (out[i] - tmpG[i]) * k;
     }
     return;
   }
-  CLIPS[id](out, ctxOf(a, t));
+  CLIPS[id](out, c);
 }
 
 /** Pose final de la persona: base con fundido, gesto y mirada. */
@@ -792,11 +1191,14 @@ export function evalPose(a: AnimState, out: Float32Array): void {
     }
   }
   if (a.lookW > 0) {
-    // Mirada: hasta ~1 rad de cuello y el resto (poco) de torso.
-    const yaw = a.lookYaw * a.lookW;
-    const neck = Math.max(-1.05, Math.min(1.05, yaw));
-    out[HYAW] = out[HYAW] * (1 - a.lookW) + neck;
-    out[TWIST] += (yaw - neck) * 0.8;
-    out[HPITCH] = out[HPITCH] * (1 - a.lookW) + a.lookPitch * a.lookW;
+    // Mirada: el tronco acompaña con atraso hasta ~20°, el cuello hace el
+    // resto hasta ~60° y lo que sobra vuelve al tronco.
+    const lw = ease(a.lookW);
+    const yaw = a.lookYaw * lw;
+    const torso = clampN(a.lookTorso * lw * 0.3, -0.35, 0.35);
+    const neck = clampN(yaw - torso, -1.05, 1.05);
+    out[HYAW] = out[HYAW] * (1 - lw) + neck;
+    out[TWIST] += torso + (yaw - torso - neck) * 0.8;
+    out[HPITCH] = out[HPITCH] * (1 - lw) + a.lookPitch * lw;
   }
 }
