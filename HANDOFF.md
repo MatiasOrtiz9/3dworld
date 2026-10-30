@@ -1352,6 +1352,74 @@ que ya costó una iteración. Si las revertís, el bug vuelve.
     `?frases=1`: la línea dura lo mismo, en silencio. El resto del ambiente
     (pájaros, pelota, silbato, autos, campana, pasos) sigue igual.
 
+94. **Escuela 2050: no tiene que ser exacta al plano** (lo pidió el usuario,
+    octubre 2026: "no tiene que ser exacto, es la escuela en 2050"; lo
+    principal es que se vea realista). Se agrandaron las aulas que quedaban
+    chicas, sin dejar de reconocer la escuela:
+    - 2° A y el aula taller del primer piso del edificio de bloque, en
+      voladizo 3 m sobre el patio este (`V.blockN`; 23 y 19 m² → 41 y 35).
+      Abajo, galería cubierta con tres columnas en el borde de la losa
+      (`SOFFIT_ROOMS`); la puerta del patio al pasillo del jardín sigue en
+      el patio. El remate de la bóveda sobre la azotea nueva es un muro de
+      0,6 m en el nivel 2 (con un vano de paso a nivel 1 fallaban los tests
+      de vanos). Los banderines del patio se corrieron al norte.
+    - La biblioteca gana el conducto y la oficina de Prof. bilingüe
+      (25 → 44 m²); 6° C no puede crecer al norte (la bilingüe la rodea en L).
+    - Teatro se ensancha sobre el hall del jardín hasta `U.teaX` (34 → 56 m²);
+      el hall queda de 3,4 m con la puerta doble al jardín al este.
+    - El aula del fondo (N2) crece 3 m sobre la del vértice (`U1.n2W`;
+      27 → 46 m², el vértice queda en ~85).
+    Pendientes con la misma idea: Arte (4,2 m de ancho), las salas del jardín
+    del primer piso (25–29 m², las limita la medianera y la galería).
+
+95. **Robots** (`world/Robots.ts`, lógica pura en `world/robots/robotSim.ts`,
+    tests en `tests/robots.test.ts`): dos fregadoras de pasillo (pasillo sur
+    de PB y pasillo de lockers del P1) y tres robots de atención (hall,
+    biblioteca, hall del jardín). Aceleran y frenan suave, giran en el lugar
+    (nunca derrapan), frenan ante cualquiera de pie delante (jugador o
+    gente: `Population.forEachBody`), la cabeza del guía mira al jugador con
+    tope de ±72° y parpadea; luz ámbar al frenar. La gente los esquiva como
+    al jugador (`Sim.movers`) y el jugador no los atraviesa
+    (`setDynamicSolid(…, { playerOnly: true })`, 10 Hz). Cinco draw calls con
+    los materiales de `Life` (`life.mats`, sin shaders nuevos). Rutas nuevas:
+    el test exige que el robot entero pase libre de muros y muebles y dentro
+    de un ambiente; `tools/school-shots.mjs` encuadra un robot con
+    `{"robot": "<id>", "offset": [du, dy, dv]}` (gancho `__robots`, sólo en desarrollo).
+
+96. **Historia sin frases** (ver 75): cada capítulo tiene `brief` (narrador,
+    no personaje); "Próximo paso" al saludar sin nada pendiente; el acto se
+    resuelve con `StoryEngine.actMessage` (el jugador elige qué destacar) y
+    los créditos lo citan; el simulacro avisa si corrés (insignia "Evacuación
+    modelo" sin correr); el epílogo guía al lugar sin descubrir más cercano.
+    El inicio del visor tiene "Paseo libre". `tools/test-story.mjs` juega del
+    prólogo al epílogo. Paseo libre (`SESSION.freeRoam`) = sin misiones: el
+    motor de la historia no corre; Nueva partida y el inicio del visor lo apagan.
+
+97. **Marcha** (`people/Anim.ts`): el pie apoyado no patina porque `strideOf()`
+    lo usan juntos la pose (`gait`) y el avance del ciclo (`stepGait`): si se
+    cambia uno solo, vuelve a patinar. Canales nuevos `ANK_L/ANK_R`, `SWAY`
+    (29 en total), contacto por talón y punta (`Rig.sole`). Puertas: la hoja
+    dibujada arranca suave y rebota apenas; colisión y sonido siguen en 0,6 s.
+
+98. **Render**: `FloorGlints` (reflejo de luminarias en pisos pulidos) y los
+    pozos de luz dependen de que `City` le pase `schoolBuilder.fixtures` a
+    `SchoolIdentity`. Tarjetas de follaje: el color se divide por el alfa y
+    el SSAO las saltea (toda tarjeta nueva debe respetar las dos cosas);
+    atlas de 1024 × 1024 con `crown` y `bloom` (copa en flor) arriba.
+    `ShaderWarmup` compila todo en paralelo al final de `buildCity`: corrigió
+    que la sombra estática se dibujara antes de tener los shaders de
+    profundidad (la fachada de Laprida salía siempre iluminada en VR).
+    El recorte por ambientes (`ZoneCulling` + `SchoolVisibility`) existe pero
+    NO está conectado: probado, pierde (CPU +60–100 %, +60 MB).
+
+99. **Bugs cerrados en octubre 2026**: shaders de reflejos del gimnasio, viento
+    y tarjetas (`varying` en `getUniforms()` y `vNormalW` sin `#ifdef NORMAL`;
+    hay tests que lo vigilan), no se dibuja durante la reconstrucción
+    (`building` en `main.ts`), salir del modo libre sin quedar encerrado
+    (`safeToRelock`), minimapa del visor apagado fuera de VR y en el inicio,
+    teclas que no quedan pegadas al perder el foco, guardado sin sellos
+    repetidos ni desconocidos, botón de calidad con `try/finally`.
+
 ---
 
 ## 6. Estado actual
@@ -1449,6 +1517,9 @@ node tools/test-interaction.mjs http://localhost:5190/ <carpeta>   # escritorio 
 node tools/test-vr.mjs http://localhost:5190/?seed=42 <carpeta>    # Quest 3 emulado
 node tools/test-mobile.mjs http://localhost:5190/ <carpeta>        # celular horizontal
 node tools/school-shots.mjs "<url>&quality=high|vr" <carpeta> <vistas.json>
+node tools/test-story.mjs http://localhost:5190/ <carpeta>         # la historia de punta a punta
+node tools/test-leaks.mjs http://localhost:5190/ 4                 # fugas al reconstruir
+node tools/perf.mjs / tools/alloc.mjs                              # costo por cuadro y basura
 ```
 
 - `test-interaction.mjs`: tres pasadas. Modo herramienta (caminar, volar,
