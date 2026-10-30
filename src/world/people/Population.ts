@@ -21,6 +21,7 @@ import { treadFloor } from './Places';
 import { F_CHEST, F_FARM_L, F_FARM_R, F_HEAD, F_PELVIS, F_SHIN_L, F_SHIN_R, F_THIGH_L, F_THIGH_R, F_UARM_L, F_UARM_R, Rig } from './Rig';
 import { PeopleSim, type Agent, type SimView } from './Sim';
 import { Sidewalks, sidewalkOptions } from './Sidewalks';
+import { uploadThinColors } from '../../core/thinUpload';
 
 /**
  * La gente de la escuela: alumnos de jardín, primaria y secundaria,
@@ -806,7 +807,7 @@ export class Population implements PopulationApi {
     if (!visible) return;
     ch.mesh.thinInstanceCount = ch.n;
     ch.mesh.thinInstanceBufferUpdated('matrix');
-    if (colored) ch.mesh.thinInstanceBufferUpdated('color');
+    if (colored) uploadThinColors(ch.mesh, ch.colors, ch.n);
   }
 }
 
