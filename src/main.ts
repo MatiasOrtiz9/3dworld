@@ -591,9 +591,13 @@ btnQuality.addEventListener('click', async () => {
   updateQualityButton();
   btnQuality.disabled = true;
   boot.classList.remove('hidden');
-  await rebuildFor(tier);
-  boot.classList.add('hidden');
-  btnQuality.disabled = false;
+  try {
+    await rebuildFor(tier);
+  } finally {
+    // Aunque la reconstrucción falle, el botón y la pantalla no quedan trabados.
+    boot.classList.add('hidden');
+    btnQuality.disabled = false;
+  }
 });
 
 async function rebuildFor(_tier: QualityTier): Promise<void> {

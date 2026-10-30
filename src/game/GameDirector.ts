@@ -443,7 +443,11 @@ export class GameDirector {
 
     this.hud.bind({
       onPause: () => this.applyPause(),
-      onReset: () => this.newGame(),
+      // Nueva partida: la historia corre (con el paseo libre puesto quedaba congelada, sin prólogo).
+      onReset: () => {
+        this.setFreeRoam(false);
+        this.newGame();
+      },
       onFreeRoam: (on) => this.setFreeRoam(on),
       onFreeRoamStart: () => this.startFreeRoam(),
       passport: () => this.passport(),
@@ -807,12 +811,13 @@ export class GameDirector {
       distance: free ? '' : this.distanceText,
       stamps: `${this.engine.stamps}/${TOTAL_STAMPS} sellos`,
       chapter: free ? undefined : chapter(this.engine.currentChapter()).kicker,
-      mapCanvas: this.hud.minimap.sourceCanvas,
+      // En el inicio del visor no hay minimapa (quedaba encima del menú).
+      mapCanvas: this.mode === 'play' ? this.hud.minimap.sourceCanvas : undefined,
       mapKey: this.xrMapKey,
       mapLevel: this.level === 0 ? 'PB' : `${this.level}°`,
       freeRoam: free,
     };
-    const key = `${info.place}|${info.progress}|${info.objective}|${info.distance}|${info.stamps}|${info.chapter}|${info.mapKey}|${free ? 1 : 0}`;
+    const key = `${info.place}|${info.progress}|${info.objective}|${info.distance}|${info.stamps}|${info.chapter}|${info.mapKey}|${free ? 1 : 0}|${this.mode}`;
     if (key !== this.wristKey) {
       this.wristKey = key;
       c.setHud(info);

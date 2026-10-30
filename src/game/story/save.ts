@@ -47,7 +47,11 @@ export function emptySave(now = Date.now()): SaveData {
   };
 }
 
-const strings = (x: unknown): string[] => (Array.isArray(x) ? x.filter((s): s is string => typeof s === 'string') : []);
+/** Sin repetidos: un guardado tocado a mano (o de una versión con un error) no cuenta dos veces lo mismo. */
+const strings = (x: unknown): string[] => (Array.isArray(x) ? [...new Set(x.filter((s): s is string => typeof s === 'string'))] : []);
+/** Sellos y zonas que existen (tsc exige la lista completa): uno desconocido daba "9/8 sellos". */
+const STAMP_IDS: Record<StampId, true> = { maker: true, cantina: true, patio: true, trofeos: true, danza: true, simulacro: true, jardin: true, polideportivo: true };
+const ZONE_IDS: Record<ZoneId, true> = { entrada: true, primerPiso: true, segundoPiso: true, jardin: true };
 const record = (x: unknown): Record<string, string> => {
   const out: Record<string, string> = {};
   if (x && typeof x === 'object' && !Array.isArray(x)) {
@@ -73,8 +77,8 @@ export function parseSave(text: string | null | undefined): SaveData | null {
     v: 1,
     done: strings(o.done),
     flags: strings(o.flags),
-    stamps: strings(o.stamps) as StampId[],
-    zones: strings(o.zones) as ZoneId[],
+    stamps: strings(o.stamps).filter((s): s is StampId => Object.hasOwn(STAMP_IDS, s)),
+    zones: strings(o.zones).filter((z): z is ZoneId => Object.hasOwn(ZONE_IDS, z)),
     places: strings(o.places),
     items: strings(o.items),
     interviews: record(o.interviews),
