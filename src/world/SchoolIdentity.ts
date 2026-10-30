@@ -238,7 +238,7 @@ export class SchoolIdentity {
     q.wall(planU(53.65), V.artB + 0.115, FY + 0.012 + 0.87, 1.0, 1.74, 0, S, R.kidsTree);
     q.wall(planU(50.9), V.artB + 0.115, FY + 0.012 + 0.31, 0.86, 0.62, 0, S, R.sea1);
     q.wall(planU(56.85), V.artB + 0.115, FY + 0.012 + 0.42, 1.24, 0.84, 0, S, R.sea2);
-    q.wall(U.teaE + 0.115, planV(-25.8), FY + 1.7, 2.6, 1.48, 1, 0, R.kidsB);
+    q.wall(U.teaX + 0.115, planV(-25.8), FY + 1.7, 2.6, 1.48, 1, 0, R.kidsB);
     q.gain = 1;
 
     // Aula de danzas: afiches de las muestras en el testero norte.
