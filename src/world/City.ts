@@ -4,6 +4,7 @@ import { Materials } from './Materials';
 import { Rng } from '../utils/rng';
 import { generateCityPlan, type CityPlan, type LayoutOptions } from './CityLayout';
 import { NatureBuilder } from './builders/NatureBuilder';
+import { FoliageCards } from './FoliageCards';
 import { BuildingBuilder } from './builders/BuildingBuilder';
 import { NeighborhoodBuilder } from './builders/NeighborhoodBuilder';
 import { InfraBuilder } from './builders/InfraBuilder';
@@ -96,6 +97,9 @@ export class City {
       rng,
       options.highDetailFoliage ?? true,
     );
+    // Hojas recortadas también en los árboles y matas del barrio (mismo
+    // material y draw call que las de la escuela).
+    nature.cards = new FoliageCards(this.farm, scene);
     const street = new StreetLevel(
       this.farm,
       this.mats,

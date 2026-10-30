@@ -56,7 +56,7 @@ import { STANDARD_SUN_COMP } from './Materials';
 /** Ancho del atlas, en píxeles. */
 const ATLAS_W = 1024;
 /** Alto del atlas, en píxeles. */
-const ATLAS_H = 512;
+const ATLAS_H = 1024;
 
 /** Clase de tarjeta (el dibujo y cómo se mueve con el viento). */
 export type CardKind =
@@ -77,7 +77,9 @@ export type CardKind =
   /** Red blanca de malla romboidal (aros y arcos). */
   | 'net'
   /** Mulch: chips de corteza con algún brote, para la tierra de los canteros. */
-  | 'mulch';
+  | 'mulch'
+  /** Masa de copa de árbol: nube de hojas de borde calado (envuelve la icoesfera). */
+  | 'crown';
 
 /** Índice de cada clase: la escala Z del plano es `índice + 1`. */
 export const CARD: Readonly<Record<CardKind, number>> = {
@@ -90,6 +92,7 @@ export const CARD: Readonly<Record<CardKind, number>> = {
   ivy: 6,
   net: 7,
   mulch: 8,
+  crown: 9,
 };
 
 /**
@@ -97,7 +100,8 @@ export const CARD: Readonly<Record<CardKind, number>> = {
  * clase (peso en la base, peso en la punta, amplitud en metros). Tiene que
  * coincidir con `regionGlsl` (el shader las lleva escritas).
  */
-const REGIONS: readonly (readonly [number, number, number, number, number, number, number])[] = [
+/** Las clases de siempre ocupan la mitad de abajo del atlas (v 0–0,5). */
+const LOWER: readonly (readonly [number, number, number, number, number, number, number])[] = [
   // frondIn: la parte de la fronda junto al tronco.
   [0.0, 0.0, 0.25, 0.42, 0.0, 0.3, 0.1],
   // frondOut: de ahí a la punta.
@@ -113,6 +117,11 @@ const REGIONS: readonly (readonly [number, number, number, number, number, numbe
   // net, mulch: quietas.
   [0.75, 0.5, 0.25, 0.5, 0.0, 0.0, 0.0],
   [0.75, 0.0, 0.25, 0.5, 0.0, 0.0, 0.0],
+];
+const REGIONS: readonly (readonly [number, number, number, number, number, number, number])[] = [
+  ...LOWER.map(([u0, v0, du, dv, w0, w1, a]) => [u0, v0 / 2, du, dv / 2, w0, w1, a] as const),
+  // crown: arriba a la izquierda, cuadrada (512 px); se mece entera, poco.
+  [0.0, 0.5, 0.5, 0.5, 0.6, 1.0, 0.05],
 ];
 
 /** `if` encadenado con las regiones (los uniformes en arreglo no hacen falta: son fijas). */
@@ -360,6 +369,50 @@ function paintAtlas(ctx: Ctx): void {
   paintIvy(ctx, px(CARD.ivy), r);
   paintNet(ctx, px(CARD.net));
   paintMulch(ctx, px(CARD.mulch), r);
+  paintCrown(ctx, px(CARD.crown), new Rng(seedFromString('foliageCrown')));
+}
+
+/**
+ * Masa de copa: una nube de hojas chicas, más densa y oscura adentro, con el
+ * borde calado y alguna rama asomando. Va cruzada sobre la icoesfera de la
+ * copa, que tapa los huecos del centro: lo que se ve es el contorno de hojas.
+ */
+function paintCrown(ctx: Ctx, R: { x: number; y: number; w: number; h: number }, r: Rng): void {
+  const cx = R.x + R.w / 2;
+  const cy = R.y + R.h * 0.52;
+  const rad = R.w * 0.46;
+  // Contorno irregular: radio que varía con el ángulo (lóbulos).
+  const lobes = [r.range(0, 6.28), r.range(0, 6.28), r.range(0, 6.28)];
+  const edge = (a: number) =>
+    rad * (0.82 + 0.1 * Math.sin(a * 3 + lobes[0]) + 0.06 * Math.sin(a * 5 + lobes[1]) + 0.04 * Math.sin(a * 9 + lobes[2]));
+  // Ramitas que asoman entre las hojas.
+  ctx.strokeStyle = rgb(78, 62, 46);
+  for (let k = 0; k < 7; k++) {
+    const a = r.range(0, Math.PI * 2);
+    const e = edge(a) * r.range(0.55, 0.85);
+    ctx.lineWidth = r.range(2, 4);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + rad * 0.3);
+    ctx.lineTo(cx + Math.cos(a) * e, cy + Math.sin(a) * e);
+    ctx.stroke();
+  }
+  const n = 1500;
+  for (let k = 0; k < n; k++) {
+    const t = k / n;
+    const a = r.range(0, Math.PI * 2);
+    // Primero las del fondo (adentro, oscuras); al final las del borde y arriba.
+    const d = Math.sqrt(r.range(0.04, 1)) * (0.55 + 0.45 * t);
+    const e = edge(a);
+    if (d > 1.02) continue;
+    const x = cx + Math.cos(a) * e * d;
+    const y = cy + Math.sin(a) * e * d * 0.92;
+    const up = (cy - y) / rad; // > 0 arriba
+    const g = (0.62 + 0.38 * t + 0.22 * up) * r.range(0.85, 1.12);
+    const base = r.chance(0.25) ? [70, 112, 50] : r.chance(0.5) ? [58, 104, 46] : [64, 118, 58];
+    const ang = a + r.range(-1.2, 1.2);
+    const len = r.range(13, 24);
+    leaf(ctx, x - Math.cos(ang) * len * 0.5, y - Math.sin(ang) * len * 0.5, ang, len, len * 0.42, rgb(base[0] * g, base[1] * g, base[2] * g), rgb(base[0] * g * 1.3, base[1] * g * 1.22, base[2] * g * 1.1, 0.45));
+  }
 }
 
 /** Hoja lanceolada de `len` en la dirección `ang` (radianes, canvas), desde (x, y). */

@@ -150,11 +150,27 @@ export class NatureBuilder {
       const rise = main ? r.range(0.45, 0.7) : sp === 'tipa' ? r.range(0.3, 0.6) : r.range(0.25, 0.95);
       const mat =
         flower && (main || r.chance(shape.flowerFrac)) ? flower : main ? leaf : this.mats.foliage(r.pick(shape.tones));
+      const center = new Vector3(x + Math.cos(ang) * dist, groundY + trunkH + crownR * squash * rise, z + Math.sin(ang) * dist);
+      const hy = rad * 2 * squash * 0.72;
+      if (this.cards && mat !== flower) {
+        // Contorno de hojas: tres tarjetas de copa cruzadas y una acostada
+        // envuelven la masa, algo más grandes que ella. La icoesfera tapa los
+        // huecos del centro; lo que se ve es el borde calado de hojas en vez
+        // del contorno liso que se leía como un almohadón. (Las masas en flor
+        // siguen siendo icoesferas: el dibujo de la tarjeta es verde.)
+        const yaw = ang * 1.7 + i;
+        // El dibujo llena ~75 % del ancho de la tarjeta: 3,1 × el radio deja
+        // el borde de hojas ~15 % por fuera de la masa.
+        const cw = rad * 3.1;
+        const ch = Math.max(hy * 1.6, cw * 0.7);
+        this.cards.tuft('crown', center.x, center.z, center.y - ch / 2, cw, ch, yaw, 3);
+        this.cards.flat('crown', center.x, center.z, center.y + hy * 0.12, cw, cw, yaw);
+      }
       this.farm.add(
         prim,
         mat,
-        new Vector3(x + Math.cos(ang) * dist, groundY + trunkH + crownR * squash * rise, z + Math.sin(ang) * dist),
-        new Vector3(rad * 2, rad * 2 * squash * 0.72, rad * 2 * r.range(0.85, 1.15)),
+        center,
+        new Vector3(rad * 2, hy, rad * 2 * r.range(0.85, 1.15)),
         // Rotación al azar: sin esto todas las facetas se alinean y la calle
         // entera muestra el mismo polígono en la misma orientación.
         r.range(0, Math.PI * 2),
