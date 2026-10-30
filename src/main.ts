@@ -17,6 +17,7 @@ import { warmUpShaders } from './core/ShaderWarmup';
 import { PlayerController, type MoveMode } from './player/PlayerController';
 import { VirtualInput } from './player/VirtualInput';
 import { Life } from './world/Life';
+import { Robots } from './world/Robots';
 import { Population } from './world/people/Population';
 import { Soundscape } from './audio/Soundscape';
 import { acousticsAtWorld } from './audio/schoolAcoustics';
@@ -70,6 +71,7 @@ const EYE = 1.62;
 let city: City | null = null;
 let environment: Environment | null = null;
 let life: Life | null = null;
+let robots: Robots | null = null;
 let people: Population | null = null;
 let player: PlayerController | null = null;
 let director: GameDirector | null = null;
@@ -314,6 +316,7 @@ window.addEventListener('pagehide', (event) => {
   engine.stopRenderLoop();
   director?.dispose();
   unwireWorld?.();
+  robots?.dispose();
   life?.dispose();
   people?.dispose();
   player?.dispose();
@@ -386,10 +389,12 @@ async function assembleCity(newSeed: number): Promise<void> {
   director?.dispose();
   // Los peatones y los autos dejan de consultarse antes de que se desarmen.
   unwireWorld?.();
+  robots?.dispose();
   life?.dispose();
   people?.dispose();
   player?.dispose();
   director = null;
+  robots = null;
   life = null;
   people = null;
   player = null;
@@ -467,6 +472,9 @@ async function assembleCity(newSeed: number): Promise<void> {
   people.setAdaptiveLevel(quality.adaptiveLevel);
   people.setSchoolPhase('entrada');
   wireCrossings(life, people);
+
+  // Robots de la Escuela 2050: fregadoras en los pasillos y robots de atención.
+  robots = new Robots(scene, city.schoolFrame, life.mats, () => playerApi.feet(), people);
 
   // Jugador con colisión y modo caminar/volar.
   player = new PlayerController(scene, camera, city.index, virtualInput);

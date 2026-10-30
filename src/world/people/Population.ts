@@ -342,6 +342,18 @@ export class Population implements PopulationApi {
     }
   }
 
+  /** Todos los que están de pie (caminando o parados), para que los robots no se les metan encima. */
+  forEachBody(fn: (u: number, v: number, level: Level) => void): void {
+    for (const a of this.sim.agents) {
+      if (a.alive && !a.hidden && !a.seat) fn(a.u, a.v, a.level);
+    }
+  }
+
+  /** Robots que la gente esquiva (ver `Sim.movers`). */
+  setMovers(list: ReadonlyArray<{ u: number; v: number; vu: number; vv: number; r: number; level: Level }>): void {
+    this.sim.movers = list;
+  }
+
   /** Momento del día vigente. */
   get phase(): SchoolPhase {
     return this.sim.phase;

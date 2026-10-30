@@ -1986,6 +1986,12 @@ export class PeopleSim {
   }
 
   /** Esquive: separación y anticipación con vecinos, y prioridad del jugador. */
+  /**
+   * Robots de la escuela (`Robots`): se los esquiva como al jugador. El
+   * arreglo es del dueño y se actualiza en el lugar cada cuadro.
+   */
+  movers: ReadonlyArray<{ u: number; v: number; vu: number; vv: number; r: number; level: Level }> = [];
+
   /** Resultado de `avoid` (sin crear un arreglo por persona y por cuadro). */
   private avU = 0;
   private avV = 0;
@@ -2048,6 +2054,7 @@ export class PeopleSim {
     }
     const p = this.view.player;
     if (p && levelOf(p.y) === a.level) consider(p.u, p.v, this.pvu, this.pvv, 0.3, 2.0);
+    for (const m of this.movers) if (m.level === a.level) consider(m.u, m.v, m.vu, m.vv, m.r, 2.0);
     if (!a.named) {
       // A los personajes con nombre (Inés, Lola, Rubén…) se les deja aire como
       // al jugador, también "afinado": la mochila de un alumno atravesaba los

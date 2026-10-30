@@ -40,7 +40,8 @@ export interface LifeOptions {
 export class Life {
   readonly traffic: TrafficSim;
   readonly birds: BirdSim;
-  private readonly mats: LifeMaterials;
+  /** Compartidos con los robots de la escuela (`Robots`): sin programas de shader nuevos. */
+  readonly mats: LifeMaterials;
   private readonly trafficView: TrafficView;
   private readonly birdsView: BirdsView;
   private readonly observer: Observer<Scene> | null;

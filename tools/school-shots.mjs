@@ -34,6 +34,16 @@ console.log(stats.replace(/\n/g, ' | '));
 let flying = false;
 for (const v of views) {
   if (v.fly && !flying) { await page.keyboard.press('KeyF'); flying = true; }
+  // `robot`: encuadra a ese robot donde esté ahora (eye y look relativos a él).
+  if (v.robot) {
+    const r = await page.evaluate((id) => window.__robots?.().find((x) => x.id === id), v.robot);
+    if (r) {
+      const y0 = 0.12 + r.level * 3.3;
+      const [du, dy, dv] = v.offset ?? [1.6, 1.4, 1.2];
+      v.eye = [r.u + du, y0 + dy, r.v + dv];
+      v.look = [r.u, y0 + (v.lookY ?? 0.55), r.v];
+    }
+  }
   await page.evaluate(
     ([e0, l0, plan]) => {
       const conv = (p) => {
