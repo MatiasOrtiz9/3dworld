@@ -1,5 +1,5 @@
-import { ARM_L, ARM_R, BOUNCE, HPITCH, HROLL, HYAW, LEAN, LEG_L, LEG_R, PROLL, PTWIST, ROLL, SIT, TWIST } from './Anim';
-import type { BodyDims } from './Looks';
+import { ANK_L, ANK_R, ARM_L, ARM_R, BOUNCE, HPITCH, HROLL, HYAW, LEAN, LEG_L, LEG_R, PROLL, PTWIST, ROLL, SIT, SWAY, TWIST } from './Anim';
+import { REF, type BodyDims } from './Looks';
 
 /**
  * Esqueleto: de los canales de una pose a los marcos (rotación + posición)
@@ -14,9 +14,11 @@ import type { BodyDims } from './Looks';
  * escribirse (`writePart`): si la escala viajara por la jerarquía, el
  * antebrazo de alguien ancho de hombros saldría deformado (cizallado).
  *
- * Los pies se apoyan solos: la cadera se ubica a la altura que deja la suela
- * más baja sobre el piso, así el rebote del paso sale de la propia pierna y
- * ningún pie se hunde ni flota (ni en la escalera, que es una rampa).
+ * Los pies se apoyan solos: la cadera se ubica a la altura que deja el punto
+ * más bajo de las suelas (talón o punta de cada zapato) sobre el piso, así el
+ * rebote del paso sale de la propia pierna y ningún pie se hunde ni flota (ni
+ * en la escalera, que es una rampa). El zapato tiene su articulación (el
+ * tobillo): apoya plano y despega levantando el talón.
  */
 
 export const F_PELVIS = 0;
@@ -30,7 +32,9 @@ export const F_THIGH_L = 7;
 export const F_THIGH_R = 8;
 export const F_SHIN_L = 9;
 export const F_SHIN_R = 10;
-const NF = 11;
+export const F_FOOT_L = 11;
+export const F_FOOT_R = 12;
+const NF = 13;
 
 // Rotaciones elementales en arreglos de 9 (filas = imágenes de los ejes).
 function yawM(o: Float64Array, a: number): void {
@@ -80,7 +84,7 @@ const tC = new Float64Array(9);
 const tL = new Float64Array(9);
 
 export class Rig {
-  /** 11 marcos × 12 números: rotación (9) y posición (3). */
+  /** 13 marcos × 12 números: rotación (9) y posición (3). */
   readonly f = new Float64Array(NF * 12);
 
   /** Rotación local = yaw · roll · pitch (se aplica en ese orden). */
@@ -112,15 +116,17 @@ export class Rig {
    */
   pose(p: Float32Array, d: BodyDims, x: number, z: number, yaw: number, floorY: number, seatY: number, footFloor: ((x: number, z: number) => number) | null = null): void {
     const f = this.f;
-    // Pelvis: guiñada y rolido propios sobre el rumbo.
+    // Pelvis: guiñada y rolido propios sobre el rumbo, y el corrimiento
+    // lateral sobre la pierna que carga el peso (`SWAY`, hacia +X).
     yawM(tA, p[PTWIST]);
     rollM(tB, p[PROLL]);
     mul(tC, tA, 0, tB, 0);
     yawM(tA, yaw);
     mul(f, tC, 0, tA, 0, 0);
-    f[9] = x;
+    const sw = p[SWAY] * d.legS;
+    f[9] = x + sw * f[0];
     f[10] = 0;
-    f[11] = z;
+    f[11] = z + sw * f[2];
     // Tronco desde la cintura; cabeza desde la base del cuello.
     this.child(F_CHEST, F_PELVIS, this.local(p[TWIST], p[ROLL], -p[LEAN]), 0, d.waist, 0);
     // Cabeza: rolido, cabeceo y después la guiñada (gira la cabeza ya inclinada).
@@ -130,6 +136,7 @@ export class Rig {
     yawM(tA, p[HYAW]);
     mul(tL, tC, 0, tA, 0);
     this.child(F_HEAD, F_CHEST, tL, 0, d.torso, -0.012 * d.s);
+    const ankle = REF.ankle * d.legS;
     for (const side of [-1, 1]) {
       const a = side < 0 ? ARM_L : ARM_R;
       const ua = side < 0 ? F_UARM_L : F_UARM_R;
@@ -140,34 +147,50 @@ export class Rig {
       const l = side < 0 ? LEG_L : LEG_R;
       const th = side < 0 ? F_THIGH_L : F_THIGH_R;
       const sh = side < 0 ? F_SHIN_L : F_SHIN_R;
+      const ft = side < 0 ? F_FOOT_L : F_FOOT_R;
       this.child(th, F_PELVIS, this.local(side * p[l + 2], -side * p[l + 1], p[l]), side * d.hipX, 0, 0);
       pitchM(tL, -p[l + 3]);
       this.child(sh, th, tL, 0, -d.thigh, 0);
+      pitchM(tL, p[side < 0 ? ANK_L : ANK_R]);
+      this.child(ft, sh, tL, 0, -ankle, 0);
     }
-    // Pies en el piso: la suela más baja toca `floorY`.
-    const sole = (sh: number): number => {
-      const o = sh * 12;
-      return -d.shin * f[o + 4] + 0.035 * d.legS * f[o + 7] + f[o + 10];
+    // Pies en el piso: el punto más bajo (talón o punta) toca `floorY`.
+    const sy = -REF.sole * d.legS;
+    const hz = REF.heel * d.limbW;
+    const tz = REF.toe * d.limbW;
+    const lowY = (ft: number): number => {
+      const o = ft * 12;
+      const base = sy * f[o + 4] + f[o + 10];
+      return Math.min(base + hz * f[o + 7], base + tz * f[o + 7]);
     };
     let stand: number;
     if (footFloor) {
-      // Piso desparejo (escalones, el umbral del portón): cada pie mira el
-      // piso que tiene debajo y ninguno se hunde. El que queda arriba es el
-      // que pisa; el otro, a lo sumo, va levantado como al subir.
-      const lift = (sh: number): number => {
-        const o = sh * 12;
-        const px = -d.shin * f[o + 3] + 0.035 * d.legS * f[o + 6] + f[o + 9];
-        const pz = -d.shin * f[o + 5] + 0.035 * d.legS * f[o + 8] + f[o + 11];
-        return footFloor(px, pz) - sole(sh);
+      // Piso desparejo (escalones, el umbral del portón): talón y punta de
+      // cada pie miran el piso que tienen debajo y ninguno se hunde. El que
+      // queda arriba es el que pisa; el otro, a lo sumo, va levantado.
+      const lift = (ft: number, pz: number): number => {
+        const o = ft * 12;
+        const px = sy * f[o + 3] + pz * f[o + 6] + f[o + 9];
+        const py = sy * f[o + 4] + pz * f[o + 7] + f[o + 10];
+        const qz = sy * f[o + 5] + pz * f[o + 8] + f[o + 11];
+        return footFloor(px, qz) - py;
       };
-      stand = Math.max(lift(F_SHIN_L), lift(F_SHIN_R)) + p[BOUNCE] * d.legS;
+      stand = Math.max(lift(F_FOOT_L, hz), lift(F_FOOT_L, tz), lift(F_FOOT_R, hz), lift(F_FOOT_R, tz)) + p[BOUNCE] * d.legS;
     } else {
-      stand = floorY - Math.min(sole(F_SHIN_L), sole(F_SHIN_R)) + p[BOUNCE] * d.legS;
+      stand = floorY - Math.min(lowY(F_FOOT_L), lowY(F_FOOT_R)) + p[BOUNCE] * d.legS;
     }
     const s = p[SIT];
     const k = s * s * (3 - 2 * s);
     const hipY = stand + (seatY + d.seatOffset - stand) * k;
     for (let i = 0; i < NF; i++) f[i * 12 + 10] += hipY;
+  }
+
+  /**
+   * Talón (`toe` false) o punta del zapato de un pie (`F_FOOT_L`/`F_FOOT_R`),
+   * en el mundo: los puntos con los que el pie toca el piso.
+   */
+  sole(foot: number, d: BodyDims, toe: boolean, out: { x: number; y: number; z: number }): void {
+    this.point(foot, 0, -REF.sole * d.legS, (toe ? REF.toe : REF.heel) * d.limbW, out);
   }
 
   /** Altura (mundo) de los ojos, para mirar a alguien a los ojos. */

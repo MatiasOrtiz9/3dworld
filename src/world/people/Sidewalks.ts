@@ -2,7 +2,7 @@ import type { NpcRole, SchoolPhase } from '../../game/contracts';
 import { Rng } from '../../utils/rng';
 import { CROSS_AT, KERB_W, LANE_FRAC, RAMP_LEN, SIDEWALK_H, type CityPlan, type Street } from '../CityLayout';
 import { SIGNAL } from '../life/traffic';
-import { setBase, startGesture, tickAnim, type AnimId } from './Anim';
+import { aimLook, setBase, sitKnee, startGesture, stepGait, tickAnim, turnToward, type AnimId } from './Anim';
 import { bodyDims, hexRgb, makeAppearance, type Appearance } from './Looks';
 import { Agent } from './Sim';
 
@@ -677,7 +677,7 @@ export class Sidewalks {
     }
     a.anim.hipFlex = hip;
     if (d.shin * 0.98 >= drop) {
-      a.anim.knee = hip - Math.acos(clamp(drop / d.shin, 0, 1));
+      a.anim.knee = hip - sitKnee(drop, d.legS);
       a.anim.dangle = false;
     } else {
       a.anim.knee = hip - 0.08;
@@ -1205,19 +1205,14 @@ export class Sidewalks {
   private animate(w: Walker, dt: number): void {
     const a = w.a;
     const an = a.anim;
-    const dy = wrap(a.wantYaw - a.yaw);
-    const rate = (a.speed > 0.3 ? 4.5 : 2.6) * dt;
-    a.yaw = wrap(a.yaw + clamp(dy, -rate, rate));
+    turnToward(a, a.speed > 0.3 ? 4.5 : 2.6, dt);
     if (w.mode !== 'sit' && w.mode !== 'stand') {
       if (a.speed > 0.05) {
         if (an.base !== 'walk') setBase(an, 'walk');
       } else if (an.base === 'walk') setBase(an, a.look.idleStyle === 2 ? 'lookAround' : 'idle');
     }
-    const legLen = 0.92 * a.body.legS;
-    const ampT = clamp(a.speed / Math.max(0.3, a.walkSpeed * 0.9), 0, 1);
-    an.amp += (ampT - an.amp) * Math.min(1, dt * 5);
     an.run += (0 - an.run) * Math.min(1, dt * 4);
-    an.phase = (an.phase + (a.speed * dt * TAU) / (legLen * 1.45)) % TAU;
+    stepGait(an, a.speed, 0, a.walkSpeed, a.body.legS, dt);
     tickAnim(an, dt);
     this.lookAt(w, dt);
   }
@@ -1261,8 +1256,7 @@ export class Sidewalks {
     }
     if (!Number.isNaN(tx)) {
       const yaw = Math.atan2(tx - w.x, tz - w.z);
-      an.lookYaw += (clamp(wrap(yaw - a.yaw), -1.2, 1.2) - an.lookYaw) * Math.min(1, dt * 4);
-      an.lookPitch += (0 - an.lookPitch) * Math.min(1, dt * 4);
+      aimLook(an, clamp(wrap(yaw - a.yaw), -1.2, 1.2), 0, dt);
       an.lookW = Math.min(1, an.lookW + dt * 2);
     } else an.lookW = Math.max(0, an.lookW - dt * 1.5);
   }

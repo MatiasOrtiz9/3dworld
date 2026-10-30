@@ -18,7 +18,7 @@ import { HUMAN_PARTS, buildHumanParts, type HumanPart } from './HumanGeometry';
 import { hexRgb, type RGB } from './Looks';
 import { NAV_BOUNDS } from './NavGrid';
 import { treadFloor } from './Places';
-import { F_CHEST, F_FARM_L, F_FARM_R, F_HEAD, F_PELVIS, F_SHIN_L, F_SHIN_R, F_THIGH_L, F_THIGH_R, F_UARM_L, F_UARM_R, Rig } from './Rig';
+import { F_CHEST, F_FARM_L, F_FARM_R, F_FOOT_L, F_FOOT_R, F_HEAD, F_PELVIS, F_SHIN_L, F_SHIN_R, F_THIGH_L, F_THIGH_R, F_UARM_L, F_UARM_R, Rig } from './Rig';
 import { PeopleSim, type Agent, type SimView } from './Sim';
 import { Sidewalks, sidewalkOptions } from './Sidewalks';
 
@@ -716,15 +716,15 @@ export class Population implements PopulationApi {
     }
     if (L.prop === 'mop') this.part('mop', F_FARM_R, d.armS, d.armS, d.armS, PROP_GREY);
     // Piernas.
-    for (const [th, sh] of [
-      [F_THIGH_L, F_SHIN_L],
-      [F_THIGH_R, F_SHIN_R],
+    for (const [th, sh, ft] of [
+      [F_THIGH_L, F_SHIN_L, F_FOOT_L],
+      [F_THIGH_R, F_SHIN_R, F_FOOT_R],
     ] as const) {
       this.part('thigh', th, d.limbW, d.legS, d.limbW, legColor);
       // Lejos no hay zapato: la pierna se estira hasta la suela (termina en el
       // tobillo, 4 cm arriba) para que nadie quede flotando.
       this.part('shin', sh, d.limbW, lod < 2 ? d.legS : d.legS * 1.09, d.limbW, legColor);
-      if (lod < 2) this.part('shoe', sh, d.limbW, d.legS, d.limbW, L.shoe);
+      if (lod < 2) this.part('shoe', ft, d.limbW, d.legS, d.limbW, L.shoe);
     }
     // Sombra de contacto, apenas sobre el piso (bajo la silla si está sentado).
     const sh = this.shadow;

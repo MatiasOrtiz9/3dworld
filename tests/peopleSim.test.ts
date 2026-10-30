@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PeopleSim, composition, type Agent, type SimView } from '../src/world/people/Sim';
 import { evalPose, newAnimState, setBase, POSE_N, SIT } from '../src/world/people/Anim';
-import { Rig, F_FARM_L, F_FARM_R, F_SHIN_L, F_SHIN_R } from '../src/world/people/Rig';
+import { Rig, F_FARM_L, F_FARM_R, F_FOOT_L, F_FOOT_R } from '../src/world/people/Rig';
 import { bodyDims, makeAppearance } from '../src/world/people/Looks';
 import { treadFloor } from '../src/world/people/Places';
 import { Rng } from '../src/utils/rng';
@@ -355,6 +355,19 @@ describe('gente — personajes con nombre y reacciones', () => {
   });
 });
 
+/** Talón y punta de los dos zapatos, en el mundo. */
+function soles(rig: Rig, d: ReturnType<typeof bodyDims>): Array<{ x: number; y: number; z: number }> {
+  const out: Array<{ x: number; y: number; z: number }> = [];
+  for (const f of [F_FOOT_L, F_FOOT_R]) {
+    for (const toe of [false, true]) {
+      const p = { x: 0, y: 0, z: 0 };
+      rig.sole(f, d, toe, p);
+      out.push(p);
+    }
+  }
+  return out;
+}
+
 describe('gente — esqueleto', () => {
   it('los pies se apoyan en el piso durante todo el ciclo de paso', () => {
     const rig = new Rig();
@@ -369,9 +382,8 @@ describe('gente — esqueleto', () => {
       an.phase = ph;
       evalPose(an, pose);
       rig.pose(pose, d, 10, 5, 0.4, 0.12, 0.12);
-      const f = rig.f;
-      const sole = (sh: number) => -d.shin * f[sh * 12 + 4] + 0.035 * d.legS * f[sh * 12 + 7] + f[sh * 12 + 10];
-      expect(Math.min(sole(F_SHIN_L), sole(F_SHIN_R))).toBeCloseTo(0.12, 3);
+      // El punto más bajo de los zapatos (talón o punta) toca el piso.
+      expect(Math.min(...soles(rig, d).map((p) => p.y))).toBeCloseTo(0.12, 3);
     }
     // Sentado: la cadera queda sobre el asiento.
     setBase(an, 'sit');
@@ -408,15 +420,12 @@ describe('gente — esqueleto', () => {
       const y = treadFloor(-x, z, base + 0.8);
       return Number.isNaN(y) ? base : y;
     };
-    const f = rig.f;
-    const sole = (sh: number) => -d.shin * f[sh * 12 + 4] + 0.035 * d.legS * f[sh * 12 + 7] + f[sh * 12 + 10];
-    const solePos = (sh: number) => [-d.shin * f[sh * 12 + 3] + 0.035 * d.legS * f[sh * 12 + 6] + f[sh * 12 + 9], -d.shin * f[sh * 12 + 5] + 0.035 * d.legS * f[sh * 12 + 8] + f[sh * 12 + 11]];
     for (let k = 0; k < 20; k++) {
       an.phase = k * 0.31;
       evalPose(an, pose);
       const u = s.u0 + 0.6 + k * 0.05;
       rig.pose(pose, d, -u, vm, -Math.PI / 2, stairY(s, u, vm), 0, floor);
-      const gaps = [F_SHIN_L, F_SHIN_R].map((sh) => sole(sh) - floor(solePos(sh)[0], solePos(sh)[1]));
+      const gaps = soles(rig, d).map((p) => p.y - floor(p.x, p.z));
       expect(Math.min(...gaps)).toBeGreaterThan(-1e-4);
       expect(Math.min(...gaps)).toBeLessThan(1e-3);
     }
@@ -526,9 +535,7 @@ describe('gente — esqueleto', () => {
       if (!s || a.stage !== 'act' || a.anim.dangle || s.kind === 'bleacher') continue;
       evalPose(a.anim, pose);
       rig.pose(pose, a.body, 0, 0, a.yaw, a.y, a.seatY);
-      const f = rig.f;
-      const sole = (sh: number) => -a.body.shin * f[sh * 12 + 4] + 0.035 * a.body.legS * f[sh * 12 + 7] + f[sh * 12 + 10];
-      const gap = Math.min(sole(F_SHIN_L), sole(F_SHIN_R)) - s.footY;
+      const gap = Math.min(...soles(rig, a.body).map((p) => p.y)) - s.footY;
       expect(gap, `${a.id} (${a.look.age}) en ${s.kind} de ${s.room}: pies en el aire`).toBeLessThan(0.03);
       expect(gap, `${a.id} en ${s.kind}: pies hundidos`).toBeGreaterThan(-0.03);
       checked++;

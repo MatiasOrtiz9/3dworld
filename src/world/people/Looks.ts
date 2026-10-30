@@ -389,7 +389,14 @@ export const REF = {
   /** Suela → articulación de la cadera, de pie y derecho. */
   leg: 0.92,
   thigh: 0.44,
+  /** Rodilla → suela (con el pie plano): rodilla → tobillo + tobillo → suela. */
   shin: 0.48,
+  /** Rodilla → articulación del tobillo, y de ahí a la suela (alturas, × legS). */
+  ankle: 0.42,
+  sole: 0.06,
+  /** Talón y punta del zapato, adelante del tobillo (× limbW, como la malla). */
+  heel: -0.068,
+  toe: 0.15,
   hipX: 0.088,
   /** Cadera → cintura (pivote del tronco). */
   waist: 0.1,

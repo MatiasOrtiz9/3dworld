@@ -589,16 +589,19 @@ export function buildHumanParts(scene: Scene, detail: 0 | 1): { meshes: Record<H
     // El tobillo queda adentro del zapato: sin tapa abajo.
     b.loft([ring(-0.44, 0.034, 0.036, m, 0.92), ring(-0.13, 0.051, 0.058, m, 1, { cz: -0.008 }), ring(0.03, 0.054, 0.057, m, 0.92)], false, true);
   });
-  // Zapato (origen: rodilla; suela a −0,48): puntera redondeada, suela
-  // marcada, caña baja.
+  // Zapato (origen: tobillo, 0,42 bajo la rodilla; suela a −0,06): puntera
+  // redondeada, suela marcada, caña baja. Con su propia articulación el pie
+  // apoya plano y despega con el talón: rígido con la pierna, la punta se
+  // metía en el piso al despegar y el talón al pisar (`Rig`, `Anim`).
   make('shoe', (b) => {
     const m = N(8, 6);
-    const sole = ring(-0.48, 0.045, 0.112, m, 0.32, { cz: 0.042 });
+    const A = 0.42;
+    const sole = ring(-0.48 + A, 0.045, 0.112, m, 0.32, { cz: 0.042 });
     sole.capShade = 0.25;
-    const collarRing = ring(-0.395, 0.038, 0.046, m, 0.78, { cz: -0.004 });
+    const collarRing = ring(-0.395 + A, 0.038, 0.046, m, 0.78, { cz: -0.004 });
     collarRing.capShade = 0.4;
-    const rings: Ring[] = [sole, ring(-0.462, 0.047, 0.116, m, 1, { cz: 0.042 }), collarRing];
-    if (hi) rings.splice(2, 0, ring(-0.425, 0.043, 0.09, m, 0.98, { cz: 0.026 }));
+    const rings: Ring[] = [sole, ring(-0.462 + A, 0.047, 0.116, m, 1, { cz: 0.042 }), collarRing];
+    if (hi) rings.splice(2, 0, ring(-0.425 + A, 0.043, 0.09, m, 0.98, { cz: 0.026 }));
     b.loft(rings);
   });
 
