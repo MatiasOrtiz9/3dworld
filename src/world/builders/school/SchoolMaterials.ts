@@ -127,7 +127,6 @@ export const STYLES: Readonly<Record<string, RoomStyle>> = {
   aulaVertice: { stripe: false, curtain: 'curtainWhite', ceiling: 'panels' },
   aulaN2: { stripe: true, curtain: 'curtainWhite', ceiling: 'panels' },
   aulaNE: { stripe: false, curtain: 'curtainWhite', ceiling: 'panels' },
-  prBil: { wall: 'cream', stripe: false, ceiling: 'panels', lights: 'panel' },
   aulaTaller: { stripe: false, curtain: 'violet' },
   // Aula de danzas: el cielorraso es la bóveda del polideportivo.
   aulaDanzas: { wainscot: ['block', 0.8], stripe: false, ceiling: null, lights: 'dome' },

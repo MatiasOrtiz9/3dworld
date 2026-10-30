@@ -165,6 +165,12 @@ export const U = {
   gymW: 50.3,
   artE: 53.9,
   teaE: 57.65,
+  /**
+   * Escuela 2050: Teatro se ensancha hasta acá sobre el hall del jardín (de
+   * 4,3 a 6,8 m; 34 → 56 m²). El hall sigue con 3,4 m hasta V. Damas y la
+   * puerta doble al jardín queda al este.
+   */
+  teaX: 59.8,
   vdW: 62.7,
   e: 67.4,
 } as const;
@@ -673,7 +679,6 @@ export const CEILING_H: Readonly<Record<string, number>> = {
   // de las aulas vecinas.
   gerencia: 2.75,
   aula6C: 2.75,
-  prBil: 2.75,
   aulaVertice: 2.75,
   aula4A: 2.75,
   aulaN2: 2.75,

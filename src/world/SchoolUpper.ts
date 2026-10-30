@@ -108,9 +108,12 @@ export const U1 = {
    * su tabique en 19,5 a 6° C (29 alumnos) le quedaban 15 m².
    */
   bil: 17.4,
+  /**
+   * Escuela 2050: tabique entre el aula del vértice y la del fondo (N2),
+   * corrido 3 m al oeste de la línea de 4° A: N2 tenía 27 m² y el vértice 103.
+   */
+  n2W: 24.4,
   c6: 22.45,
-  /** Baños / Prof. bilingüe. */
-  prBil: 22.66,
   /** Aula 2° A / Aula taller (emociones · psicología). */
   aulaTaller: 45.8,
   /** Aula nueva sobre el patio este: su lado oeste (el balcón de la escalera exterior) y su lado este. */
@@ -354,14 +357,15 @@ const L1: Room[] = [
     roofed: true,
   },
   { id: 'aula6C', name: 'Aula', caption: '6° C', poly: rect(U1.bil, V1.ductS, U1.c6, V1.northCorr), floor: 'ceramic', roofed: true },
+  // Escuela 2050: la biblioteca gana el conducto del fondo y la oficina de
+  // Prof. bilingüe (de 25 a 44 m²).
   // El "Aula" sin curso de la mano: el video vio la biblioteca en este sector.
-  { id: 'biblioteca', name: 'Biblioteca', poly: rect(U1.c6, V1.ductS, U.bufW, V1.northCorr), floor: 'ceramic', roofed: true },
-  { id: 'banosN', name: 'Sanitarios', caption: 'Toilette alumnos', poly: rect(U.epE, V1.northRow, U1.prBil, V1.ductN), floor: 'ceramic', roofed: true },
-  { id: 'prBil', name: 'Prof. bilingüe', poly: rect(U1.prBil, V1.northRow, U.bufW, V1.ductN), floor: 'ceramic', roofed: true },
+  { id: 'biblioteca', name: 'Biblioteca', poly: rect(U1.c6, V1.northRow, U.bufW, V1.northCorr), floor: 'ceramic', roofed: true },
+  { id: 'banosN', name: 'Sanitarios', caption: 'Toilette alumnos', poly: rect(U.epE, V1.northRow, U1.c6, V1.ductN), floor: 'ceramic', roofed: true },
   // Sobre Tecnología, en la punta del predio.
-  { id: 'aulaVertice', name: 'Aula', poly: [mc(V1.northRow), [U.bufW, V1.northRow], rear(U.bufW), APEX], floor: 'ceramic', roofed: true },
+  { id: 'aulaVertice', name: 'Aula', poly: [mc(V1.northRow), [U1.n2W, V1.northRow], rear(U1.n2W), APEX], floor: 'ceramic', roofed: true },
   { id: 'aula4A', name: 'Aula', caption: '4° A', poly: rect(U.bufW, V1.northRow, U.east1, V.nBlockS), floor: 'ceramic', roofed: true },
-  { id: 'aulaN2', name: 'Aula', poly: [[U.bufW, V1.northRow], [U.east1, V1.northRow], rear(U.east1), rear(U.bufW)], floor: 'ceramic', roofed: true },
+  { id: 'aulaN2', name: 'Aula', poly: [[U1.n2W, V1.northRow], [U.east1, V1.northRow], rear(U.east1), rear(U1.n2W)], floor: 'ceramic', roofed: true },
   {
     id: 'aulaNE',
     name: 'Aula',
@@ -616,7 +620,8 @@ const W1: Wall[] = [
   ]),
   // Cabecera del pasillo: puerta doble de 4° A.
   vw(U.bufW, V.nBlockS, V1.northCorr, 'int', [[-23.55, -24.95, 'double', undefined, undefined, 'frame']]),
-  vw(U.bufW, V1.northCorr, rearV(U.bufW)),
+  vw(U.bufW, V1.northCorr, V1.northRow),
+  vw(U1.n2W, V1.northRow, rearV(U1.n2W)),
   // Aula bilingüe: testero oeste sobre el techo del nicho (el CAD lo marca sin construir).
   vw(U.epW, V1.northCorr, BIL_SW, 'ext', [
     [-26.1, -27.7, 'window'],
@@ -632,13 +637,12 @@ const W1: Wall[] = [
   // Tabiques de la fila del pasillo (los de la mano) y, al fondo, el de la
   // bilingüe con los baños y el conducto.
   vw(U1.bil, V1.northCorr, V1.ductS),
-  vw(U1.c6, V1.northCorr, V1.ductS),
+  vw(U1.c6, V1.northCorr, V1.northRow),
   vw(U.epE, V1.ductS, V1.northRow),
-  // Conducto macizo entre la fila del pasillo y la del fondo; su muro sur
-  // sigue hasta la bilingüe como fondo de 6° C.
-  hw(V1.ductS, U1.bil, U.bufW),
-  hw(V1.ductN, U.epE, U.bufW),
-  vw(U1.prBil, V1.ductN, V1.northRow),
+  // Conducto macizo detrás de 6° C (Escuela 2050: el tramo de detrás de la
+  // biblioteca lo ganó ella); su muro sur es el fondo de 6° C.
+  hw(V1.ductS, U1.bil, U1.c6),
+  hw(V1.ductN, U.epE, U1.c6),
   // Fondo de la fila: el aula bilingüe, los baños y Prof. bilingüe abren al
   // aula del vértice, y 4° A al aula del fondo (así los dibuja el CAD).
   // Vanos del CAD: doble de la bilingüe, la de los baños contra Prof.
@@ -959,12 +963,14 @@ const I1: Item[] = [
   // columnas se abren a los costados de la hoja).
   ...desks({ u0: 17.15, v0: -28.0, u1: 22.75, v1: -26.0 }, 'n', 'chairGreen', 'sage', 2, 2),
   ...classKit([19.9, V1.ductS + 0.12], 's', 19.9, -27.0, 2.0, -1.3),
-  // Biblioteca: fichero rojo, estanterías contra el conducto y mesas con sillas azules.
-  { ...item('filing', 23.9, V1.ductS + 0.375, 0.9, 0.55, 's'), h: 1.75 },
-  { ...item('shelf', 24.95, V1.ductS + 0.3, 0.7, 0.4, 's'), color: 'board' },
-  { ...item('shelf', 26.15, V1.ductS + 0.3, 1.1, 0.4, 's') },
+  // Biblioteca: fichero rojo y estanterías contra el muro del fondo, más
+  // estanterías en el tabique de 6° C, y mesas con sillas azules.
+  // (La puerta del fondo, al aula del vértice, queda libre entre 23,2 y 24,1.)
+  { ...item('filing', 25.0, V1.northRow + 0.375, 0.9, 0.55, 's'), h: 1.75 },
+  { ...item('shelf', 26.4, V1.northRow + 0.3, 1.4, 0.4, 's') },
+  ...[-29.2, -30.5].map((v) => ({ ...item('shelf', U1.c6 + 0.3, v, 0.4, 1.1, 'e') })),
   // Lejos del paso al pasillo norte (a 0,8 m tapaban casi todo el vano).
-  ...[-26.95, -27.95].flatMap((v) => [
+  ...[-26.95, -27.95, -29.0].flatMap((v) => [
     { ...item('table', 24.9, v, 1.2, 0.8) },
     { ...item('chair', 24.1, v, 0.42, 0.42, 'e', false), color: 'blue' },
     { ...item('chair', 25.7, v, 0.42, 0.42, 'w', false), color: 'blue' },
@@ -973,13 +979,13 @@ const I1: Item[] = [
   // a la puerta del este.
   item('stall', 20.3, -30.65, 1.4, 1.2, 'w'),
   { ...item('sinkCounter', 21.9, -29.95 - SCHOOL.wallT / 2 - 0.275, 0.9, 0.55, 'n'), color: 'board' },
-  // Prof. bilingüe.
-  { ...item('desk2', 25.6, -30.45, 1.4, 0.6, 's'), color: 'board' },
+  // Mostrador de la biblioteca (lo que era Prof. bilingüe).
+  { ...item('desk2', 25.9, -30.2, 1.4, 0.6, 's'), color: 'board' },
   // 4° A: tres filas de bancos mirando al tabique del Salón Emociones.
   ...desks({ u0: 28.0, v0: -30.2, u1: 32.0, v1: -25.0 }, 's', 'yellow', 'metal', 2, 3),
   ...classKit([30.2, V.nBlockS - 0.12], 'n', 30.2, -27.6),
-  ...bareRoom([U.bufW - 0.12, -34.2], 'w', 2.4, [25.4, -34.2]),
-  ...bareRoom([U.bufW + 0.12, -33.6], 'e', 2.4, [28.3, -33.6]),
+  ...bareRoom([U1.n2W - 0.12, -34.2], 'w', 2.4, [22.45, -34.2]),
+  ...bareRoom([U1.n2W + 0.12, -33.6], 'e', 2.4, [25.35, -33.6]),
   ...bareRoom([U1.neW + 0.17, -29.5], 'e', 2.4, [35.6, -29.5]),
   // Escuela 2050: las aulas que el video no recorrió dejan de estar vacías.
   // Mesas hexagonales de trabajo en grupo (cuatro sillas cada una), la
@@ -992,13 +998,13 @@ const I1: Item[] = [
       [16.9, -34.0],
       [20.0, -33.9],
       [19.4, -36.4],
-      [22.7, -35.6],
+      [22.0, -36.5],
     ] as const
   ).map(([u, v]) => ({ ...item('hexTable', u, v, 1.4, 1.4), color: 'timber' })),
   { ...item('greenWall', 20.2, V1.northRow - SCHOOL.wallT / 2 - 0.04, 2.0, 0.08, 'n', false), y: 0.35, h: 2.0 },
   // Aula del fondo (N2): una mesa y paneles acústicos entre la puerta y el
   // rincón del este.
-  { ...item('hexTable', 30.4, -33.9, 1.4, 1.4), color: 'timber' },
+  ...[[27.5, -33.9], [30.4, -33.9]].map(([u, v]) => ({ ...item('hexTable', u, v, 1.4, 1.4), color: 'timber' })),
   { ...item('acousticPanels', 31.2, V1.northRow - SCHOOL.wallT / 2 - 0.025, 2.0, 0.05, 'n', false), y: 0.9, h: 1.3 },
   // Aula NE: dos mesas en el ala este (la de la pizarra queda libre) y
   // paneles acústicos en el muro este, al norte de su ventana.

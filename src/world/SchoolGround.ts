@@ -471,16 +471,18 @@ const WALLS_PB: Wall[] = [
   // Video 2026 (1:08): la puerta del patio al pasillo es de una sola hoja blanca.
   wallFinish(vw(U.gymW, V.artB, V.gymTop, 'int', [[-22.25, -21.2, 'door', undefined, undefined, 'frame']]), { patioEste: 'blockLight' }),
   vw(U.artE, rearV(U.artE), V.artB),
-  vw(U.teaE, rearV(U.teaE), V.artB),
+  vw(U.teaX, rearV(U.teaX), V.artB),
   // Video 2026 (1:13–1:20): Arte y Teatro se ven desde el pasillo por paños
   // vidriados de aluminio con antepecho de 0,9 m.
-  hw(V.artB, U.gymW, U.teaE, 'int', [
+  hw(V.artB, U.gymW, U.teaX, 'int', [
     [50.5, 51.3, 'window', 0.9, 2.1, 'alu', 'none'],
     [51.5, 53.2, 'double', undefined, undefined, 'frame'],
     [54.1, 56.0, 'double', undefined, undefined, 'frame'],
     // La ventana de Teatro junto a la puerta negra es oscura, con malla
     // romboidal (1:21), como las del polideportivo al hall del jardín.
     [56.25, 57.45, 'window', 0.9, 2.1, 'black', 'mesh'],
+    // Escuela 2050: Teatro ensanchado, con un paño vidriado al hall del jardín.
+    [58.2, 59.4, 'window', 0.9, 2.1, 'alu', 'none'],
   ]),
   // Puertas de hoja roja maciza con marco rojo (video 2026, 1:22–1:28).
   vw(U.vdW, rearV(U.vdW), V.gymTop, 'int', [
@@ -620,14 +622,14 @@ const ROOMS_PB: Room[] = [
   { id: 'aula6', name: '', poly: rect(U.salonW, V.passS, U.gymW, V.facade), floor: 'tile', roofed: true },
   { id: 'gimnasio', name: 'Gimnasio SUM', caption: 'Polideportivo', poly: rect(U.gymW, V.gymTop, U.e, V.facade), floor: 'gym', roofed: true },
   { id: 'arte', name: 'Arte', poly: [rear(U.gymW), rear(U.artE), [U.artE, V.artB], [U.gymW, V.artB]], floor: 'tile', roofed: true },
-  { id: 'teatro', name: 'Teatro', poly: [rear(U.artE), rear(U.teaE), [U.teaE, V.artB], [U.artE, V.artB]], floor: 'tile', roofed: true },
+  { id: 'teatro', name: 'Teatro', poly: [rear(U.artE), rear(U.teaX), [U.teaX, V.artB], [U.artE, V.artB]], floor: 'tile', roofed: true },
   // Vestuario (video 2026, 1:28): piso cerámico terracota (suena como el granito).
   { id: 'vDamas', name: 'V. Damas', poly: [rear(U.vdW), rear(U.e), [U.e, V.vdB], [U.vdW, V.vdB]], floor: 'tile', floorLook: 'terracotta', roofed: true },
   { id: 'sanitario', name: '', poly: rect(U.vdW, V.vdB, U.e, V.gymTop), floor: 'tile', roofed: true },
   {
     id: 'hallJardin',
     name: 'Pasillo',
-    poly: [rear(U.teaE), rear(U.vdW), [U.vdW, V.gymTop], [U.gymW, V.gymTop], [U.gymW, V.artB], [U.teaE, V.artB]],
+    poly: [rear(U.teaX), rear(U.vdW), [U.vdW, V.gymTop], [U.gymW, V.gymTop], [U.gymW, V.artB], [U.teaX, V.artB]],
     floor: 'tile',
     // Cerámico claro (video 2026, 1:09–1:20); los pasos suenan igual.
     floorLook: 'ceramic',
@@ -680,9 +682,9 @@ export const PLAN_ROOFS: ReadonlyArray<{ poly: readonly P[]; y: number }> = [
   // Rincón del nicho sobre Miguel Cané: el CAD del primer piso lo deja sin
   // construir (la fila norte de arriba arranca en u 12,28).
   { poly: [mc(V.notchN), [U.epW, V.notchN], NICHO_TIP], y: H },
-  { poly: [rear(U.gymW), rear(U.teaE), [U.teaE, V.artB], [U.gymW, V.artB]], y: H },
+  { poly: [rear(U.gymW), rear(U.teaX), [U.teaX, V.artB], [U.gymW, V.artB]], y: H },
   {
-    poly: [rear(U.teaE), rear(U.e), [U.e, V.gymTop], [U.gymW, V.gymTop], [U.gymW, V.artB], [U.teaE, V.artB]],
+    poly: [rear(U.teaX), rear(U.e), [U.e, V.gymTop], [U.gymW, V.gymTop], [U.gymW, V.artB], [U.teaX, V.artB]],
     y: H,
   },
   // Franja del pasillo norte bajo el patio de aire del primer piso (entre el
@@ -1365,21 +1367,22 @@ const ITEMS_PB: Item[] = [
   // Teatro es un aula más en 2026 (1:16–1:19): dos filas de mesas largas
   // rojas con sus bancos, el mueble de cubos de madera contra el muro oeste,
   // la pizarra blanca en el este y el escritorio blanco con la computadora.
-  ...[-25.3, -27.3].flatMap((v) => [
-    { ...item('boxBench', 55.85, v + 0.6, 2.0, 0.35, 'n'), color: 'red', legs: 'blue', h: 0.42 },
-    { ...item('boxBench', 55.85, v, 2.0, 0.7, 'e'), color: 'red', legs: 'blue', h: 0.72 },
-    { ...item('boxBench', 55.85, v - 0.6, 2.0, 0.35, 's'), color: 'red', legs: 'blue', h: 0.42 },
-  ]),
+  // Escuela 2050: ensanchado, con dos columnas de mesas.
+  ...[-25.3, -27.3].flatMap((v) => [55.55, 57.75].flatMap((u) => [
+    { ...item('boxBench', u, v + 0.6, 2.0, 0.35, 'n'), color: 'red', legs: 'blue', h: 0.42 },
+    { ...item('boxBench', u, v, 2.0, 0.7, 'e'), color: 'red', legs: 'blue', h: 0.72 },
+    { ...item('boxBench', u, v - 0.6, 2.0, 0.35, 's'), color: 'red', legs: 'blue', h: 0.42 },
+  ])),
   // Escuela 2050: en Arte, dos pantallas con los dibujos de los chicos en el
   // muro de Teatro (lleno); en Teatro, la barra de focos frente a la pizarra
   // y paneles acústicos en el muro de Arte, junto a la puerta.
   ...[-24.6, -27.7].map((v) => ({ ...item('infoScreen', U.artE - SCHOOL.wallT / 2 - 0.03, v, 0.06, 1.5, 'w', false), y: 1.15, h: 0.9 })),
-  { ...item('spotBar', U.teaE - 1.5, -26.3, 0.06, 3.0, 'e', false), h: 0.45 },
+  { ...item('spotBar', U.teaX - 1.5, -26.3, 0.06, 3.0, 'e', false), h: 0.45 },
   { ...item('acousticPanels', U.artE + SCHOOL.wallT / 2 + 0.025, -23.95, 0.05, 2.4, 'e', false), y: 0.9, h: 1.4 },
   { ...item('shelf', U.artE + 0.34, -26.6, 0.45, 1.8, 'e'), color: 'timber' },
-  item('board', U.teaE - 0.135, -26.3, 0.04, 2.4, 'w', false),
-  { ...item('desk2', U.teaE - 0.45, -23.7, 0.6, 1.4, 'w'), color: 'frame' },
-  { ...item('chair', U.teaE - 1.1, -23.7, 0.5, 0.5, 'e', false), color: 'metalDark' },
+  item('board', U.teaX - 0.135, -26.3, 0.04, 2.4, 'w', false),
+  { ...item('desk2', U.teaX - 0.45, -23.7, 0.6, 1.4, 'w'), color: 'frame' },
+  { ...item('chair', U.teaX - 1.1, -23.7, 0.5, 0.5, 'e', false), color: 'metalDark' },
 
   // Hall del jardín, muro este (video 2026, 1:24–1:27): bicicletero de pared
   // de dos caños blancos con soportes encintados de azul, matafuego con su
