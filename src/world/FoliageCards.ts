@@ -79,7 +79,9 @@ export type CardKind =
   /** Mulch: chips de corteza con algún brote, para la tierra de los canteros. */
   | 'mulch'
   /** Masa de copa de árbol: nube de hojas de borde calado (envuelve la icoesfera). */
-  | 'crown';
+  | 'crown'
+  /** Masa de copa en flor (jacarandá, palo borracho): racimos lilas y rosados entre pocas hojas. */
+  | 'bloom';
 
 /** Índice de cada clase: la escala Z del plano es `índice + 1`. */
 export const CARD: Readonly<Record<CardKind, number>> = {
@@ -93,6 +95,7 @@ export const CARD: Readonly<Record<CardKind, number>> = {
   net: 7,
   mulch: 8,
   crown: 9,
+  bloom: 10,
 };
 
 /**
@@ -122,6 +125,8 @@ const REGIONS: readonly (readonly [number, number, number, number, number, numbe
   ...LOWER.map(([u0, v0, du, dv, w0, w1, a]) => [u0, v0 / 2, du, dv / 2, w0, w1, a] as const),
   // crown: arriba a la izquierda, cuadrada (512 px); se mece entera, poco.
   [0.0, 0.5, 0.5, 0.5, 0.6, 1.0, 0.05],
+  // bloom: arriba a la derecha, igual que la copa.
+  [0.5, 0.5, 0.5, 0.5, 0.6, 1.0, 0.05],
 ];
 
 /** `if` encadenado con las regiones (los uniformes en arreglo no hacen falta: son fijas). */
@@ -373,6 +378,66 @@ function paintAtlas(ctx: Ctx): void {
   paintNet(ctx, px(CARD.net));
   paintMulch(ctx, px(CARD.mulch), r);
   paintCrown(ctx, px(CARD.crown), new Rng(seedFromString('foliageCrown')));
+  paintBloom(ctx, px(CARD.bloom), new Rng(seedFromString('foliageBloom')));
+}
+
+/**
+ * Copa en flor: el mismo contorno lobulado que `paintCrown`, pero hecho de
+ * racimos de flores lilas (jacarandá) con algún rosa y blanco, y pocas hojas
+ * verdes asomando. Reemplaza el borde liso de la icoesfera violeta, que de
+ * cerca se leía como un globo.
+ */
+function paintBloom(ctx: Ctx, R: { x: number; y: number; w: number; h: number }, r: Rng): void {
+  const cx = R.x + R.w / 2;
+  const cy = R.y + R.h * 0.52;
+  const rad = R.w * 0.46;
+  const lobes = [r.range(0, 6.28), r.range(0, 6.28), r.range(0, 6.28)];
+  const edge = (a: number) =>
+    rad * (0.8 + 0.11 * Math.sin(a * 3 + lobes[0]) + 0.07 * Math.sin(a * 6 + lobes[1]) + 0.04 * Math.sin(a * 11 + lobes[2]));
+  ctx.strokeStyle = rgb(74, 58, 44);
+  for (let k = 0; k < 8; k++) {
+    const a = r.range(0, Math.PI * 2);
+    ctx.lineWidth = r.range(2, 4);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + rad * 0.3);
+    ctx.lineTo(cx + Math.cos(a) * edge(a) * r.range(0.5, 0.85), cy + Math.sin(a) * edge(a) * r.range(0.5, 0.85));
+    ctx.stroke();
+  }
+  const n = 2600;
+  for (let k = 0; k < n; k++) {
+    const t = k / n;
+    const a = r.range(0, Math.PI * 2);
+    const d = Math.sqrt(r.range(0.04, 1)) * (0.55 + 0.45 * t);
+    if (d > 1.02) continue;
+    const e = edge(a);
+    const x = cx + Math.cos(a) * e * d;
+    const y = cy + Math.sin(a) * e * d * 0.92;
+    const up = (cy - y) / rad;
+    const g = (0.6 + 0.4 * t + 0.2 * up) * r.range(0.86, 1.12);
+    if (r.chance(0.16)) {
+      // Hoja verde entre los racimos.
+      const ang = a + r.range(-1.2, 1.2);
+      const len = r.range(10, 18);
+      leaf(ctx, x - Math.cos(ang) * len * 0.5, y - Math.sin(ang) * len * 0.5, ang, len, len * 0.42, rgb(64 * g, 104 * g, 50 * g));
+      continue;
+    }
+    // Racimo: tres o cuatro florcitas apretadas.
+    const base = r.chance(0.12) ? [214, 150, 186] : r.chance(0.08) ? [232, 226, 240] : r.chance(0.5) ? [150, 128, 206] : [128, 108, 190];
+    const m = 3 + Math.floor(r.range(0, 2));
+    for (let q = 0; q < m; q++) {
+      const fx = x + r.range(-5, 5);
+      const fy = y + r.range(-5, 5);
+      const fr = r.range(2.6, 4.6);
+      ctx.fillStyle = rgb(base[0] * g, base[1] * g, base[2] * g);
+      ctx.beginPath();
+      ctx.arc(fx, fy, fr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = rgb(base[0] * g * 1.18, base[1] * g * 1.15, base[2] * g * 1.08, 0.6);
+      ctx.beginPath();
+      ctx.arc(fx - fr * 0.3, fy - fr * 0.3, fr * 0.45, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 }
 
 /**

@@ -152,19 +152,20 @@ export class NatureBuilder {
         flower && (main || r.chance(shape.flowerFrac)) ? flower : main ? leaf : this.mats.foliage(r.pick(shape.tones));
       const center = new Vector3(x + Math.cos(ang) * dist, groundY + trunkH + crownR * squash * rise, z + Math.sin(ang) * dist);
       const hy = rad * 2 * squash * 0.72;
-      if (this.cards && mat !== flower) {
+      if (this.cards) {
         // Contorno de hojas: tres tarjetas de copa cruzadas y una acostada
         // envuelven la masa, algo más grandes que ella. La icoesfera tapa los
         // huecos del centro; lo que se ve es el borde calado de hojas en vez
-        // del contorno liso que se leía como un almohadón. (Las masas en flor
-        // siguen siendo icoesferas: el dibujo de la tarjeta es verde.)
+        // del contorno liso que se leía como un almohadón.
         const yaw = ang * 1.7 + i;
         // El dibujo llena ~75 % del ancho de la tarjeta: 3,1 × el radio deja
         // el borde de hojas ~15 % por fuera de la masa.
         const cw = rad * 3.1;
         const ch = Math.max(hy * 1.6, cw * 0.7);
-        this.cards.tuft('crown', center.x, center.z, center.y - ch / 2, cw, ch, yaw, 3);
-        this.cards.flat('crown', center.x, center.z, center.y + hy * 0.12, cw, cw, yaw);
+        // Las masas en flor llevan su propio dibujo (racimos lilas y rosados).
+        const kind = mat === flower ? 'bloom' : 'crown';
+        this.cards.tuft(kind, center.x, center.z, center.y - ch / 2, cw, ch, yaw, 3);
+        this.cards.flat(kind, center.x, center.z, center.y + hy * 0.12, cw, cw, yaw);
       }
       this.farm.add(
         prim,
