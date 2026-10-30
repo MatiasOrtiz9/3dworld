@@ -2,7 +2,7 @@ import type { Scene } from '@babylonjs/core/scene';
 import { CreateBox } from '@babylonjs/core/Meshes/Builders/boxBuilder';
 import { PBRMetallicRoughnessMaterial } from '@babylonjs/core/Materials/PBR/pbrMetallicRoughnessMaterial';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
-import { DOORS, doorRect, type DoorDef, type LeafDef } from '../../world/SchoolDoors';
+import { DOORS, doorRect, swingVis, type DoorDef, type LeafDef } from '../../world/SchoolDoors';
 import { LEVEL_Y, setDynamicSolid, toWorld, type Level, type SchoolFrame } from '../../world/SchoolLayout';
 import { INTERIOR_ENV, calibratePbr } from '../../world/Materials';
 import type { SchoolPhase, WorldPoint } from '../contracts';
@@ -71,8 +71,14 @@ interface LeafVis {
 export interface DoorState {
   def: DoorDef;
   leaves: LeafVis[];
-  /** 0 cerrada, 1 abierta. */
+  /** 0 cerrada, 1 abierta: el avance lógico (colisión, sonido), lineal. */
   open: number;
+  /**
+   * Lo que se ve: sigue a `open` con un resorte (la hoja arranca y frena
+   * con peso) y rebota apenas contra el tope o el marco. `visV`, su velocidad.
+   */
+  vis: number;
+  visV: number;
   /** Lo que quiere el jugador (o la fase del día). */
   want: boolean;
   /** Segundos que alguien la mantiene abierta. */
@@ -170,6 +176,8 @@ export class Doors {
         def,
         leaves,
         open: 1,
+        vis: 1,
+        visV: 0,
         want: true,
         held: 0,
         playerSuppressed: false,
@@ -221,7 +229,7 @@ export class Doors {
       st.held = 0;
       st.playerSuppressed = false;
       if (instant) {
-        st.open = 0;
+        st.open = st.vis = st.visV = 0;
         st.dirty = true;
       }
     } else {
@@ -260,7 +268,8 @@ export class Doors {
         st.playerSuppressed = false;
       }
       if (instant) {
-        st.open = want ? 1 : 0;
+        st.open = st.vis = want ? 1 : 0;
+        st.visV = 0;
         st.dirty = true;
       }
     }
@@ -292,6 +301,10 @@ export class Doors {
         if (was !== st.open) st.dirty = true;
       } else {
         st.moving = false;
+      }
+      if (st.vis !== st.open || st.visV !== 0) {
+        swingVis(st, dt);
+        st.dirty = true;
       }
       // Maciza sólo mientras está casi cerrada.
       const solid = st.open < 0.45;
@@ -345,7 +358,7 @@ export class Doors {
   private pose(st: DoorState): void {
     st.dirty = false;
     const base = LEVEL_Y[st.def.level];
-    const ang = st.open * OPEN_ANGLE;
+    const ang = st.vis * OPEN_ANGLE;
     const c = Math.cos(ang);
     const s = Math.sin(ang);
     const [su, sv] = st.def.swing;

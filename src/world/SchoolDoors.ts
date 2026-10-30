@@ -206,3 +206,34 @@ export function doorRect(d: DoorDef): { u0: number; v0: number; u1: number; v1: 
     ? { u0, v0: v0 - h, u1, v1: v1 + h, level: d.level }
     : { u0: u0 - h, v0, u1: u1 + h, v1, level: d.level };
 }
+
+/**
+ * Resorte de la hoja visible hacia el avance lógico: ω 13 rad/s,
+ * subamortiguado. Siguiendo la rampa lineal arranca suave (inercia) y, al
+ * terminar la rampa, sigue de largo hasta el tope (abierta contra el muro) o
+ * el marco (cerrada), donde rebota con poca energía: un golpe seco y un
+ * pequeño retroceso, como una puerta real. Antes giraba a velocidad
+ * constante y paraba en seco.
+ */
+export function swingVis(st: { open: number; vis: number; visV: number }, dt: number): void {
+  const n = Math.max(1, Math.ceil(dt / (1 / 120)));
+  const h = dt / n;
+  const w = 13;
+  const z = 0.4;
+  for (let i = 0; i < n; i++) {
+    st.visV += (w * w * (st.open - st.vis) - 2 * z * w * st.visV) * h;
+    st.vis += st.visV * h;
+    // Tope del muro y marco: rebote con 35 % (abierta) y 25 % (cerrada) de la velocidad.
+    if (st.vis > 1) {
+      st.vis = 1;
+      if (st.visV > 0) st.visV *= -0.35;
+    } else if (st.vis < 0) {
+      st.vis = 0;
+      if (st.visV < 0) st.visV *= -0.25;
+    }
+  }
+  if (Math.abs(st.vis - st.open) < 1e-4 && Math.abs(st.visV) < 1e-3) {
+    st.vis = st.open;
+    st.visV = 0;
+  }
+}
