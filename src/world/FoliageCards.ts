@@ -246,7 +246,7 @@ const byScene = new WeakMap<Scene, CardMaterial>();
 
 function cardMaterial(scene: Scene): CardMaterial {
   const hit = byScene.get(scene);
-  if (hit && !hit.material.isDisposed) return hit;
+  if (hit && hit.material.getScene().materials.includes(hit.material)) return hit;
   const tex = new DynamicTexture('foliageCardsAtlas', { width: ATLAS_W, height: ATLAS_H }, scene, true);
   paintAtlas(tex.getContext() as unknown as CanvasRenderingContext2D);
   // invertY: la fila de arriba del canvas es la punta de la tarjeta.

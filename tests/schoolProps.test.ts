@@ -237,6 +237,12 @@ function boxes(it: Item): Box[] {
       return [all(0, 2.0)];
     case 'pendantRail':
       return [all(3.1 - 1.21, 3.1)];
+    case 'spotBar': {
+      // Colgada del cielorraso: caño a `h` bajo el techo y focos 0,25 m más abajo.
+      const r = roomAt(u, v, level(it));
+      const ceil = r ? ceilingHeight(r) : 3.1;
+      return [all(ceil - (h ?? 0.45) - 0.3, ceil)];
+    }
     case 'greenWall':
       return [thin(0.08, y ?? 1.0, (y ?? 1.0) + (h ?? 1.8))];
     case 'bamboo':
